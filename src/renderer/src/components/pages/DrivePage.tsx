@@ -6,6 +6,7 @@ import { TreeView, TreeNode } from "../../../../components/ui/tree-view";
 import { ContentPanel } from "../../../../components/ui/content-panel";
 import { Dropzone } from "../../../../components/ui/dropzone";
 import { Meteors } from "../../../../components/ui/meteors";
+import { ContextMenu, useContextMenu, ContextMenuAction } from "../../../../components/ui/context-menu";
 import { useParams, useNavigate } from "react-router-dom";
 import { IconFolderPlus, IconShare, IconUpload } from "@tabler/icons-react";
 
@@ -119,6 +120,10 @@ export function DrivePage() {
   const [fileSystem, setFileSystem] = useState<TreeNode[]>(mockFileSystem);
   const params = useParams();
   const navigate = useNavigate();
+  
+  // Context menu state
+  const { isOpen, position, openContextMenu, closeContextMenu } = useContextMenu();
+  const [contextActions, setContextActions] = useState<ContextMenuAction[]>([]);
 
   const handleNodeSelect = (node: TreeNode) => {
     setSelectedNode(node);
@@ -126,6 +131,11 @@ export function DrivePage() {
 
   const handleFileClick = (node: TreeNode) => {
     setSelectedNode(node);
+  };
+
+  const handleContextMenu = (node: TreeNode, actions: ContextMenuAction[], event: React.MouseEvent) => {
+    setContextActions(actions);
+    openContextMenu(event, actions);
   };
 
   const handleFileUpload = (files: File[]) => {
@@ -229,6 +239,7 @@ export function DrivePage() {
                       onNodeToggle={handleNodeToggle}
                       selectedNodeId={selectedNode?.id}
                       expandedNodes={expandedNodes}
+                      onContextMenu={handleContextMenu}
                     />
                   </div>
                 </div>
@@ -302,6 +313,14 @@ export function DrivePage() {
       
       {/* Meteors Background */}
       <Meteors number={20} />
+      
+      {/* Context Menu - rendered outside all containers */}
+      <ContextMenu
+        isOpen={isOpen}
+        position={position}
+        actions={contextActions}
+        onClose={closeContextMenu}
+      />
     </div>
   );
 }

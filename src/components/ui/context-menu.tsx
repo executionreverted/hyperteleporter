@@ -71,36 +71,44 @@ export function ContextMenu({ isOpen, position, actions, onClose, className }: C
         exit={{ opacity: 0, scale: 0.95 }}
         transition={{ duration: 0.15 }}
         className={cn(
-          "fixed z-50 min-w-[200px] bg-neutral-800 border border-neutral-700 rounded-lg shadow-xl",
-          "backdrop-blur-sm bg-black/80",
+          "fixed z-[9999] min-w-[200px] rounded-lg shadow-2xl",
+          "relative overflow-hidden p-[1px]",
           className
         )}
         style={{
-          left: position.x,
-          top: position.y,
+          left: `${position.x}px`,
+          top: `${position.y}px`,
+          position: 'fixed',
         }}
       >
-        <div className="py-2">
-          {actions.map((action, index) => (
-            <button
-              key={action.id}
-              onClick={() => {
-                action.onClick();
-                onClose();
-              }}
-              disabled={action.disabled}
-              className={cn(
-                "w-full flex items-center gap-3 px-4 py-2 text-sm transition-colors",
-                "hover:bg-black/20 focus:bg-black/20 focus:outline-none",
-                action.disabled && "opacity-50 cursor-not-allowed",
-                action.destructive && "text-red-400 hover:text-red-300 hover:bg-red-900/20",
-                !action.destructive && "text-neutral-300 hover:text-white"
-              )}
-            >
-              {action.icon}
-              <span>{action.label}</span>
-            </button>
-          ))}
+        {/* Magic Button Border Effect */}
+        <span className="absolute inset-[-1000%] animate-[spin_3s_linear_infinite] bg-[conic-gradient(from_90deg_at_50%_50%,#E2CBFF_0%,#393BB2_50%,#E2CBFF_100%)]" />
+        
+        {/* Inner Content - covers the gradient to create border effect */}
+        <div className="relative bg-black/80 backdrop-blur-xl rounded-lg h-full w-full">
+          <div className="py-2">
+            {actions.map((action, index) => (
+              <button
+                key={action.id}
+                onClick={() => {
+                  action.onClick();
+                  onClose();
+                }}
+                disabled={action.disabled}
+                className={cn(
+                  "w-full flex items-center gap-3 px-4 py-2 text-sm transition-all duration-200",
+                  "hover:bg-white/10 focus:bg-white/10 focus:outline-none",
+                  "backdrop-blur-sm hover:backdrop-blur-md",
+                  action.disabled && "opacity-50 cursor-not-allowed",
+                  action.destructive && "text-red-400 hover:text-red-300 hover:bg-red-500/20",
+                  !action.destructive && "text-white/90 hover:text-white hover:bg-white/5"
+                )}
+              >
+                {action.icon}
+                <span>{action.label}</span>
+              </button>
+            ))}
+          </div>
         </div>
       </motion.div>
     </AnimatePresence>
@@ -126,7 +134,7 @@ export function useContextMenu() {
     const adjustedX = x + menuWidth > window.innerWidth ? x - menuWidth : x;
     const adjustedY = y + menuHeight > window.innerHeight ? y - menuHeight : y;
     
-    setPosition({ x: adjustedX, y: adjustedY });
+    setPosition({ x: Math.max(0, adjustedX), y: Math.max(0, adjustedY) });
     setIsOpen(true);
   };
 

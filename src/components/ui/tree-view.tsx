@@ -15,7 +15,7 @@ import {
   IconFileMusic,
   IconFileZip
 } from "@tabler/icons-react";
-import { ContextMenu, useContextMenu, ContextMenuAction } from "./context-menu";
+import { ContextMenuAction } from "./context-menu";
 import { 
   IconEdit, 
   IconTrash, 
@@ -170,7 +170,7 @@ const TreeNodeComponent = ({ node, level, onNodeSelect, onNodeToggle, selectedNo
       {
         id: 'separator1',
         label: '',
-        icon: <div className="h-px bg-neutral-600" />,
+        icon: <div className="h-px bg-white/20" />,
         onClick: () => {},
         disabled: true,
       },
@@ -191,7 +191,7 @@ const TreeNodeComponent = ({ node, level, onNodeSelect, onNodeToggle, selectedNo
       {
         id: 'separator2',
         label: '',
-        icon: <div className="h-px bg-neutral-600" />,
+        icon: <div className="h-px bg-white/20" />,
         onClick: () => {},
         disabled: true,
       },
@@ -204,7 +204,6 @@ const TreeNodeComponent = ({ node, level, onNodeSelect, onNodeToggle, selectedNo
       },
     ];
 
-    // Pass the event to the context menu handler
     onContextMenu?.(node, actions, e);
   };
 
@@ -286,37 +285,20 @@ const TreeNodeComponent = ({ node, level, onNodeSelect, onNodeToggle, selectedNo
 };
 
 export function TreeView({ data, onNodeSelect, onNodeToggle, selectedNodeId, expandedNodes, onContextMenu, className }: TreeViewProps) {
-  const { isOpen, position, openContextMenu, closeContextMenu } = useContextMenu();
-  const [contextActions, setContextActions] = useState<ContextMenuAction[]>([]);
-
-  const handleContextMenu = (node: TreeNode, actions: ContextMenuAction[], event: React.MouseEvent) => {
-    setContextActions(actions);
-    openContextMenu(event, actions);
-  };
-
   return (
-    <>
-      <div className={cn("w-full h-full overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-600 scrollbar-track-neutral-800", className)}>
-        {data.map((node) => (
-          <TreeNodeComponent
-            key={node.id}
-            node={node}
-            level={0}
-            onNodeSelect={onNodeSelect}
-            onNodeToggle={onNodeToggle}
-            selectedNodeId={selectedNodeId}
-            expandedNodes={expandedNodes}
-            onContextMenu={onContextMenu || handleContextMenu}
-          />
-        ))}
-      </div>
-      
-      <ContextMenu
-        isOpen={isOpen}
-        position={position}
-        actions={contextActions}
-        onClose={closeContextMenu}
-      />
-    </>
+    <div className={cn("w-full h-full overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-600 scrollbar-track-neutral-800", className)}>
+      {data.map((node) => (
+        <TreeNodeComponent
+          key={node.id}
+          node={node}
+          level={0}
+          onNodeSelect={onNodeSelect}
+          onNodeToggle={onNodeToggle}
+          selectedNodeId={selectedNodeId}
+          expandedNodes={expandedNodes}
+          onContextMenu={onContextMenu}
+        />
+      ))}
+    </div>
   );
 }
