@@ -15,6 +15,18 @@ import {
   IconFileMusic,
   IconFileZip
 } from "@tabler/icons-react";
+import { ContextMenu, useContextMenu, ContextMenuAction } from "./context-menu";
+import { 
+  IconEdit, 
+  IconTrash, 
+  IconCopy, 
+  IconCut, 
+  IconDownload, 
+  IconShare, 
+  IconFolderPlus,
+  IconFilePlus,
+  IconEye
+} from "@tabler/icons-react";
 
 export interface TreeNode {
   id: string;
@@ -33,6 +45,7 @@ interface TreeViewProps {
   onNodeToggle?: (node: TreeNode) => void;
   selectedNodeId?: string;
   expandedNodes?: Set<string>;
+  onContextMenu?: (node: TreeNode, actions: ContextMenuAction[], event: React.MouseEvent) => void;
   className?: string;
 }
 
@@ -43,6 +56,7 @@ interface TreeNodeProps {
   onNodeToggle?: (node: TreeNode) => void;
   selectedNodeId?: string;
   expandedNodes?: Set<string>;
+  onContextMenu?: (node: TreeNode, actions: ContextMenuAction[], event: React.MouseEvent) => void;
 }
 
 const FolderIcon = ({ isOpen }: { isOpen: boolean }) => (
@@ -97,7 +111,7 @@ const FileIcon = ({ type }: { type: string }) => {
   return getFileIcon();
 };
 
-const TreeNodeComponent = ({ node, level, onNodeSelect, onNodeToggle, selectedNodeId, expandedNodes }: TreeNodeProps) => {
+const TreeNodeComponent = ({ node, level, onNodeSelect, onNodeToggle, selectedNodeId, expandedNodes, onContextMenu }: TreeNodeProps) => {
   const hasChildren = node.children && node.children.length > 0;
   const isSelected = selectedNodeId === node.id;
   const isExpanded = expandedNodes?.has(node.id) || false;
@@ -117,6 +131,83 @@ const TreeNodeComponent = ({ node, level, onNodeSelect, onNodeToggle, selectedNo
     }
   };
 
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const actions: ContextMenuAction[] = [
+      {
+        id: 'rename',
+        label: 'Rename',
+        icon: <IconEdit size={16} />,
+        onClick: () => console.log('Rename', node.name),
+      },
+      {
+        id: 'copy',
+        label: 'Copy',
+        icon: <IconCopy size={16} />,
+        onClick: () => console.log('Copy', node.name),
+      },
+      {
+        id: 'cut',
+        label: 'Cut',
+        icon: <IconCut size={16} />,
+        onClick: () => console.log('Cut', node.name),
+      },
+      {
+        id: 'download',
+        label: 'Download',
+        icon: <IconDownload size={16} />,
+        onClick: () => console.log('Download', node.name),
+        disabled: node.type === 'folder',
+      },
+      {
+        id: 'share',
+        label: 'Share',
+        icon: <IconShare size={16} />,
+        onClick: () => console.log('Share', node.name),
+      },
+      {
+        id: 'separator1',
+        label: '',
+        icon: <div className="h-px bg-neutral-600" />,
+        onClick: () => {},
+        disabled: true,
+      },
+      {
+        id: 'new-folder',
+        label: 'New Folder',
+        icon: <IconFolderPlus size={16} />,
+        onClick: () => console.log('New Folder in', node.name),
+        disabled: node.type === 'file',
+      },
+      {
+        id: 'new-file',
+        label: 'New File',
+        icon: <IconFilePlus size={16} />,
+        onClick: () => console.log('New File in', node.name),
+        disabled: node.type === 'file',
+      },
+      {
+        id: 'separator2',
+        label: '',
+        icon: <div className="h-px bg-neutral-600" />,
+        onClick: () => {},
+        disabled: true,
+      },
+      {
+        id: 'delete',
+        label: 'Delete',
+        icon: <IconTrash size={16} />,
+        onClick: () => console.log('Delete', node.name),
+        destructive: true,
+      },
+    ];
+
+    // Pass the event to the context menu handler
+    onContextMenu?.(node, actions, e);
+  };
+
   return (
     <div>
       <motion.div
@@ -127,6 +218,7 @@ const TreeNodeComponent = ({ node, level, onNodeSelect, onNodeToggle, selectedNo
         )}
         style={{ paddingLeft: `${level * 16 + 8}px` }}
         onClick={handleSelect}
+        onContextMenu={handleContextMenu}
         whileHover={{ x: 2 }}
         transition={{ duration: 0.2 }}
       >
@@ -183,6 +275,7 @@ const TreeNodeComponent = ({ node, level, onNodeSelect, onNodeToggle, selectedNo
                 onNodeToggle={onNodeToggle}
                 selectedNodeId={selectedNodeId}
                 expandedNodes={expandedNodes}
+                onContextMenu={onContextMenu}
               />
             ))}
           </motion.div>
@@ -192,20 +285,38 @@ const TreeNodeComponent = ({ node, level, onNodeSelect, onNodeToggle, selectedNo
   );
 };
 
-export function TreeView({ data, onNodeSelect, onNodeToggle, selectedNodeId, expandedNodes, className }: TreeViewProps) {
+export function TreeView({ data, onNodeSelect, onNodeToggle, selectedNodeId, expandedNodes, onContextMenu, className }: TreeViewProps) {
+  const { isOpen, position, openContextMenu, closeContextMenu } = useContextMenu();
+  const [contextActions, setContextActions] = useState<ContextMenuAction[]>([]);
+
+  const handleContextMenu = (node: TreeNode, actions: ContextMenuAction[], event: React.MouseEvent) => {
+    setContextActions(actions);
+    openContextMenu(event, actions);
+  };
+
   return (
-    <div className={cn("w-full h-full overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-600 scrollbar-track-neutral-800", className)}>
-      {data.map((node) => (
-        <TreeNodeComponent
-          key={node.id}
-          node={node}
-          level={0}
-          onNodeSelect={onNodeSelect}
-          onNodeToggle={onNodeToggle}
-          selectedNodeId={selectedNodeId}
-          expandedNodes={expandedNodes}
-        />
-      ))}
-    </div>
+    <>
+      <div className={cn("w-full h-full overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-600 scrollbar-track-neutral-800", className)}>
+        {data.map((node) => (
+          <TreeNodeComponent
+            key={node.id}
+            node={node}
+            level={0}
+            onNodeSelect={onNodeSelect}
+            onNodeToggle={onNodeToggle}
+            selectedNodeId={selectedNodeId}
+            expandedNodes={expandedNodes}
+            onContextMenu={onContextMenu || handleContextMenu}
+          />
+        ))}
+      </div>
+      
+      <ContextMenu
+        isOpen={isOpen}
+        position={position}
+        actions={contextActions}
+        onClose={closeContextMenu}
+      />
+    </>
   );
 }
