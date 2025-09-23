@@ -1,112 +1,106 @@
 "use client";
-import React from "react";
+import { useState, type FormEvent } from "react";
 import { Label } from "../../../../components/ui/label";
 import { Input } from "../../../../components/ui/input";
 import { cn } from "../../../lib/utils";
-import {
-  IconBrandGithub,
-  IconBrandGoogle,
-  IconBrandOnlyfans,
-} from "@tabler/icons-react";
 
-export function SignupFormDemo() {
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    console.log("Form submitted");
-  };
-  return (
-    <div className="shadow-input mx-auto w-full max-w-md rounded-none bg-white p-4 md:rounded-2xl md:p-8 dark:bg-black">
-      <h2 className="text-xl font-bold text-neutral-800 dark:text-neutral-200">
-        Welcome to Aceternity
-      </h2>
-      <p className="mt-2 max-w-sm text-sm text-neutral-600 dark:text-neutral-300">
-        Login to aceternity if you can because we don&apos;t have a login flow
-        yet
-      </p>
-
-      <form className="my-8" onSubmit={handleSubmit}>
-        <div className="mb-4 flex flex-col space-y-2 md:flex-row md:space-y-0 md:space-x-2">
-          <LabelInputContainer>
-            <Label htmlFor="firstname">First name</Label>
-            <Input id="firstname" placeholder="Tyler" type="text" />
-          </LabelInputContainer>
-          <LabelInputContainer>
-            <Label htmlFor="lastname">Last name</Label>
-            <Input id="lastname" placeholder="Durden" type="text" />
-          </LabelInputContainer>
-        </div>
-        <LabelInputContainer className="mb-4">
-          <Label htmlFor="email">Email Address</Label>
-          <Input id="email" placeholder="projectmayhem@fc.com" type="email" />
-        </LabelInputContainer>
-        <LabelInputContainer className="mb-4">
-          <Label htmlFor="password">Password</Label>
-          <Input id="password" placeholder="••••••••" type="password" />
-        </LabelInputContainer>
-        <LabelInputContainer className="mb-8">
-          <Label htmlFor="twitterpassword">Your twitter password</Label>
-          <Input
-            id="twitterpassword"
-            placeholder="••••••••"
-            type="twitterpassword"
-          />
-        </LabelInputContainer>
-
-        <button
-          className="group/btn relative block h-10 w-full rounded-md bg-gradient-to-br from-black to-neutral-600 font-medium text-white shadow-[0px_1px_0px_0px_#ffffff40_inset,0px_-1px_0px_0px_#ffffff40_inset] dark:bg-zinc-800 dark:from-zinc-900 dark:to-zinc-900 dark:shadow-[0px_1px_0px_0px_#27272a_inset,0px_-1px_0px_0px_#27272a_inset]"
-          type="submit"
-        >
-          Sign up &rarr;
-          <BottomGradient />
-        </button>
-
-        <div className="my-8 h-[1px] w-full bg-gradient-to-r from-transparent via-neutral-300 to-transparent dark:via-neutral-700" />
-
-        <div className="flex flex-col space-y-4">
-          <button
-            className="group/btn shadow-input relative flex h-10 w-full items-center justify-start space-x-2 rounded-md bg-gray-50 px-4 font-medium text-black dark:bg-zinc-900 dark:shadow-[0px_0px_1px_1px_#262626]"
-            type="submit"
-          >
-            <IconBrandGithub className="h-4 w-4 text-neutral-800 dark:text-neutral-300" />
-            <span className="text-sm text-neutral-700 dark:text-neutral-300">
-              GitHub
-            </span>
-            <BottomGradient />
-          </button>
-          <button
-            className="group/btn shadow-input relative flex h-10 w-full items-center justify-start space-x-2 rounded-md bg-gray-50 px-4 font-medium text-black dark:bg-zinc-900 dark:shadow-[0px_0px_1px_1px_#262626]"
-            type="submit"
-          >
-            <IconBrandGoogle className="h-4 w-4 text-neutral-800 dark:text-neutral-300" />
-            <span className="text-sm text-neutral-700 dark:text-neutral-300">
-              Google
-            </span>
-            <BottomGradient />
-          </button>
-          <button
-            className="group/btn shadow-input relative flex h-10 w-full items-center justify-start space-x-2 rounded-md bg-gray-50 px-4 font-medium text-black dark:bg-zinc-900 dark:shadow-[0px_0px_1px_1px_#262626]"
-            type="submit"
-          >
-            <IconBrandOnlyfans className="h-4 w-4 text-neutral-800 dark:text-neutral-300" />
-            <span className="text-sm text-neutral-700 dark:text-neutral-300">
-              OnlyFans
-            </span>
-            <BottomGradient />
-          </button>
-        </div>
-      </form>
-    </div>
-  );
+export interface CreateDriveValues {
+  name: string;
+  description: string;
 }
 
-const BottomGradient = () => {
+export function CreateDriveForm({
+  initialValues,
+  onSubmit,
+  submitLabel = "Create Drive",
+}: {
+  initialValues?: Partial<CreateDriveValues>;
+  onSubmit: (values: CreateDriveValues) => void;
+  submitLabel?: string;
+}) {
+  const [name, setName] = useState(initialValues?.name ?? "");
+  const [description, setDescription] = useState(initialValues?.description ?? "");
+  const [submitting, setSubmitting] = useState(false);
+  const [errors, setErrors] = useState<{ name?: string; description?: string }>({});
+
+  const validateField = (field: 'name' | 'description', value: string) => {
+    const trimmed = value.trim();
+    const maxLength = field === 'name' ? 16 : 64;
+    const fieldName = field === 'name' ? 'Name' : 'Description';
+    
+    if (trimmed.length === 0) {
+      return `${fieldName} is required`;
+    }
+    if (trimmed.length > maxLength) {
+      return `${fieldName} must be no more than ${maxLength} characters`;
+    }
+    return '';
+  };
+
+  const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    
+    const nameError = validateField('name', name);
+    const descriptionError = validateField('description', description);
+    
+    setErrors({ name: nameError, description: descriptionError });
+    
+    if (nameError || descriptionError) return;
+    
+    setSubmitting(true);
+    onSubmit({ name: name.trim(), description: description.trim() });
+    setSubmitting(false);
+  };
+
   return (
-    <>
-      <span className="absolute inset-x-0 -bottom-px block h-px w-full bg-gradient-to-r from-transparent via-cyan-500 to-transparent opacity-0 transition duration-500 group-hover/btn:opacity-100" />
-      <span className="absolute inset-x-10 -bottom-px mx-auto block h-px w-1/2 bg-gradient-to-r from-transparent via-indigo-500 to-transparent opacity-0 blur-sm transition duration-500 group-hover/btn:opacity-100" />
-    </>
+    <form className="my-2" onSubmit={handleSubmit}>
+      <LabelInputContainer className="mb-4">
+        <Label htmlFor="drive-name">Drive Name (max 16 characters)</Label>
+        <Input
+          id="drive-name"
+          placeholder="e.g. Project Alpha"
+          type="text"
+          value={name}
+          onChange={(e) => {
+            setName(e.target.value);
+            if (errors.name) {
+              setErrors(prev => ({ ...prev, name: validateField('name', e.target.value) }));
+            }
+          }}
+          required
+          maxLength={16}
+        />
+        {errors.name && <p className="text-red-400 text-sm mt-1">{errors.name}</p>}
+      </LabelInputContainer>
+
+      <LabelInputContainer className="mb-6">
+        <Label htmlFor="drive-description">Description (max 64 characters)</Label>
+        <Input
+          id="drive-description"
+          placeholder="A short description"
+          type="text"
+          value={description}
+          onChange={(e) => {
+            setDescription(e.target.value);
+            if (errors.description) {
+              setErrors(prev => ({ ...prev, description: validateField('description', e.target.value) }));
+            }
+          }}
+          maxLength={64}
+        />
+        {errors.description && <p className="text-red-400 text-sm mt-1">{errors.description}</p>}
+      </LabelInputContainer>
+
+      <button
+        className="group/btn relative block h-10 w-full rounded-md bg-gradient-to-br from-black to-neutral-600 font-medium text-white shadow-[0px_1px_0px_0px_#ffffff40_inset,0px_-1px_0px_0px_#ffffff40_inset] dark:bg-zinc-800 dark:from-zinc-900 dark:to-zinc-900 dark:shadow-[0px_1px_0px_0px_#27272a_inset,0px_-1px_0px_0px_#27272a_inset] disabled:opacity-50"
+        type="submit"
+        disabled={submitting || !name.trim() || name.trim().length > 16 || (description.trim().length > 0 && description.trim().length > 64)}
+      >
+        {submitLabel}
+      </button>
+    </form>
   );
-};
+}
 
 const LabelInputContainer = ({
   children,
