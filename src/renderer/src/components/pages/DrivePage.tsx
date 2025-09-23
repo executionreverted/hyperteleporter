@@ -1,5 +1,5 @@
 "use client";
-import React, { useState } from "react";
+import { useState } from "react";
 import { cn } from "../../../lib/utils";
 import { Sidebar, SidebarBody, SidebarLink } from "../../../../components/ui/sidebar";
 import { TreeView, TreeNode } from "../../../../components/ui/tree-view";
@@ -9,95 +9,10 @@ import { Meteors } from "../../../../components/ui/meteors";
 import { ContextMenu, useContextMenu, ContextMenuAction } from "../../../../components/ui/context-menu";
 import { useParams, useNavigate } from "react-router-dom";
 import { IconFolderPlus, IconShare, IconUpload } from "@tabler/icons-react";
+import { dummyData } from "../../data/dummy";
 
-// Mock data for the file system
-const mockFileSystem: TreeNode[] = [
-  {
-    id: "1",
-    name: "Documents",
-    type: "folder",
-    size: "2.3 MB",
-    modified: "2 days ago",
-    children: [
-      {
-        id: "1-1",
-        name: "Project Alpha",
-        type: "folder",
-        size: "1.2 MB",
-        modified: "1 day ago",
-        children: [
-          {
-            id: "1-1-1",
-            name: "README.md",
-            type: "file",
-            size: "2.1 KB",
-            modified: "3 hours ago",
-          },
-          {
-            id: "1-1-2",
-            name: "design.pdf",
-            type: "file",
-            size: "1.1 MB",
-            modified: "1 day ago",
-          },
-        ],
-      },
-      {
-        id: "1-2",
-        name: "notes.txt",
-        type: "file",
-        size: "1.1 KB",
-        modified: "2 days ago",
-      },
-    ],
-  },
-  {
-    id: "2",
-    name: "Images",
-    type: "folder",
-    size: "15.7 MB",
-    modified: "1 week ago",
-    children: [
-      {
-        id: "2-1",
-        name: "vacation.jpg",
-        type: "file",
-        size: "3.2 MB",
-        modified: "1 week ago",
-      },
-      {
-        id: "2-2",
-        name: "screenshot.png",
-        type: "file",
-        size: "2.1 MB",
-        modified: "3 days ago",
-      },
-    ],
-  },
-  {
-    id: "3",
-    name: "Videos",
-    type: "folder",
-    size: "245.8 MB",
-    modified: "2 weeks ago",
-    children: [
-      {
-        id: "3-1",
-        name: "presentation.mp4",
-        type: "file",
-        size: "245.8 MB",
-        modified: "2 weeks ago",
-      },
-    ],
-  },
-  {
-    id: "4",
-    name: "config.json",
-    type: "file",
-    size: "0.8 KB",
-    modified: "1 month ago",
-  },
-];
+// Mock data for the file system - Complex nested structure
+const mockFileSystem: TreeNode[] = dummyData as TreeNode[];
 
 // Removed sidebar navigation links as requested
 
@@ -121,6 +36,11 @@ export function DrivePage() {
   const params = useParams();
   const navigate = useNavigate();
   
+  // Breadcrumb navigation state
+  const [currentView, setCurrentView] = useState<TreeNode[]>(mockFileSystem);
+  const [breadcrumbPath, setBreadcrumbPath] = useState<string[]>([]);
+  const [navigationStack, setNavigationStack] = useState<TreeNode[][]>([mockFileSystem]);
+  
   // Context menu state
   const { isOpen, position, openContextMenu, closeContextMenu } = useContextMenu();
   const [contextActions, setContextActions] = useState<ContextMenuAction[]>([]);
@@ -136,6 +56,45 @@ export function DrivePage() {
   const handleContextMenu = (node: TreeNode, actions: ContextMenuAction[], event: React.MouseEvent) => {
     setContextActions(actions);
     openContextMenu(event, actions);
+  };
+
+  const handleNavigateToFolder = (node: TreeNode) => {
+    if (node.children) {
+      // Add current view to navigation stack
+      setNavigationStack(prev => [...prev, currentView]);
+      
+      // Update breadcrumb path
+      setBreadcrumbPath(prev => [...prev, node.name]);
+      
+      // Set new current view to the folder's children
+      setCurrentView(node.children);
+      
+      // Clear expanded nodes for the new view
+      setExpandedNodes(new Set());
+      
+      // Clear selected node
+      setSelectedNode(undefined);
+    }
+  };
+
+  const handleNavigateUp = () => {
+    if (navigationStack.length > 1) {
+      // Remove the last item from navigation stack
+      const newStack = navigationStack.slice(0, -1);
+      setNavigationStack(newStack);
+      
+      // Update breadcrumb path
+      setBreadcrumbPath(prev => prev.slice(0, -1));
+      
+      // Set current view to the previous level
+      setCurrentView(newStack[newStack.length - 1]);
+      
+      // Clear expanded nodes
+      setExpandedNodes(new Set());
+      
+      // Clear selected node
+      setSelectedNode(undefined);
+    }
   };
 
   const handleFileUpload = (files: File[]) => {
@@ -234,12 +193,16 @@ export function DrivePage() {
                   </h3>
                   <div className="flex-1 min-h-0">
                     <TreeView
-                      data={fileSystem}
+                      data={currentView}
                       onNodeSelect={handleNodeSelect}
                       onNodeToggle={handleNodeToggle}
                       selectedNodeId={selectedNode?.id}
                       expandedNodes={expandedNodes}
                       onContextMenu={handleContextMenu}
+                      onNavigateUp={handleNavigateUp}
+                      onNavigateToFolder={handleNavigateToFolder}
+                      showBreadcrumb={true}
+                      breadcrumbPath={breadcrumbPath}
                     />
                   </div>
                 </div>
@@ -270,14 +233,16 @@ export function DrivePage() {
           {/* Header */}
           <div className="border-b border-neutral-700 p-4">
             <div className="flex items-center justify-between">
-              <div>
-                <h1 className="text-2xl font-bold text-white">
-                  Drive: {params.driveId || "My Drive"}
-                </h1>
-                <p className="text-sm text-neutral-400">
-                  {selectedNode ? `Selected: ${selectedNode.name}` : "Select a file or folder to view details"}
-                </p>
-              </div>
+              <button
+                onClick={() => navigate("/")}
+                className="flex items-center gap-2 px-4 py-2 bg-neutral-800 text-neutral-300 rounded-lg hover:bg-neutral-700 transition-colors"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="m15 18-6-6 6-6"/>
+                </svg>
+                Back to Drives
+              </button>
+              
               <div className="flex items-center gap-4">
                 {/* Quick Actions */}
                 <div className="flex gap-2">
@@ -293,12 +258,6 @@ export function DrivePage() {
                     </button>
                   ))}
                 </div>
-                <button
-                  onClick={() => navigate("/")}
-                  className="px-4 py-2 bg-neutral-800 text-neutral-300 rounded-lg hover:bg-neutral-700 transition-colors"
-                >
-                  Back to Drives
-                </button>
               </div>
             </div>
           </div>

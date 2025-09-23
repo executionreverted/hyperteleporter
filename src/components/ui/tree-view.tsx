@@ -13,10 +13,7 @@ import {
   IconFileTypePdf,
   IconFileCode,
   IconFileMusic,
-  IconFileZip
-} from "@tabler/icons-react";
-import { ContextMenuAction } from "./context-menu";
-import { 
+  IconFileZip,
   IconEdit, 
   IconTrash, 
   IconCopy, 
@@ -25,8 +22,10 @@ import {
   IconShare, 
   IconFolderPlus,
   IconFilePlus,
-  IconEye
+  IconEye,
+  IconArrowUp
 } from "@tabler/icons-react";
+import { ContextMenuAction } from "./context-menu";
 
 export interface TreeNode {
   id: string;
@@ -46,6 +45,10 @@ interface TreeViewProps {
   selectedNodeId?: string;
   expandedNodes?: Set<string>;
   onContextMenu?: (node: TreeNode, actions: ContextMenuAction[], event: React.MouseEvent) => void;
+  onNavigateUp?: () => void;
+  onNavigateToFolder?: (node: TreeNode) => void;
+  showBreadcrumb?: boolean;
+  breadcrumbPath?: string[];
   className?: string;
 }
 
@@ -57,6 +60,7 @@ interface TreeNodeProps {
   selectedNodeId?: string;
   expandedNodes?: Set<string>;
   onContextMenu?: (node: TreeNode, actions: ContextMenuAction[], event: React.MouseEvent) => void;
+  onNavigateToFolder?: (node: TreeNode) => void;
 }
 
 const FolderIcon = ({ isOpen }: { isOpen: boolean }) => (
@@ -111,7 +115,7 @@ const FileIcon = ({ type }: { type: string }) => {
   return getFileIcon();
 };
 
-const TreeNodeComponent = ({ node, level, onNodeSelect, onNodeToggle, selectedNodeId, expandedNodes, onContextMenu }: TreeNodeProps) => {
+const TreeNodeComponent = ({ node, level, onNodeSelect, onNodeToggle, selectedNodeId, expandedNodes, onContextMenu, onNavigateToFolder }: TreeNodeProps) => {
   const hasChildren = node.children && node.children.length > 0;
   const isSelected = selectedNodeId === node.id;
   const isExpanded = expandedNodes?.has(node.id) || false;
@@ -125,9 +129,20 @@ const TreeNodeComponent = ({ node, level, onNodeSelect, onNodeToggle, selectedNo
 
   const handleSelect = () => {
     onNodeSelect?.(node);
-    // Also toggle folder expansion when clicking on folders
-    if (hasChildren) {
-      onNodeToggle?.(node);
+    
+    // Check if this is a folder with nested folders (2+ levels deep)
+    if (hasChildren && node.children) {
+      const hasNestedFolders = node.children.some(child => 
+        child.type === 'folder' && child.children && child.children.length > 0
+      );
+      
+      if (hasNestedFolders) {
+        // Navigate to this folder as a pseudo-root
+        onNavigateToFolder?.(node);
+      } else {
+        // Regular expansion for folders without nested folders
+        onNodeToggle?.(node);
+      }
     }
   };
 
@@ -275,6 +290,7 @@ const TreeNodeComponent = ({ node, level, onNodeSelect, onNodeToggle, selectedNo
                 selectedNodeId={selectedNodeId}
                 expandedNodes={expandedNodes}
                 onContextMenu={onContextMenu}
+                onNavigateToFolder={onNavigateToFolder}
               />
             ))}
           </motion.div>
@@ -284,21 +300,113 @@ const TreeNodeComponent = ({ node, level, onNodeSelect, onNodeToggle, selectedNo
   );
 };
 
-export function TreeView({ data, onNodeSelect, onNodeToggle, selectedNodeId, expandedNodes, onContextMenu, className }: TreeViewProps) {
+// Breadcrumb component for navigation
+function BreadcrumbNavigation({ 
+  path, 
+  onNavigateTo 
+}: { 
+  path: string[]; 
+  onNavigateTo: (index: number) => void;
+}) {
+  // Show only the last 3 segments to prevent overflow
+  const displayPath = path.length > 3 ? path.slice(-3) : path;
+  const hasHiddenSegments = path.length > 3;
+
+  return (
+    <div className="flex items-center gap-1 px-2 py-1 mb-2 text-xs text-neutral-400 border-b border-neutral-700/30 overflow-hidden">
+      {path.length === 0 ? (
+        <span className="px-2 py-1 text-neutral-400">Root</span>
+      ) : (
+        <>
+          {hasHiddenSegments && (
+            <>
+              <span className="text-neutral-500 flex-shrink-0">...</span>
+              <IconChevronRight size={12} className="text-neutral-600 flex-shrink-0" />
+            </>
+          )}
+          
+          {displayPath.map((segment, index) => {
+            const actualIndex = hasHiddenSegments ? path.length - 3 + index : index;
+            return (
+              <div key={actualIndex} className="flex items-center gap-1 flex-shrink-0">
+                <button
+                  onClick={() => onNavigateTo(actualIndex)}
+                  className="px-2 py-1 rounded hover:bg-black/20 transition-colors hover:text-white truncate max-w-[120px]"
+                  title={segment}
+                >
+                  {segment}
+                </button>
+                {index < displayPath.length - 1 && (
+                  <IconChevronRight size={12} className="text-neutral-600 flex-shrink-0" />
+                )}
+              </div>
+            );
+          })}
+        </>
+      )}
+    </div>
+  );
+}
+
+export function TreeView({ 
+  data, 
+  onNodeSelect, 
+  onNodeToggle, 
+  selectedNodeId, 
+  expandedNodes, 
+  onContextMenu, 
+  onNavigateUp,
+  onNavigateToFolder,
+  showBreadcrumb = false,
+  breadcrumbPath = [],
+  className 
+}: TreeViewProps) {
+  const handleNavigateTo = (index: number) => {
+    // This will be handled by the parent component
+    // For now, we'll just navigate up to the root
+    onNavigateUp?.();
+  };
+
   return (
     <div className={cn("w-full h-full overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-600 scrollbar-track-neutral-800", className)}>
-      {data.map((node) => (
-        <TreeNodeComponent
-          key={node.id}
-          node={node}
-          level={0}
-          onNodeSelect={onNodeSelect}
-          onNodeToggle={onNodeToggle}
-          selectedNodeId={selectedNodeId}
-          expandedNodes={expandedNodes}
-          onContextMenu={onContextMenu}
+      {showBreadcrumb && (
+        <BreadcrumbNavigation
+          path={breadcrumbPath}
+          onNavigateTo={handleNavigateTo}
         />
-      ))}
+      )}
+      
+      <div className="space-y-1 p-2">
+        {/* Parent navigation item - always reserve space, show content only when navigable */}
+        {showBreadcrumb && (
+          <div
+            className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors ${
+              breadcrumbPath.length > 0 && onNavigateUp
+                ? 'hover:bg-black/20 cursor-pointer text-neutral-400 hover:text-white'
+                : 'text-transparent cursor-default'
+            }`}
+            onClick={breadcrumbPath.length > 0 && onNavigateUp ? onNavigateUp : undefined}
+            title={breadcrumbPath.length > 0 ? "Go to parent folder" : undefined}
+          >
+            <IconArrowUp size={16} />
+            <span className="text-sm font-medium">..</span>
+          </div>
+        )}
+        
+        {data.map((node) => (
+          <TreeNodeComponent
+            key={node.id}
+            node={node}
+            level={0}
+            onNodeSelect={onNodeSelect}
+            onNodeToggle={onNodeToggle}
+            selectedNodeId={selectedNodeId}
+            expandedNodes={expandedNodes}
+            onContextMenu={onContextMenu}
+            onNavigateToFolder={onNavigateToFolder}
+          />
+        ))}
+      </div>
     </div>
   );
 }
