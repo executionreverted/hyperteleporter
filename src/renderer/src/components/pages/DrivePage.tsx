@@ -203,7 +203,7 @@ export function DrivePage() {
           <SidebarBody className="justify-between gap-4 h-full">
             <div className="flex flex-1 flex-col overflow-x-hidden">
               {/* Logo */}
-              <div className="flex items-center gap-2 mb-8 flex-shrink-0">
+              <div className="flex items-center gap-2 mb-4 flex-shrink-0">
                 <div className="flex items-center gap-2">
                   <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-500 rounded-lg flex items-center justify-center">
                     <span className="text-white font-bold text-sm">H</span>
@@ -217,7 +217,7 @@ export function DrivePage() {
               {/* Navigation Links removed as requested */}
 
               {/* File Tree - Scrollable */}
-              <div className="flex-1 min-h-0 mt-8">
+              <div className="flex-1 min-h-0">
                 <div className="h-full flex flex-col">
                   <h3 className="text-sm font-medium text-neutral-300 mb-2 flex-shrink-0">
                     File System

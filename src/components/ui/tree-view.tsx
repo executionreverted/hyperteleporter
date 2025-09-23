@@ -111,6 +111,10 @@ const TreeNodeComponent = ({ node, level, onNodeSelect, onNodeToggle, selectedNo
 
   const handleSelect = () => {
     onNodeSelect?.(node);
+    // Also toggle folder expansion when clicking on folders
+    if (hasChildren) {
+      onNodeToggle?.(node);
+    }
   };
 
   return (
