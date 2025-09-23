@@ -7,6 +7,7 @@ import { ContentPanel } from "../../../../components/ui/content-panel";
 import { Dropzone } from "../../../../components/ui/dropzone";
 import { Meteors } from "../../../../components/ui/meteors";
 import { useParams, useNavigate } from "react-router-dom";
+import { IconFolderPlus, IconShare, IconUpload } from "@tabler/icons-react";
 
 // Mock data for the file system
 const mockFileSystem: TreeNode[] = [
@@ -103,32 +104,19 @@ const quickActions = [
   {
     label: "New Folder",
     href: "#",
-    icon: (
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" className="text-blue-500">
-        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" fill="currentColor"/>
-        <line x1="12" y1="8" x2="12" y2="16" stroke="currentColor" strokeWidth="2"/>
-        <line x1="8" y1="12" x2="16" y2="12" stroke="currentColor" strokeWidth="2"/>
-      </svg>
-    ),
+    icon: <IconFolderPlus size={16} className="text-blue-500" />,
   },
   {
     label: "Share",
     href: "#",
-    icon: (
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" className="text-purple-500">
-        <circle cx="18" cy="5" r="3" stroke="currentColor" strokeWidth="2" fill="none"/>
-        <circle cx="6" cy="12" r="3" stroke="currentColor" strokeWidth="2" fill="none"/>
-        <circle cx="18" cy="19" r="3" stroke="currentColor" strokeWidth="2" fill="none"/>
-        <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" stroke="currentColor" strokeWidth="2"/>
-        <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" stroke="currentColor" strokeWidth="2"/>
-      </svg>
-    ),
+    icon: <IconShare size={16} className="text-purple-500" />,
   },
 ];
 
 export function DrivePage() {
   const [selectedNode, setSelectedNode] = useState<TreeNode | undefined>();
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
+  const [fileSystem, setFileSystem] = useState<TreeNode[]>(mockFileSystem);
   const params = useParams();
   const navigate = useNavigate();
 
@@ -142,9 +130,48 @@ export function DrivePage() {
 
   const handleFileUpload = (files: File[]) => {
     console.log("Files uploaded:", files);
-    // TODO: Add files to the selected/focused folder
-    // For now, just log the files and show a mock message
-    alert(`Uploaded ${files.length} file(s) to ${selectedNode?.name || 'root folder'}`);
+    
+    // Create new file nodes from uploaded files
+    const newFiles: TreeNode[] = files.map((file, index) => ({
+      id: `uploaded-${Date.now()}-${index}`,
+      name: file.name,
+      type: 'file' as const,
+      size: `${(file.size / (1024 * 1024)).toFixed(2)} MB`,
+      modified: new Date().toLocaleDateString(),
+    }));
+
+    // Add files to the selected folder or root
+    setFileSystem(prevSystem => {
+      if (selectedNode && selectedNode.type === 'folder') {
+        // Add to selected folder
+        return addFilesToFolder(prevSystem, selectedNode.id, newFiles);
+      } else {
+        // Add to root
+        return [...prevSystem, ...newFiles];
+      }
+    });
+
+    // Show success message
+    const targetFolder = selectedNode?.type === 'folder' ? selectedNode.name : 'root folder';
+    alert(`Successfully uploaded ${files.length} file(s) to ${targetFolder}`);
+  };
+
+  // Helper function to add files to a specific folder
+  const addFilesToFolder = (nodes: TreeNode[], folderId: string, newFiles: TreeNode[]): TreeNode[] => {
+    return nodes.map(node => {
+      if (node.id === folderId && node.type === 'folder') {
+        return {
+          ...node,
+          children: [...(node.children || []), ...newFiles]
+        };
+      } else if (node.children) {
+        return {
+          ...node,
+          children: addFilesToFolder(node.children, folderId, newFiles)
+        };
+      }
+      return node;
+    });
   };
 
   const handleNodeToggle = (node: TreeNode) => {
@@ -197,7 +224,7 @@ export function DrivePage() {
                   </h3>
                   <div className="flex-1 min-h-0">
                     <TreeView
-                      data={mockFileSystem}
+                      data={fileSystem}
                       onNodeSelect={handleNodeSelect}
                       onNodeToggle={handleNodeToggle}
                       selectedNodeId={selectedNode?.id}
@@ -208,22 +235,7 @@ export function DrivePage() {
               </div>
             </div>
 
-            {/* Quick Actions */}
-            <div className="border-t border-neutral-700 pt-4 flex-shrink-0">
-              <div className="flex flex-col gap-2">
-                {quickActions.map((action, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => handleQuickAction(action)}
-                    className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-neutral-400 hover:bg-black/20 hover:text-white transition-colors"
-                    title={action.label}
-                  >
-                    {action.icon}
-                    <span>{action.label}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
+            {/* Quick Actions removed - now in header */}
 
             {/* User Profile */}
             <div className="border-t border-neutral-700 pt-4 flex-shrink-0">
@@ -255,12 +267,28 @@ export function DrivePage() {
                   {selectedNode ? `Selected: ${selectedNode.name}` : "Select a file or folder to view details"}
                 </p>
               </div>
-              <button
-                onClick={() => navigate("/")}
-                className="px-4 py-2 bg-neutral-800 text-neutral-300 rounded-lg hover:bg-neutral-700 transition-colors"
-              >
-                Back to Drives
-              </button>
+              <div className="flex items-center gap-4">
+                {/* Quick Actions */}
+                <div className="flex gap-2">
+                  {quickActions.map((action, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => handleQuickAction(action)}
+                      className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-neutral-400 hover:bg-black/20 hover:text-white transition-colors rounded-lg"
+                      title={action.label}
+                    >
+                      {action.icon}
+                      <span>{action.label}</span>
+                    </button>
+                  ))}
+                </div>
+                <button
+                  onClick={() => navigate("/")}
+                  className="px-4 py-2 bg-neutral-800 text-neutral-300 rounded-lg hover:bg-neutral-700 transition-colors"
+                >
+                  Back to Drives
+                </button>
+              </div>
             </div>
           </div>
 
