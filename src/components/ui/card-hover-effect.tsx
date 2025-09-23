@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from "motion/react";
 import { cn } from "../../renderer/lib/utils";
 import { useState } from "react";
+import diskSvg from "../../renderer/src/assets/disk.svg";
 
 export const HoverEffect = ({
   items,
@@ -87,7 +88,7 @@ export const Card = ({
         className
       )}
       style={{
-        backgroundImage: 'url(/src/renderer/src/assets/disk.svg)',
+        backgroundImage: `url(${diskSvg})`,
         backgroundSize: 'cover',
         backgroundPosition: 'center',
         backgroundRepeat: 'no-repeat',
