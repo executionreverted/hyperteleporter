@@ -1,9 +1,10 @@
 "use client";
-import React from "react";
 import { WavyBackground } from "../../../components/ui/wavy-background";
 import { MagicButton } from "./common/MagicButton";
+import { useNavigate } from "react-router-dom";
 
 export function Welcome() {
+    const navigate = useNavigate();
     return (
         <WavyBackground className="max-w-4xl mx-auto">
             <p className="text-2xl md:text-4xl lg:text-7xl text-white font-bold inter-var text-center">
@@ -14,7 +15,7 @@ export function Welcome() {
             </p>
             {/* center button */}
             <div className="flex justify-center mt-4">
-                <MagicButton className="mt-4 mx-auto">Get Started</MagicButton>
+                <MagicButton className="mx-auto" onClick={() => navigate('/drives')}>Get Started</MagicButton>
             </div>
         </WavyBackground>
     );

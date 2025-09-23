@@ -23,6 +23,8 @@
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
+    "@radix-ui/react-label": "^2.1.7",
+    "@tabler/icons-react": "^3.35.0",
     "@tailwindcss/vite": "^4.1.13",
     "@tsparticles/engine": "^3.9.1",
     "@tsparticles/react": "^3.0.0",
@@ -33,6 +35,7 @@
     "lucide-react": "^0.544.0",
     "motion": "^12.23.19",
     "react-element-to-jsx-string": "^17.0.1",
+    "react-router-dom": "^7.9.1",
     "simplex-noise": "^4.0.3",
     "tailwind-merge": "^3.3.1",
     "tailwindcss-animate": "^1.0.7"
