@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, startTransition } from "react";
 import { cn } from "../../../lib/utils";
 import { Sidebar, SidebarBody, SidebarLink } from "../../../../components/ui/sidebar";
 import { TreeView, TreeNode } from "../../../../components/ui/tree-view";
@@ -15,6 +15,8 @@ import { IconHome, IconSettings, IconUser } from "@tabler/icons-react";
 // Removed dummy data usage
 import Shuffle from "../../../../components/ui/Shuffle";
 import { Modal, ModalBody, ModalContent, ModalFooter, ModalTrigger, useModal } from "../../../../components/ui/animated-modal";
+import { MagicButton } from "../common/MagicButton";
+import MagicButtonWide from "../../../../components/ui/magic-button-wide";
 
 // Start empty; will load from Hyperdrive via IPC
 const mockFileSystem: TreeNode[] = [];
@@ -39,6 +41,7 @@ export function DrivePage() {
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
   const [fileSystem, setFileSystem] = useState<TreeNode[]>(mockFileSystem);
   const [lastFocusedFolder, setLastFocusedFolder] = useState<TreeNode | undefined>();
+  const [showNewFolderModal, setShowNewFolderModal] = useState(false);
   const params = useParams();
   const navigate = useNavigate();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -166,9 +169,8 @@ export function DrivePage() {
     setSelectedNode({ id: 'virtual-root', name: currentFolderPath === '/' ? 'Root' : currentFolderPath.split('/').filter(Boolean).slice(-1)[0] || 'Root', type: 'folder', children })
   }
 
-  function NewFolderModal({ driveId, currentFolder, onCreated, trigger }: { driveId: string, currentFolder: string, onCreated: () => Promise<void>, trigger: React.ReactNode }) {
+  function NewFolderModal({ driveId, currentFolder, onCreated, trigger, isOpen, onClose, onOpen }: { driveId: string, currentFolder: string, onCreated: () => Promise<void>, trigger: React.ReactNode, isOpen: boolean, onClose: () => void, onOpen: () => void }) {
     function FormContent() {
-      const { setOpen } = useModal();
       const [name, setName] = useState("");
       const [saving, setSaving] = useState(false);
 
@@ -179,7 +181,8 @@ export function DrivePage() {
           setSaving(true);
           await api?.drives?.createFolder?.(driveId, folderPath)
           await onCreated();
-          setOpen(false);
+          onClose();
+          setName(""); // Reset form
         } finally {
           setSaving(false);
         }
@@ -201,33 +204,45 @@ export function DrivePage() {
             </div>
           </ModalContent>
           <ModalFooter className="gap-4">
-            <button
-              onClick={() => setOpen(false)}
-              className="px-3 py-2 bg-gray-200 text-black dark:bg-black dark:border-black dark:text-white border border-gray-300 rounded-md text-sm"
+            <MagicButtonWide
+              variant="default"
+              onClick={() => {
+                onClose();
+                setName(""); // Reset form
+              }}
             >
               Cancel
-            </button>
-            <button
+            </MagicButtonWide>
+            <MagicButtonWide
+              variant="green"
               onClick={handleCreate}
               disabled={saving || !name.trim()}
-              className="px-3 py-2 bg-blue-600 text-white rounded-md text-sm disabled:opacity-50"
             >
               {saving ? 'Creating...' : 'Create'}
-            </button>
+            </MagicButtonWide>
           </ModalFooter>
         </>
       )
     }
 
     return (
-      <Modal>
-        <ModalTrigger className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-neutral-400 hover:bg-black/20 hover:text-white transition-colors rounded-lg">
+      <>
+        <MagicButton
+          variant="blue"
+          onClick={onOpen}
+          className="h-10 flex items-center gap-2 text-sm font-medium"
+        >
           {trigger}
-        </ModalTrigger>
-        <ModalBody>
-          <FormContent />
-        </ModalBody>
-      </Modal>
+        </MagicButton>
+        {isOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center">
+            <div className="fixed inset-0 bg-black/70 bg-opacity-20" onClick={onClose} />
+            <div className="relative bg-neutral-950 border border-neutral-800 rounded-2xl max-w-md w-full mx-4">
+              <FormContent />
+            </div>
+          </div>
+        )}
+      </>
     )
   }
   
@@ -262,22 +277,24 @@ export function DrivePage() {
 
   const handleFileClick = async (node: TreeNode) => {
     if (node.type === 'folder') {
-      setNavigationDirection('forward');
       const driveId = params.driveId as string | undefined
       if (!driveId) return
+      
       try {
-        // Stack current view
-        setNavigationStack((prev) => [...prev, currentView]);
-        // Update breadcrumb path
-        setBreadcrumbPath((prev) => [...prev, node.name]);
-        // Load folder contents from IPC
+        // Load folder contents from IPC first
         const folderPath = node.id.startsWith('/') ? node.id : `/${node.id}`
         const entries: Array<{ key: string, value: any }> = await invokeListFolder(driveId, folderPath, false)
         const children = buildNodesForFolder(folderPath, entries)
-        // Apply view
-        setCurrentView(children)
-        setExpandedNodes(new Set())
-        setSelectedNode({ ...node, children })
+        
+        // Batch all state updates together to prevent flickering
+        startTransition(() => {
+          setNavigationDirection('forward');
+          setNavigationStack((prev) => [...prev, currentView]);
+          setBreadcrumbPath((prev) => [...prev, node.name]);
+          setCurrentView(children);
+          setExpandedNodes(new Set());
+          setSelectedNode({ ...node, children });
+        });
       } catch {}
     } else {
       // Capture the parent folder context when previewing a file
@@ -642,6 +659,9 @@ export function DrivePage() {
                         driveId={driveId}
                         currentFolder={currentFolderPath}
                         onCreated={reloadCurrentFolder}
+                        isOpen={showNewFolderModal}
+                        onClose={() => setShowNewFolderModal(false)}
+                        onOpen={() => setShowNewFolderModal(true)}
                         trigger={
                           <>
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -668,6 +688,10 @@ export function DrivePage() {
             canNavigateUp={canGoBack}
             driveId={params.driveId as string}
             onFileDeleted={reloadCurrentFolder}
+            onCreateFolder={(parentPath) => {
+              setShowNewFolderModal(true);
+            }}
+            onRefresh={reloadCurrentFolder}
           />
           
           {/* Dropzone */}

@@ -25,7 +25,7 @@ import {
   IconEye,
   IconArrowUp
 } from "@tabler/icons-react";
-import { ContextMenuAction } from "./context-menu";
+import { ContextMenuAction, useContextMenu, ContextMenu } from "./context-menu";
 
 export interface TreeNode {
   id: string;
@@ -51,6 +51,8 @@ interface TreeViewProps {
   breadcrumbPath?: string[];
   navigationDirection?: 'forward' | 'backward';
   className?: string;
+  onCreateFolder?: (parentPath: string) => void;
+  onRefresh?: () => void;
 }
 
 interface TreeNodeProps {
@@ -62,6 +64,8 @@ interface TreeNodeProps {
   expandedNodes?: Set<string>;
   onContextMenu?: (node: TreeNode, actions: ContextMenuAction[], event: React.MouseEvent) => void;
   onNavigateToFolder?: (node: TreeNode) => void;
+  onCreateFolder?: (parentPath: string) => void;
+  onRefresh?: () => void;
 }
 
 const FolderIcon = ({ isOpen }: { isOpen: boolean }) => (
@@ -116,7 +120,7 @@ const FileIcon = ({ type }: { type: string }) => {
   return getFileIcon();
 };
 
-const TreeNodeComponent = ({ node, level, onNodeSelect, onNodeToggle, selectedNodeId, expandedNodes, onContextMenu, onNavigateToFolder }: TreeNodeProps) => {
+const TreeNodeComponent = ({ node, level, onNodeSelect, onNodeToggle, selectedNodeId, expandedNodes, onContextMenu, onNavigateToFolder, onCreateFolder, onRefresh }: TreeNodeProps) => {
   const hasChildren = node.children && node.children.length > 0;
   const isSelected = selectedNodeId === node.id;
   const isExpanded = expandedNodes?.has(node.id) || false;
@@ -204,7 +208,7 @@ const TreeNodeComponent = ({ node, level, onNodeSelect, onNodeToggle, selectedNo
         id: 'new-folder',
         label: 'New Folder',
         icon: <IconFolderPlus size={16} />,
-        onClick: () => console.log('New Folder in', node.name),
+        onClick: () => onCreateFolder?.(node.id),
         disabled: node.type === 'file',
       },
       {
@@ -236,6 +240,7 @@ const TreeNodeComponent = ({ node, level, onNodeSelect, onNodeToggle, selectedNo
   return (
     <div>
       <motion.div
+        data-tree-item
         className={cn(
           "flex items-center gap-2 py-1 px-2 rounded-md cursor-pointer hover:bg-black/20 transition-colors select-none",
           isSelected && "bg-blue-900/30 text-blue-400",
@@ -303,6 +308,8 @@ const TreeNodeComponent = ({ node, level, onNodeSelect, onNodeToggle, selectedNo
                 expandedNodes={expandedNodes}
                 onContextMenu={onContextMenu}
                 onNavigateToFolder={onNavigateToFolder}
+                onCreateFolder={onCreateFolder}
+                onRefresh={onRefresh}
               />
             ))}
           </motion.div>
@@ -372,8 +379,28 @@ export function TreeView({
   showBreadcrumb = false,
   breadcrumbPath = [],
   navigationDirection = 'forward',
-  className 
+  className,
+  onCreateFolder,
+  onRefresh
 }: TreeViewProps) {
+  const { isOpen, position, actions, openContextMenu, closeContextMenu } = useContextMenu()
+
+  const onContainerRightClick = (e: React.MouseEvent) => {
+    // Only show container menu if clicking on empty space, not on tree items
+    if ((e.target as HTMLElement).closest('[data-tree-item]')) {
+      return // Let the tree item handle its own context menu
+    }
+    
+    e.preventDefault()
+    e.stopPropagation()
+    
+    const containerActions: ContextMenuAction[] = [
+      { id: 'create-folder', label: 'Create Folder', icon: <IconFolderPlus size={16} />, onClick: () => onCreateFolder?.('/') },
+      { id: 'refresh', label: 'Refresh', icon: <IconArrowUp size={16} />, onClick: () => onRefresh?.() },
+    ]
+    
+    openContextMenu(e, containerActions)
+  }
   const handleNavigateTo = (index: number) => {
     // This will be handled by the parent component
     // For now, we'll just navigate up to the root
@@ -381,7 +408,7 @@ export function TreeView({
   };
 
   return (
-    <div className={cn("w-full h-full overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-600 scrollbar-track-neutral-800", className)}>
+    <div className={cn("w-full h-full overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-600 scrollbar-track-neutral-800", className)} onContextMenu={onContainerRightClick}>
       {showBreadcrumb && (
         <BreadcrumbNavigation
           path={breadcrumbPath}
@@ -417,10 +444,10 @@ export function TreeView({
       <AnimatePresence mode="wait">
         <motion.div
           key={(breadcrumbPath && breadcrumbPath.length > 0) ? breadcrumbPath.join('/') : 'root'}
-          initial={{ opacity: 0, x: navigationDirection === 'forward' ? 16 : -16 }}
+          initial={{ opacity: 0, x: navigationDirection === 'forward' ? 8 : -8 }}
           animate={{ opacity: 1, x: 0 }}
-          exit={{ opacity: 0, x: navigationDirection === 'forward' ? -16 : 16 }}
-          transition={{ duration: 0.22 }}
+          exit={{ opacity: 0, x: navigationDirection === 'forward' ? -8 : 8 }}
+          transition={{ duration: 0.12, ease: "easeOut" }}
           className="space-y-1 p-2"
         >
           {/* Parent navigation item - always reserve space, show content only when navigable */}
@@ -450,10 +477,13 @@ export function TreeView({
               expandedNodes={expandedNodes}
               onContextMenu={onContextMenu}
               onNavigateToFolder={onNavigateToFolder}
+              onCreateFolder={onCreateFolder}
+              onRefresh={onRefresh}
             />
           ))}
         </motion.div>
       </AnimatePresence>
+      <ContextMenu isOpen={isOpen} position={position} actions={actions} onClose={closeContextMenu} />
     </div>
   );
 }

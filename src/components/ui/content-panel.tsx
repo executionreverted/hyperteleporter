@@ -16,7 +16,9 @@ import {
   IconShare, 
   IconTrash,
   IconEye,
-  IconCopy 
+  IconCopy,
+  IconFolderPlus,
+  IconArrowUp
 } from "@tabler/icons-react";
 import { ContextMenu, useContextMenu, type ContextMenuAction } from "./context-menu";
 
@@ -27,6 +29,8 @@ interface ContentPanelProps {
   canNavigateUp?: boolean;
   driveId?: string;
   onFileDeleted?: () => void;
+  onCreateFolder?: (parentPath: string) => void;
+  onRefresh?: () => void;
   className?: string;
 }
 
@@ -231,9 +235,9 @@ const FilePreview = ({ node }: { node: TreeNode }) => {
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
+      initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3 }}
+      transition={{ duration: 0.15, ease: "easeOut" }}
     >
       {renderPreview()}
     </motion.div>
@@ -412,12 +416,12 @@ function MediaPreview({ node, type }: { node: TreeNode; type: 'audio' | 'video' 
 const FileMetadata = ({ node }: { node: TreeNode }) => {
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
+      initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3 }}
+      transition={{ duration: 0.15, ease: "easeOut" }}
       className="p-6"
     >
-      <div className="bg-black/10 rounded-lg p-6">
+      <div className="bg-black/10 rounded-lg p-8 h-full">
         <div className="mb-4">
           <h3 className="text-lg font-semibold text-white mb-4">
             File Information
@@ -555,12 +559,12 @@ const FolderContents = ({ node, onFileClick, onNavigateUp, canNavigateUp, driveI
   }
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
+      initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3 }}
-      className="p-6"
+      transition={{ duration: 0.15, ease: "easeOut" }}
+      className="p-6 h-full"
     >
-      <div className="bg-black/10 rounded-lg p-6">
+      <div className="bg-black/10 rounded-lg p-8 h-full">
         <div className="flex items-center justify-between mb-4 gap-2">
           <h3 className="text-lg font-semibold text-white">
             Folder Contents
@@ -632,7 +636,7 @@ const FolderContents = ({ node, onFileClick, onNavigateUp, canNavigateUp, driveI
   );
 };
 
-export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavigateUp, driveId, onFileDeleted, className }: ContentPanelProps) {
+export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavigateUp, driveId, onFileDeleted, onCreateFolder, onRefresh, className }: ContentPanelProps) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const api: any = (window as any)?.api
   const { isOpen, position, actions, openContextMenu, closeContextMenu } = useContextMenu()
@@ -713,6 +717,11 @@ export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavig
     } else {
       console.log('[ContentPanel] Adding folder actions for:', selectedNode.name)
       actions.push(
+        { id: 'create-folder', label: 'Create Folder', icon: <IconFolderPlus size={16} />, onClick: () => {
+          console.log('[ContentPanel] Create folder clicked, selectedNode.id:', selectedNode.id)
+          onCreateFolder?.(selectedNode.id)
+        }},
+        { id: 'refresh', label: 'Refresh', icon: <IconArrowUp size={16} />, onClick: () => onRefresh?.() },
         { id: 'copy', label: 'Copy path', icon: <IconCopy size={16} />, onClick: handleCopyPath },
       )
     }
@@ -726,9 +735,25 @@ export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavig
     openContextMenu(e, menuActions)
   }
 
+  const onEmptyAreaRightClick = (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    
+    const emptyAreaActions: ContextMenuAction[] = [
+      { id: 'create-folder', label: 'Create Folder', icon: <IconFolderPlus size={16} />, onClick: () => {
+        onCreateFolder?.('/')
+      }},
+      { id: 'refresh', label: 'Refresh', icon: <IconArrowUp size={16} />, onClick: () => {
+        onRefresh?.()
+      }},
+    ]
+    
+    openContextMenu(e, emptyAreaActions)
+  }
+
   if (!selectedNode) {
     return (
-      <div className={cn("flex items-center justify-center h-full", className)}>
+      <div className={cn("flex items-center justify-center h-full", className)} onContextMenu={onEmptyAreaRightClick}>
       <div className="text-center">
         <div className="w-16 h-16 bg-black/20 rounded-lg mx-auto mb-4 flex items-center justify-center">
           <IconFolder size={32} className="text-neutral-400" />
@@ -740,12 +765,13 @@ export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavig
           Choose an item from the sidebar to view its contents or preview
         </p>
       </div>
+      <ContextMenu isOpen={isOpen} position={position} actions={actions} onClose={closeContextMenu} />
       </div>
     );
   }
 
   return (
-    <div className={cn("h-full overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-600 scrollbar-track-neutral-800 bg-black/5", className)} onContextMenu={onRightClick}>
+    <div className={cn("h-full overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-600 scrollbar-track-neutral-800 bg-black/5", className)}>
       {/* Actions Header - only for files */}
       {selectedNode.type === 'file' && (
         <div className="sticky top-0 z-10 bg-black/5 backdrop-blur-sm border-b border-neutral-700/30 p-4">
@@ -772,12 +798,14 @@ export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavig
       )}
       
       {selectedNode.type === 'folder' ? (
-        <FolderContents node={selectedNode} onFileClick={onFileClick} onNavigateUp={onNavigateUp} canNavigateUp={canNavigateUp} driveId={driveId} onFileDeleted={onFileDeleted} />
+        <div className="h-full" onContextMenu={onRightClick}>
+          <FolderContents node={selectedNode} onFileClick={onFileClick} onNavigateUp={onNavigateUp} canNavigateUp={canNavigateUp} driveId={driveId} onFileDeleted={onFileDeleted} />
+        </div>
       ) : (
-        <>
+        <div onContextMenu={onRightClick}>
           <FilePreview node={selectedNode} />
           <FileMetadata node={selectedNode} />
-        </>
+        </div>
       )}
 
       <ContextMenu isOpen={isOpen} position={position} actions={actions} onClose={closeContextMenu} />
