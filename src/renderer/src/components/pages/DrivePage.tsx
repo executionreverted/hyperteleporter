@@ -41,6 +41,7 @@ export function DrivePage() {
   const [currentView, setCurrentView] = useState<TreeNode[]>(mockFileSystem);
   const [breadcrumbPath, setBreadcrumbPath] = useState<string[]>([]);
   const [navigationStack, setNavigationStack] = useState<TreeNode[][]>([mockFileSystem]);
+  const [navigationDirection, setNavigationDirection] = useState<'forward' | 'backward'>('forward');
   
   // Context menu state
   const { isOpen, position, openContextMenu, closeContextMenu } = useContextMenu();
@@ -61,6 +62,7 @@ export function DrivePage() {
 
   const handleNavigateToFolder = (node: TreeNode) => {
     if (node.children) {
+      setNavigationDirection('forward');
       // Add current view to navigation stack
       setNavigationStack(prev => [...prev, currentView]);
       
@@ -80,6 +82,7 @@ export function DrivePage() {
 
   const handleNavigateUp = () => {
     if (navigationStack.length > 1) {
+      setNavigationDirection('backward');
       // Remove the last item from navigation stack
       const newStack = navigationStack.slice(0, -1);
       setNavigationStack(newStack);
@@ -204,6 +207,7 @@ export function DrivePage() {
                       onNavigateToFolder={handleNavigateToFolder}
                       showBreadcrumb={true}
                       breadcrumbPath={breadcrumbPath}
+                      navigationDirection={navigationDirection}
                     />
                   </div>
                 </div>

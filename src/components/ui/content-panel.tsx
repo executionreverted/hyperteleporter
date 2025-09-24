@@ -192,6 +192,9 @@ const FileMetadata = ({ node }: { node: TreeNode }) => {
 };
 
 const FolderContents = ({ node, onFileClick }: { node: TreeNode; onFileClick?: (node: TreeNode) => void }) => {
+  const totalItems = node.children ? node.children.length : 0;
+  const folderCount = node.children ? node.children.filter(c => c.type === 'folder').length : 0;
+  const fileCount = totalItems - folderCount;
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -200,9 +203,24 @@ const FolderContents = ({ node, onFileClick }: { node: TreeNode; onFileClick?: (
       className="p-6"
     >
       <div className="bg-black/10 rounded-lg p-6">
-        <h3 className="text-lg font-semibold text-white mb-4">
-          Folder Contents
-        </h3>
+        <div className="flex items-center justify-between mb-4 gap-2">
+          <h3 className="text-lg font-semibold text-white">
+            Folder Contents
+          </h3>
+          <div className="text-sm text-neutral-400 truncate">
+            <span className="text-white font-medium">{node.name}</span>
+            <span className="mx-2">•</span>
+            <span>{totalItems} items</span>
+            <span className="mx-2">•</span>
+            <span>{folderCount} folders, {fileCount} files</span>
+            {node.modified && (
+              <>
+                <span className="mx-2">•</span>
+                <span>Modified {node.modified}</span>
+              </>
+            )}
+          </div>
+        </div>
         
         {node.children && node.children.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

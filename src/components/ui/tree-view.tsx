@@ -1,6 +1,6 @@
 "use client";
 import { cn } from "../../renderer/lib/utils";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { 
   IconFolder, 
@@ -49,6 +49,7 @@ interface TreeViewProps {
   onNavigateToFolder?: (node: TreeNode) => void;
   showBreadcrumb?: boolean;
   breadcrumbPath?: string[];
+  navigationDirection?: 'forward' | 'backward';
   className?: string;
 }
 
@@ -119,30 +120,42 @@ const TreeNodeComponent = ({ node, level, onNodeSelect, onNodeToggle, selectedNo
   const hasChildren = node.children && node.children.length > 0;
   const isSelected = selectedNodeId === node.id;
   const isExpanded = expandedNodes?.has(node.id) || false;
+  const clickTimeoutRef = useRef<number | null>(null);
 
   const handleToggle = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (hasChildren) {
+    // Allow expanding only up to 3 nested levels (levels 0, 1, and 2 can expand their children)
+    if (hasChildren && level < 3) {
       onNodeToggle?.(node);
     }
   };
 
-  const handleSelect = () => {
-    onNodeSelect?.(node);
-    
-    // Check if this is a folder with nested folders (2+ levels deep)
-    if (hasChildren && node.children) {
-      const hasNestedFolders = node.children.some(child => 
-        child.type === 'folder' && child.children && child.children.length > 0
-      );
-      
-      if (hasNestedFolders) {
-        // Navigate to this folder as a pseudo-root
-        onNavigateToFolder?.(node);
-      } else {
-        // Regular expansion for folders without nested folders
-        onNodeToggle?.(node);
+  const handleClick = () => {
+    // Use a small delay to differentiate single vs double click
+    if (clickTimeoutRef.current) {
+      window.clearTimeout(clickTimeoutRef.current);
+    }
+    // @ts-ignore - window.setTimeout returns a number in browsers
+    clickTimeoutRef.current = window.setTimeout(() => {
+      onNodeSelect?.(node);
+      if (node.type === 'folder') {
+        // Single click expands/collapses up to 3 levels deep
+        if (hasChildren && level < 3) {
+          onNodeToggle?.(node);
+        }
       }
+      clickTimeoutRef.current = null;
+    }, 200);
+  };
+
+  const handleDoubleClick = () => {
+    // Cancel pending single-click action
+    if (clickTimeoutRef.current) {
+      window.clearTimeout(clickTimeoutRef.current);
+      clickTimeoutRef.current = null;
+    }
+    if (node.type === 'folder') {
+      onNavigateToFolder?.(node);
     }
   };
 
@@ -226,17 +239,18 @@ const TreeNodeComponent = ({ node, level, onNodeSelect, onNodeToggle, selectedNo
     <div>
       <motion.div
         className={cn(
-          "flex items-center gap-2 py-1 px-2 rounded-md cursor-pointer hover:bg-black/20 transition-colors",
+          "flex items-center gap-2 py-1 px-2 rounded-md cursor-pointer hover:bg-black/20 transition-colors select-none",
           isSelected && "bg-blue-900/30 text-blue-400",
           "group"
         )}
         style={{ paddingLeft: `${level * 16 + 8}px` }}
-        onClick={handleSelect}
+        onClick={handleClick}
+        onDoubleClick={handleDoubleClick}
         onContextMenu={handleContextMenu}
         whileHover={{ x: 2 }}
         transition={{ duration: 0.2 }}
       >
-        {hasChildren && (
+        {hasChildren && level < 3 && (
           <button
             onClick={handleToggle}
             className="p-0.5 hover:bg-black/20 rounded transition-colors"
@@ -359,6 +373,7 @@ export function TreeView({
   onNavigateToFolder,
   showBreadcrumb = false,
   breadcrumbPath = [],
+  navigationDirection = 'forward',
   className 
 }: TreeViewProps) {
   const handleNavigateTo = (index: number) => {
@@ -376,37 +391,46 @@ export function TreeView({
         />
       )}
       
-      <div className="space-y-1 p-2">
-        {/* Parent navigation item - always reserve space, show content only when navigable */}
-        {showBreadcrumb && (
-          <div
-            className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors ${
-              breadcrumbPath.length > 0 && onNavigateUp
-                ? 'hover:bg-black/20 cursor-pointer text-neutral-400 hover:text-white'
-                : 'text-transparent cursor-default'
-            }`}
-            onClick={breadcrumbPath.length > 0 && onNavigateUp ? onNavigateUp : undefined}
-            title={breadcrumbPath.length > 0 ? "Go to parent folder" : undefined}
-          >
-            <IconArrowUp size={16} />
-            <span className="text-sm font-medium">..</span>
-          </div>
-        )}
-        
-        {data.map((node) => (
-          <TreeNodeComponent
-            key={node.id}
-            node={node}
-            level={0}
-            onNodeSelect={onNodeSelect}
-            onNodeToggle={onNodeToggle}
-            selectedNodeId={selectedNodeId}
-            expandedNodes={expandedNodes}
-            onContextMenu={onContextMenu}
-            onNavigateToFolder={onNavigateToFolder}
-          />
-        ))}
-      </div>
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={(breadcrumbPath && breadcrumbPath.length > 0) ? breadcrumbPath.join('/') : 'root'}
+          initial={{ opacity: 0, x: navigationDirection === 'forward' ? 16 : -16 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={{ opacity: 0, x: navigationDirection === 'forward' ? -16 : 16 }}
+          transition={{ duration: 0.22 }}
+          className="space-y-1 p-2"
+        >
+          {/* Parent navigation item - always reserve space, show content only when navigable */}
+          {showBreadcrumb && (
+            <div
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors select-none ${
+                breadcrumbPath.length > 0 && onNavigateUp
+                  ? 'hover:bg-black/20 cursor-pointer text-neutral-400 hover:text-white'
+                  : 'text-transparent cursor-default'
+              }`}
+              onClick={breadcrumbPath.length > 0 && onNavigateUp ? onNavigateUp : undefined}
+              title={breadcrumbPath.length > 0 ? "Go to parent folder" : undefined}
+            >
+              <IconArrowUp size={16} />
+              <span className="text-sm font-medium">..</span>
+            </div>
+          )}
+          
+          {data.map((node) => (
+            <TreeNodeComponent
+              key={node.id}
+              node={node}
+              level={0}
+              onNodeSelect={onNodeSelect}
+              onNodeToggle={onNodeToggle}
+              selectedNodeId={selectedNodeId}
+              expandedNodes={expandedNodes}
+              onContextMenu={onContextMenu}
+              onNavigateToFolder={onNavigateToFolder}
+            />
+          ))}
+        </motion.div>
+      </AnimatePresence>
     </div>
   );
 }
