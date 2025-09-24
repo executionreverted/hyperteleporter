@@ -6,6 +6,7 @@ import { TreeView, TreeNode } from "../../../../components/ui/tree-view";
 import { ContentPanel } from "../../../../components/ui/content-panel";
 import { Dropzone } from "../../../../components/ui/dropzone";
 import { Meteors } from "../../../../components/ui/meteors";
+import Prism from "../../../../components/ui/prism";
 import { ContextMenu, useContextMenu, ContextMenuAction } from "../../../../components/ui/context-menu";
 import { useParams, useNavigate } from "react-router-dom";
 import { IconFolderPlus, IconShare, IconUpload } from "@tabler/icons-react";
@@ -268,6 +269,22 @@ export function DrivePage() {
           {/* Dropzone */}
           <Dropzone onFileUpload={handleFileUpload} />
         </div>
+      </div>
+      
+      {/* Prism Background */}
+      <div className="absolute inset-0 z-0">
+        <Prism 
+          height={3.5}
+          baseWidth={5}
+          animationType="3drotate"
+          glow={0.3}
+          noise={0.3}
+          scale={4.2}
+          hueShift={0.5}
+          colorFrequency={2.7}
+          timeScale={0.12}
+          bloom={1.2}
+        />
       </div>
       
       {/* Meteors Background */}
