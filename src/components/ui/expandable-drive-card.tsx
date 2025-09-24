@@ -26,6 +26,7 @@ import {
 import { MagicButton } from "../../renderer/src/components/common/MagicButton";
 import MagicButtonWide from "./magic-button-wide";
 import diskSvg from "../../renderer/src/assets/disk.svg";
+import Masonry from "./masonry";
 
 export interface Drive {
   id: string;
@@ -105,6 +106,27 @@ export function ExpandableDriveCard({
       onMouseEnter={() => setHoveredIndex(0)}
       onMouseLeave={() => setHoveredIndex(null)}
     >
+      {/* Hover effect positioned relative to the outer container */}
+      <AnimatePresence>
+        {hoveredIndex === 0 && (
+          <motion.span
+            className="absolute inset-0 bg-neutral-200 dark:bg-slate-800/[0.8] block rounded-3xl"
+            layoutId={`hoverBackground-${drive.id}`}
+            initial={{ opacity: 0 }}
+            animate={{
+              opacity: 1,
+              transition: { duration: 0.15 },
+            }}
+            exit={{
+              opacity: 0,
+              transition: { duration: 0.15, delay: 0.2 },
+            }}
+            style={{
+              bottom: -16,
+            }}
+          />
+        )}
+      </AnimatePresence>
       
       <Expandable
         expandDirection="vertical"
@@ -128,30 +150,11 @@ export function ExpandableDriveCard({
                 )}
                 style={{
                   backgroundImage: `url(${diskSvg})`,
-                  backgroundSize: 'cover',
+                  backgroundSize: '80%',
                   backgroundPosition: 'center',
                   backgroundRepeat: 'no-repeat',
                 }}
               >
-                {/* Hover effect positioned relative to the card content */}
-                <AnimatePresence>
-                  {hoveredIndex === 0 && (
-                    <motion.span
-                      className="absolute inset-0 bg-neutral-200 dark:bg-slate-800/[0.8] block rounded-3xl -z-10"
-                      layoutId={`hoverBackground-${drive.id}`}
-                      initial={{ opacity: 0 }}
-                      animate={{
-                        opacity: 1,
-                        transition: { duration: 0.15 },
-                      }}
-                      exit={{
-                        opacity: 0,
-                        transition: { duration: 0.15, delay: 0.2 },
-                      }}
-                    />
-                  )}
-                </AnimatePresence>
-
                 {/* Background overlay with B&W filter and low opacity */}
                 <div 
                   className="absolute inset-0 bg-black/60"
@@ -348,7 +351,7 @@ export function ExpandableDriveGrid({
   );
 }
 
-// Height-only expansion grid for drives
+// Custom Masonry grid for drives
 export function DynamicDriveGrid({ 
   drives, 
   onBrowse, 
@@ -358,40 +361,35 @@ export function DynamicDriveGrid({
 }: ExpandableDriveGridProps) {
   const [expandedDriveId, setExpandedDriveId] = useState<string | null>(null);
 
+  // Transform drives to match Masonry component format
+  const masonryItems = drives.map(drive => ({
+    id: drive.id,
+    img: diskSvg, // Use the disk SVG as background
+    height: expandedDriveId === drive.id ? 400 : 200, // Dynamic height based on expansion
+    url: drive.link,
+    drive: drive, // Keep original drive data
+    onBrowse,
+    onShare,
+    onDelete,
+    isExpanded: expandedDriveId === drive.id,
+    onExpandChange: (expanded: boolean) => {
+      setExpandedDriveId(expanded ? drive.id : null);
+    }
+  }));
+
   return (
     <div className={cn("w-full", className)}>
       <div className="w-full p-4 pb-8">
-        <div className="w-full grid gap-4" style={{
-          gridTemplateColumns: 'repeat(3, 1fr)', // Always 3 columns (1/3 width each)
-          gridAutoRows: 'minmax(200px, auto)' // Allow rows to grow as needed
-        }}>
-          {drives.map((drive, index) => {
-            const isExpanded = expandedDriveId === drive.id;
-            return (
-              <div 
-                key={drive.id} 
-                className={cn(
-                  "transition-all duration-500 ease-in-out",
-                  isExpanded 
-                    ? "col-span-1" // Expanded: takes 1 column, height auto-adjusts
-                    : "col-span-1"  // Default: takes 1 column, height auto-adjusts
-                )}
-              >
-                <ExpandableDriveCard
-                  drive={drive}
-                  onBrowse={onBrowse}
-                  onShare={onShare}
-                  onDelete={onDelete}
-                  isExpanded={isExpanded}
-                  onExpandChange={(expanded) => {
-                    setExpandedDriveId(expanded ? drive.id : null);
-                  }}
-                  className="w-full"
-                />
-              </div>
-            );
-          })}
-        </div>
+        <Masonry
+          items={masonryItems}
+          ease="power3.out"
+          duration={0.6}
+          stagger={0.05}
+          animateFrom="bottom"
+          scaleOnHover={false}
+          blurToFocus={false}
+          colorShiftOnHover={false}
+        />
       </div>
     </div>
   );

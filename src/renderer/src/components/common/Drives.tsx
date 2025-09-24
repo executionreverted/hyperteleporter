@@ -56,14 +56,14 @@ export function DrivesList() {
     <div className="h-screen bg-black flex items-center justify-center overflow-hidden">
       <div className="relative w-full max-w-6xl flex flex-col p-8">
         <div className="absolute inset-0 h-full w-full transform rounded-2xl bg-gradient-to-r from-blue-500 to-teal-500 blur-3xl" />
-        <div className="relative flex max-h-[80vh] flex-col items-start justify-start rounded-2xl border border-gray-800 bg-black/90 px-8 py-8 shadow-xl">
+        <div className="relative flex h-[80vh] flex-col items-start justify-start rounded-2xl border border-gray-800 bg-black/90 px-8 py-8 shadow-xl">
           <div className="flex justify-between items-center mb-8 w-full flex-shrink-0">
             <h2 className="text-3xl font-bold text-white">Your Drives</h2>
             <CreateDriveModal 
               triggerButton={<MagicButton>Create A Drive</MagicButton>} 
             />
           </div>
-          <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-600 scrollbar-track-neutral-800 pr-2">
+          <div className="flex-1 min-h-0 w-full overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-600 scrollbar-track-neutral-800 pr-2">
             <DynamicDriveGrid 
               drives={drives} 
               onBrowse={handleBrowseDrive}
