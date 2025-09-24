@@ -32,27 +32,8 @@ export const HoverEffect = ({
         <div
           key={item?.id}
           className="relative group block p-2 h-48 w-full min-w-[200px] cursor-pointer"
-          onMouseEnter={() => setHoveredIndex(idx)}
-          onMouseLeave={() => setHoveredIndex(null)}
           onClick={() => onItemClick?.(item.link)}
         >
-          <AnimatePresence>
-            {hoveredIndex === idx && (
-              <motion.span
-                className="absolute inset-0 h-full w-full bg-neutral-200 dark:bg-slate-800/[0.8] block  rounded-3xl"
-                layoutId="hoverBackground"
-                initial={{ opacity: 0 }}
-                animate={{
-                  opacity: 1,
-                  transition: { duration: 0.15 },
-                }}
-                exit={{
-                  opacity: 0,
-                  transition: { duration: 0.15, delay: 0.2 },
-                }}
-              />
-            )}
-          </AnimatePresence>
           <Card>
             <CardTitle>{item.title}</CardTitle>
             <CardDescription>{item.description}</CardDescription>
@@ -84,7 +65,7 @@ export const Card = ({
   return (
     <div
       className={cn(
-        "rounded-2xl h-full w-full min-h-[180px] min-w-[180px] overflow-hidden bg-black border border-transparent dark:border-white/[0.2] group-hover:border-slate-700 relative z-20 flex flex-col",
+        "rounded-2xl h-full w-full min-h-[180px] min-w-[180px] overflow-hidden bg-black border border-transparent dark:border-white/[0.2] relative z-20 flex flex-col",
         className
       )}
       style={{
@@ -181,7 +162,7 @@ export const DeleteButton = ({
     <button
       onClick={onClick}
       className={cn(
-        "opacity-0 group-hover:opacity-100 transition-opacity duration-200 p-1.5 rounded-full hover:bg-red-500/20 text-red-400 hover:text-red-300",
+        "opacity-100 transition-opacity duration-200 p-1.5 rounded-full hover:bg-red-500/20 text-red-400 hover:text-red-300",
         className
       )}
       title="Delete drive"

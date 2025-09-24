@@ -47,6 +47,8 @@ interface ExpandableDriveCardProps {
   onDelete?: (drive: Drive) => void;
   className?: string;
   isExpanded?: boolean;
+  isAnimating?: boolean;
+  isPending?: boolean;
   onExpandChange?: (expanded: boolean) => void;
   onExpandComplete?: () => void;
   onCollapseComplete?: () => void;
@@ -59,11 +61,12 @@ export function ExpandableDriveCard({
   onDelete, 
   className,
   isExpanded: controlledExpanded,
+  isAnimating = false,
+  isPending = false,
   onExpandChange,
   onExpandComplete,
   onCollapseComplete
 }: ExpandableDriveCardProps) {
-  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
 
   const formatDate = (date: Date) => {
     return new Intl.DateTimeFormat('en-US', {
@@ -107,37 +110,21 @@ export function ExpandableDriveCard({
         "relative group block p-2 cursor-pointer transition-all duration-300 ease-in-out",
         className
       )}
-      onMouseEnter={() => setHoveredIndex(0)}
-      onMouseLeave={() => setHoveredIndex(null)}
     >
       {/* Hover effect positioned relative to the outer container */}
-      <AnimatePresence>
-        {hoveredIndex === 0 && (
-          <motion.span
-            className="absolute inset-0 bg-neutral-200 dark:bg-slate-800/[0.8] block rounded-3xl"
-            layoutId={`hoverBackground-${drive.id}`}
-            initial={{ opacity: 0 }}
-            animate={{
-              opacity: 1,
-              transition: { duration: 0.15 },
-            }}
-            exit={{
-              opacity: 0,
-              transition: { duration: 0.15, delay: 0.2 },
-            }}
-            style={{
-              bottom: -16,
-            }}
-          />
-        )}
-      </AnimatePresence>
       
       <Expandable
         expandDirection="vertical"
         expandBehavior="replace"
         initialDelay={0.1}
         expanded={controlledExpanded}
-        onToggle={() => onExpandChange?.(!controlledExpanded)}
+        onToggle={() => {
+          // Prevent clicks during animation
+          if (isAnimating) {
+            return;
+          }
+          onExpandChange?.(!controlledExpanded);
+        }}
       >
         {({ isExpanded }) => (
           <ExpandableTrigger>
@@ -151,9 +138,11 @@ export function ExpandableDriveCard({
             >
               <div
                 className={cn(
-                  "rounded-2xl h-full w-full overflow-hidden border border-transparent dark:border-white/[0.2] group-hover:border-slate-700 relative flex flex-col",
-                  "transition-all duration-300 ease-in-out",
-                  isExpanded ? "z-50 shadow-2xl" : "z-20 shadow-lg" // Higher z-index and shadow when expanded
+                  "rounded-2xl h-full w-full overflow-hidden border border-transparent dark:border-white/[0.2] relative flex flex-col",
+                  "transition-all duration-200 ease-out",
+                  isExpanded ? "z-50 shadow-2xl" : "z-20 shadow-lg", // Higher z-index and shadow when expanded
+                  isAnimating && "pointer-events-none opacity-75", // Disable interactions during animation
+                  isPending && "ring-2 ring-blue-400 ring-opacity-50" // Visual feedback for pending expansion (no pulse to avoid flickering)
                 )}
                 style={{
                   backgroundImage: `url(${diskSvg})`,
@@ -368,27 +357,56 @@ export function DynamicDriveGrid({
 }: ExpandableDriveGridProps) {
   const [expandedDriveId, setExpandedDriveId] = useState<string | null>(null);
   const [isAnimating, setIsAnimating] = useState(false);
+  const [pendingExpandId, setPendingExpandId] = useState<string | null>(null);
 
-  // Debounced expand handler to prevent rapid state changes
+  // Enhanced expand handler with single-expand behavior
   const handleExpandChange = useCallback((driveId: string, expanded: boolean) => {
-    setIsAnimating(true); // Set animation state when starting expansion/collapse
-    setExpandedDriveId(expanded ? driveId : null);
-    
-    // Set a timeout to automatically allow masonry rearrangement
-    // This ensures we don't wait too long even if animation completion detection fails
-    setTimeout(() => {
-      setIsAnimating(false);
-    }, 300); // 300ms should be enough for most expand/collapse animations
-  }, []);
+    // If we're already animating, ignore the click
+    if (isAnimating) {
+      return;
+    }
+
+    if (expanded) {
+      // If clicking to expand a drive
+      if (expandedDriveId && expandedDriveId !== driveId) {
+        // If another drive is already expanded, collapse it first
+        setIsAnimating(true);
+        setExpandedDriveId(null); // Collapse current
+        setPendingExpandId(driveId); // Remember which one to expand next
+        
+        // After collapse completes, expand the new one
+        setTimeout(() => {
+          setExpandedDriveId(driveId);
+          setPendingExpandId(null);
+          // Allow masonry to rearrange after a short delay
+          setTimeout(() => {
+            setIsAnimating(false);
+          }, 100);
+        }, 1000); // Wait 1 second for collapse animation to complete
+      } else {
+        // No other drive expanded, expand immediately
+        setExpandedDriveId(driveId);
+      }
+    } else {
+      // Collapsing current drive
+      setIsAnimating(true);
+      setExpandedDriveId(null);
+      
+      // Set a timeout to automatically allow masonry rearrangement for collapse
+      setTimeout(() => {
+        setIsAnimating(false);
+      }, 300); // 300ms should be enough for most collapse animations
+    }
+  }, [expandedDriveId, isAnimating]);
 
   // Handle animation completion with faster response
   const handleExpandComplete = useCallback(() => {
-    // Immediately allow masonry rearrangement when animation completes
-    setIsAnimating(false);
+    // No need to set isAnimating to false for expand since we don't block masonry on expand
+    // The masonry can rearrange immediately when expanding
   }, []);
 
   const handleCollapseComplete = useCallback(() => {
-    // Immediately allow masonry rearrangement when animation completes
+    // Immediately allow masonry rearrangement when collapse animation completes
     setIsAnimating(false);
   }, []);
 
@@ -403,12 +421,14 @@ export function DynamicDriveGrid({
     onShare,
     onDelete,
     isExpanded: expandedDriveId === drive.id,
+    isAnimating: isAnimating, // Pass animation state to prevent clicks
+    isPending: pendingExpandId === drive.id, // Show pending state
     onExpandChange: (expanded: boolean) => {
       handleExpandChange(drive.id, expanded);
     },
     onExpandComplete: handleExpandComplete,
     onCollapseComplete: handleCollapseComplete
-  })), [drives, expandedDriveId, onBrowse, onShare, onDelete, handleExpandChange, handleExpandComplete, handleCollapseComplete]);
+  })), [drives, expandedDriveId, isAnimating, pendingExpandId, onBrowse, onShare, onDelete, handleExpandChange, handleExpandComplete, handleCollapseComplete]);
 
   // Memoize the Masonry component props to prevent unnecessary re-renders
   const masonryProps = useMemo(() => ({

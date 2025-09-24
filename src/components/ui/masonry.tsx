@@ -87,6 +87,7 @@ const Masonry = ({
   const [isMasonryAnimating, setIsMasonryAnimating] = useState(false);
   const animationTimeoutRef = useRef(null);
   const elementCacheRef = useRef(new Map()); // Cache DOM elements for better performance
+  const previousExpandedItemsRef = useRef(new Set()); // Track previously expanded items to detect expand/collapse direction
 
   const getInitialPosition = item => {
     // @ts-ignore
@@ -128,18 +129,39 @@ const Masonry = ({
       clearTimeout(animationTimeoutRef.current);
     }
     
-    // Don't animate if expand/collapse animation is still running
+    // Don't animate if collapse animation is still running (expand animations don't block masonry)
     if (isAnimating) {
       return;
     }
     
-    animationTimeoutRef.current = setTimeout(() => {
+    // Determine if we're expanding or collapsing by comparing current vs previous expanded items
+    const currentExpandedItems = new Set(gridItems.filter(item => item.isExpanded).map(item => item.id));
+    const previousExpandedItems = previousExpandedItemsRef.current;
+    
+    // Check if any item is newly expanded (wasn't expanded before, is expanded now)
+    const hasNewlyExpanded = Array.from(currentExpandedItems).some(id => !previousExpandedItems.has(id));
+    
+    // Check if any item is newly collapsed (was expanded before, is not expanded now)
+    const hasNewlyCollapsed = Array.from(previousExpandedItems).some(id => !currentExpandedItems.has(id));
+    
+    // Update the previous expanded items for next comparison
+    previousExpandedItemsRef.current = new Set(currentExpandedItems);
+    
+    // Choose debounce delay: no debounce for expand, 10ms debounce for collapse or other changes
+    // hasNewlyExpanded = true means we're expanding a card (immediate animation)
+    // hasNewlyCollapsed = true or other changes means we're collapsing or other layout changes (debounced animation)
+    const debounceDelay = hasNewlyExpanded ? 0 : 10;
+    
+    const animateItems = () => {
       // Double-check animation state before proceeding
       if (isAnimating) {
         return;
       }
       
       setIsMasonryAnimating(true);
+      
+      // Batch animations for better performance
+      const animations = [];
       
       gridItems.forEach((item, index) => {
         // Use cached element instead of selector query
@@ -152,22 +174,50 @@ const Masonry = ({
         }
 
         if (element) {
-          const animProps = { x: item.x, y: item.y, width: item.w, height: item.h };
+          const animProps = { 
+            x: item.x, 
+            y: item.y, 
+            width: item.w, 
+            height: item.h 
+          };
 
-          gsap.to(element, {
+          // Optimize for animation performance
+          (element as HTMLElement).style.willChange = 'transform, width, height';
+
+          const animation = gsap.to(element, {
             ...animProps,
-            duration: duration * 0.6, // Faster for better performance
+            duration: duration * 0.4, // Even faster for smoother performance
             ease: 'power2.out',
             overwrite: 'auto',
+            force3D: true, // Force hardware acceleration
+            transformOrigin: 'center center',
             onComplete: () => {
-              if (index === gridItems.length - 1) {
-                setIsMasonryAnimating(false);
-              }
+              // Clean up will-change after animation
+              (element as HTMLElement).style.willChange = 'auto';
             }
           });
+          
+          animations.push(animation);
         }
       });
-    }, 10); // Very fast debounce for immediate response
+      
+      // Use GSAP's timeline for better performance when all animations complete
+      if (animations.length > 0) {
+        gsap.delayedCall(duration * 0.4, () => {
+          setIsMasonryAnimating(false);
+        });
+      } else {
+        setIsMasonryAnimating(false);
+      }
+    };
+    
+    if (debounceDelay === 0) {
+      // Execute immediately for expand
+      animateItems();
+    } else {
+      // Use timeout for collapse
+      animationTimeoutRef.current = setTimeout(animateItems, debounceDelay);
+    }
   }, [duration, isAnimating]);
 
   const grid = useMemo(() => {
@@ -176,6 +226,9 @@ const Masonry = ({
     const gap = 16;
     const totalGaps = (columns - 1) * gap;
     const columnWidth = (width - totalGaps) / columns;
+
+    // Pre-calculate column positions for better performance
+    const columnPositions = Array.from({ length: columns }, (_, i) => i * (columnWidth + gap));
 
     return items.map(child => {
       // Find the shortest column more efficiently
@@ -188,7 +241,7 @@ const Masonry = ({
         }
       }
 
-      const x = shortestCol * (columnWidth + gap);
+      const x = columnPositions[shortestCol];
       const height = child.height;
       const y = colHeights[shortestCol];
 
@@ -227,9 +280,17 @@ const Masonry = ({
               opacity: 1,
               ...animProps,
               ...(blurToFocus && { filter: 'blur(0px)' }),
-              duration: 0.6, // Faster initial animation
+              duration: 0.4, // Faster initial animation
               ease: 'power2.out',
-              delay: index * stagger
+              delay: index * stagger,
+              force3D: true, // Force hardware acceleration
+              transformOrigin: 'center center',
+              onStart: () => {
+                (element as HTMLElement).style.willChange = 'transform, width, height, opacity';
+              },
+              onComplete: () => {
+                (element as HTMLElement).style.willChange = 'auto';
+              }
             }
           );
         }
@@ -257,33 +318,11 @@ const Masonry = ({
   }, [items]);
 
   const handleMouseEnter = (id, element) => {
-    if (scaleOnHover && !isMasonryAnimating) {
-      const cachedElement = elementCacheRef.current.get(id) || element;
-      gsap.to(cachedElement, {
-        scale: hoverScale,
-        duration: 0.2, // Faster hover response
-        ease: 'power2.out'
-      });
-    }
-    if (colorShiftOnHover) {
-      const overlay = element.querySelector('.color-overlay');
-      if (overlay) gsap.to(overlay, { opacity: 0.3, duration: 0.2 });
-    }
+    // Hover effects disabled
   };
 
   const handleMouseLeave = (id, element) => {
-    if (scaleOnHover && !isMasonryAnimating) {
-      const cachedElement = elementCacheRef.current.get(id) || element;
-      gsap.to(cachedElement, {
-        scale: 1,
-        duration: 0.2, // Faster hover response
-        ease: 'power2.out'
-      });
-    }
-    if (colorShiftOnHover) {
-      const overlay = element.querySelector('.color-overlay');
-      if (overlay) gsap.to(overlay, { opacity: 0, duration: 0.2 });
-    }
+    // Hover effects disabled
   };
 
   return (
@@ -297,10 +336,11 @@ const Masonry = ({
           style={{ 
             willChange: 'transform, width, height, opacity, z-index',
             zIndex: item.isExpanded ? 50 : 10, // Higher z-index for expanding cards
-            transition: 'z-index 0.1s ease-in-out' // Smooth z-index transition
+            transition: 'z-index 0.1s ease-in-out', // Smooth z-index transition
+            backfaceVisibility: 'hidden', // Prevent flickering
+            perspective: 1000, // Enable 3D transforms
+            transformStyle: 'preserve-3d' // Enable 3D transforms
           }}
-          onMouseEnter={e => handleMouseEnter(item.id, e.currentTarget)}
-          onMouseLeave={e => handleMouseLeave(item.id, e.currentTarget)}
         >
           {item.drive ? (
             // Render drive card if drive data exists
@@ -311,6 +351,8 @@ const Masonry = ({
                 onShare={item.onShare}
                 onDelete={item.onDelete}
                 isExpanded={item.isExpanded}
+                isAnimating={item.isAnimating}
+                isPending={item.isPending}
                 onExpandChange={item.onExpandChange}
                 onExpandComplete={item.onExpandComplete}
                 onCollapseComplete={item.onCollapseComplete}
