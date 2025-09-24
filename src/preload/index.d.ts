@@ -17,6 +17,8 @@ declare global {
       }
       files: {
         list: (folder?: string) => Promise<any[]>
+        getFileUrl: (driveId: string, path: string) => Promise<string | null>
+        getFileText: (driveId: string, path: string) => Promise<string | null>
       }
     }
   }

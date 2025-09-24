@@ -2,7 +2,7 @@ import { app, shell, BrowserWindow, ipcMain, screen } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
-import { initializeAllDrives, closeAllDrives, createDrive, listActiveDrives, listDrive, createFolder, uploadFiles } from './services/hyperdriveManager'
+import { initializeAllDrives, closeAllDrives, createDrive, listActiveDrives, listDrive, createFolder, uploadFiles, getFileBuffer } from './services/hyperdriveManager'
 import { readUserProfile, writeUserProfile } from './services/userProfile'
 
 function createWindow(): void {
@@ -25,6 +25,34 @@ function createWindow(): void {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false
     }
+  })
+  // Allow blob: images in CSP injected by Electron for dev server if needed
+  mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+    const headers = details.responseHeaders || {}
+    const cspKey = Object.keys(headers).find(k => k.toLowerCase() === 'content-security-policy')
+    if (cspKey) {
+      const csp = headers[cspKey][0]
+      if (csp) {
+        if (!/img-src[^;]*blob:/.test(csp)) {
+          headers[cspKey][0] = headers[cspKey][0].replace(/img-src([^;]*)/, (m, g1) => `img-src${g1} blob:`)
+        }
+        if (!/media-src[^;]*blob:/.test(headers[cspKey][0])) {
+          if (/media-src[^;]*/.test(headers[cspKey][0])) {
+            headers[cspKey][0] = headers[cspKey][0].replace(/media-src([^;]*)/, (m, g1) => `media-src${g1} blob:`)
+          } else {
+            headers[cspKey][0] += '; media-src \"self\" blob:'
+          }
+        }
+        if (!/media-src[^;]*data:/.test(headers[cspKey][0])) {
+          if (/media-src[^;]*/.test(headers[cspKey][0])) {
+            headers[cspKey][0] = headers[cspKey][0].replace(/media-src([^;]*)/, (m, g1) => `media-src${g1} data:`)
+          } else {
+            headers[cspKey][0] += '; media-src \"self\" data:'
+          }
+        }
+      }
+    }
+    callback({ responseHeaders: headers })
   })
 
   mainWindow.on('ready-to-show', () => {
@@ -109,16 +137,33 @@ app.whenReady().then(() => {
       const data = f.data
       const buf = Buffer.isBuffer(data)
         ? data
-        : (data && data.buffer instanceof ArrayBuffer)
-          ? Buffer.from(new Uint8Array(data.buffer))
-          : (data instanceof ArrayBuffer)
-            ? Buffer.from(new Uint8Array(data))
-            : Buffer.from([])
+        : (data && data.byteLength !== undefined && typeof data.length === 'number' && data.buffer instanceof ArrayBuffer)
+          ? Buffer.from(data)
+          : (data && data.buffer instanceof ArrayBuffer)
+            ? Buffer.from(new Uint8Array(data.buffer))
+            : (data instanceof ArrayBuffer)
+              ? Buffer.from(new Uint8Array(data))
+              : Buffer.from([])
       return { name: f.name, data: buf }
     })
     console.log('[ipc] drives:uploadFiles normalized', normalized.map(n => ({ name: n.name, bytes: n.data.length })))
     const res = await uploadFiles(driveId, folderPath, normalized)
     return res
+  })
+
+  ipcMain.handle('drives:getFile', async (_evt, { driveId, path }: { driveId: string, path: string }) => {
+    console.log(`[ipc] drives:getFile request: driveId=${driveId}, path=${path}`)
+    const buf = await getFileBuffer(driveId, path)
+    if (!buf) {
+      console.log(`[ipc] drives:getFile ${path}: file not found or null`)
+      return null
+    }
+    // Create a completely new ArrayBuffer to avoid any offset issues
+    const newBuffer = new ArrayBuffer(buf.length)
+    const view = new Uint8Array(newBuffer)
+    view.set(buf)
+    console.log(`[ipc] drives:getFile ${path}: original offset=${buf.byteOffset}, length=${buf.length}, new buffer length=${newBuffer.byteLength}`)
+    return newBuffer
   })
 
   // Expose user profile IPC (persisted on disk, separate from Hyperdrive for now)

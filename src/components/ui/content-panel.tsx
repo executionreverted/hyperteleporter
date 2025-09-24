@@ -1,5 +1,6 @@
 "use client";
 import { cn } from "../../renderer/lib/utils";
+import * as React from "react";
 import { TreeNode } from "./tree-view";
 import { motion } from "motion/react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
@@ -25,42 +26,17 @@ interface ContentPanelProps {
 }
 
 const FilePreview = ({ node }: { node: TreeNode }) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const api: any = (window as any)?.api
+  const [imgUrl, setImgUrl] = React.useState<string | null>(null)
+  const [loadingImg, setLoadingImg] = React.useState(false)
+  const [imgError, setImgError] = React.useState<string | null>(null)
   const getFileType = () => {
     const extension = node.name.split('.').pop()?.toLowerCase();
     return extension || 'unknown';
   };
 
   const fileType = getFileType();
-
-  const getMockContent = (ext: string) => {
-    switch (ext) {
-      case 'json':
-        return JSON.stringify({ name: node.name, version: "1.0.0", scripts: { build: "vite build" } }, null, 2);
-      case 'js':
-      case 'jsx':
-        return `export function Hello() {\n  console.log('Hello, world');\n  return <div>Hello</div>;\n}`;
-      case 'ts':
-      case 'tsx':
-        return `type User = { id: string; name: string };\nexport function getUser(id: string): User {\n  return { id, name: 'Ada' };\n}`;
-      case 'html':
-        return `<div class="card">\n  <h1>Hello</h1>\n  <p>Sample preview</p>\n</div>`;
-      case 'css':
-        return `.card {\n  color: white;\n  background: #111;\n}`;
-      case 'md':
-        return `# ${node.name}\n\nPreview of markdown content.`;
-      case 'yml':
-      case 'yaml':
-        return `name: ${node.name}\nversion: 1.0.0`;
-      case 'xml':
-        return `<note>\n  <to>User</to>\n  <from>Hyperdrive</from>\n</note>`;
-      case 'py':
-        return `def greet(name: str) -> None:\n    print(f"Hello {name}")`;
-      case 'sh':
-        return `#!/usr/bin/env bash\necho "Hello"`;
-      default:
-        return `Preview of ${node.name}`;
-    }
-  };
 
   const inferLanguage = (ext: string): string => {
     switch (ext) {
@@ -95,20 +71,48 @@ const FilePreview = ({ node }: { node: TreeNode }) => {
   };
 
   const renderCodePreview = (ext: string) => {
-    const code = getMockContent(ext);
+    const [code, setCode] = React.useState<string | null>(null)
+    const [loading, setLoading] = React.useState(false)
+    const [error, setError] = React.useState<string | null>(null)
+    const api: any = (window as any)?.api
+    React.useEffect(() => {
+      (async () => {
+        try {
+          setLoading(true)
+          setError(null)
+          const match = window.location.hash.match(/#\/drive\/([^/]+)/)
+          const driveId = match ? match[1] : null
+          if (!driveId || !api?.files?.getFileText) {
+            setError('Preview not available')
+            return
+          }
+          const path = node.id.startsWith('/') ? node.id : `/${node.id}`
+          const text = await api.files.getFileText(driveId, path)
+          setCode(text)
+        } catch (e: any) {
+          setError(String(e?.message || e))
+        } finally {
+          setLoading(false)
+        }
+      })()
+    }, [node.id])
     const language = inferLanguage(ext);
     return (
       <div className="p-6">
         <div className="bg-black/10 rounded-lg p-4 max-h-[480px] overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-600 scrollbar-track-neutral-800">
           <div className="text-white mb-3">Code Preview:</div>
-          <SyntaxHighlighter
-            language={language}
-            style={vscDarkPlus}
-            customStyle={{ background: 'transparent', margin: 0, padding: '1rem', borderRadius: '0.5rem' }}
-            wrapLongLines
-          >
-            {code}
-          </SyntaxHighlighter>
+          {loading && <div className="text-neutral-300">Loading…</div>}
+          {error && <div className="text-red-400">{error}</div>}
+          {code && (
+            <SyntaxHighlighter
+              language={language}
+              style={vscDarkPlus}
+              customStyle={{ background: 'transparent', margin: 0, padding: '1rem', borderRadius: '0.5rem' }}
+              wrapLongLines
+            >
+              {code}
+            </SyntaxHighlighter>
+          )}
         </div>
       </div>
     );
@@ -118,7 +122,9 @@ const FilePreview = ({ node }: { node: TreeNode }) => {
     switch (fileType) {
       case 'txt':
       case 'md':
-        return renderCodePreview(fileType);
+        return (
+          <MarkdownPreview node={node} />
+        );
 
       case 'json':
       case 'js':
@@ -144,36 +150,26 @@ const FilePreview = ({ node }: { node: TreeNode }) => {
           <div className="p-6">
             <div className="bg-gray-100 dark:bg-black/10 rounded-lg p-4 max-h-[480px] overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-600 scrollbar-track-neutral-800">
               <div className="text-white mb-4">Image Preview:</div>
-              <div className="bg-white dark:bg-neutral-700 rounded-lg p-8 flex items-center justify-center max-h-[400px]">
-                <div className="text-center">
-                  <div className="w-16 h-16 bg-gray-300 dark:bg-neutral-600 rounded-lg mx-auto mb-4 flex items-center justify-center">
-                    <IconPhoto size={32} className="text-gray-500" />
-                  </div>
-                  <p className="text-sm text-white">Image preview would appear here</p>
-                </div>
+              <div className="bg-white dark:bg-neutral-700 rounded-lg p-4 flex items-center justify-center max-h-[400px] min-h-[200px]">
+                {loadingImg && (
+                  <div className="text-sm text-neutral-300">Loading image…</div>
+                )}
+                {imgError && (
+                  <div className="text-sm text-red-400">{imgError}</div>
+                )}
+                {imgUrl && !loadingImg && !imgError && (
+                  <img src={imgUrl} alt={node.name} className="max-h-[360px] object-contain" />
+                )}
               </div>
             </div>
           </div>
         );
 
       case 'mp4':
-      case 'avi':
+      case 'webm':
       case 'mov':
-      case 'mkv':
         return (
-          <div className="p-6">
-            <div className="bg-gray-100 dark:bg-black/10 rounded-lg p-4 max-h-[480px] overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-600 scrollbar-track-neutral-800">
-              <div className="text-white mb-4">Video Preview:</div>
-              <div className="bg-black rounded-lg p-8 flex items-center justify-center max-h-[400px]">
-                <div className="text-center">
-                  <div className="w-16 h-16 bg-gray-700 rounded-lg mx-auto mb-4 flex items-center justify-center">
-                    <IconVideo size={32} className="text-white" />
-                  </div>
-                  <p className="text-sm text-white">Video preview would appear here</p>
-                </div>
-              </div>
-            </div>
-          </div>
+          <MediaPreview node={node} type="video" />
         );
 
       case 'pdf':
@@ -193,24 +189,40 @@ const FilePreview = ({ node }: { node: TreeNode }) => {
           </div>
         );
 
-      default:
+      case 'mp3':
+      case 'wav':
+      case 'ogg':
         return (
-          <div className="p-6">
-            <div className="bg-gray-100 dark:bg-black/10 rounded-lg p-4 max-h-[480px] overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-600 scrollbar-track-neutral-800">
-              <div className="text-white mb-4">File Preview:</div>
-              <div className="bg-white dark:bg-neutral-700 rounded-lg p-8 flex items-center justify-center max-h-[400px]">
-                <div className="text-center">
-                  <div className="w-16 h-16 bg-gray-300 dark:bg-neutral-600 rounded-lg mx-auto mb-4 flex items-center justify-center">
-                    <IconFile size={32} className="text-gray-500" />
-                  </div>
-                  <p className="text-sm text-white">Preview not available for this file type</p>
-                </div>
-              </div>
-            </div>
-          </div>
+          <MediaPreview node={node} type="audio" />
         );
+
+      default:
+        return <TextPreview node={node} />;
     }
   };
+
+  React.useEffect(() => {
+    const imageTypes = ['jpg','jpeg','png','gif','webp']
+    const ext = node.name.split('.').pop()?.toLowerCase() || ''
+    if (!imageTypes.includes(ext)) return
+    // Derive driveId and path from node.id
+    // node.id holds the absolute path ("/foo/bar.png"). We need driveId from URL param, so read from location hash/hash router.
+    try {
+      const match = window.location.hash.match(/#\/drive\/([^/]+)/)
+      const driveId = match ? match[1] : null
+      if (!driveId || !api?.files?.getFileUrl) return
+      setLoadingImg(true)
+      setImgError(null)
+      const path = node.id.startsWith('/') ? node.id : `/${node.id}`
+      Promise.resolve(api.files.getFileUrl(driveId, path))
+        .then((url: string | null) => {
+          if (!url) throw new Error('No data')
+          setImgUrl(url)
+        })
+        .catch((e: any) => setImgError(String(e?.message || e)))
+        .finally(() => setLoadingImg(false))
+    } catch {}
+  }, [node.id, node.name, api])
 
   return (
     <motion.div
@@ -222,6 +234,175 @@ const FilePreview = ({ node }: { node: TreeNode }) => {
     </motion.div>
   );
 };
+
+function MarkdownPreview({ node }: { node: TreeNode }) {
+  const [content, setContent] = React.useState<string | null>(null)
+  const [loading, setLoading] = React.useState(false)
+  const [error, setError] = React.useState<string | null>(null)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const api: any = (window as any)?.api
+
+  React.useEffect(() => {
+    async function load() {
+      try {
+        setLoading(true)
+        setError(null)
+        const match = window.location.hash.match(/#\/drive\/([^/]+)/)
+        const driveId = match ? match[1] : null
+        if (!driveId || !api?.files?.getFileText) {
+          setError('Preview not available')
+          return
+        }
+        const path = node.id.startsWith('/') ? node.id : `/${node.id}`
+        const text = await api.files.getFileText(driveId, path)
+        if (!text) throw new Error('Empty')
+        setContent(text)
+      } catch (e: any) {
+        setError(String(e?.message || e))
+      } finally {
+        setLoading(false)
+      }
+    }
+    load()
+  }, [node.id])
+
+  if (loading) return <div className="p-6 text-neutral-300">Loading…</div>
+  if (error) return <div className="p-6 text-red-400">{error}</div>
+  if (!content) return null
+
+  return (
+    <div className="p-6">
+      <div className="bg-black/10 rounded-lg p-4 max-h-[480px] overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-600 scrollbar-track-neutral-800">
+        <div className="text-white mb-3">Markdown Preview:</div>
+        <SyntaxHighlighter
+          language={'markdown'}
+          style={vscDarkPlus}
+          customStyle={{ background: 'transparent', margin: 0, padding: '1rem', borderRadius: '0.5rem' }}
+          wrapLongLines
+        >
+          {content}
+        </SyntaxHighlighter>
+      </div>
+    </div>
+  )
+}
+
+function TextPreview({ node }: { node: TreeNode }) {
+  const [content, setContent] = React.useState<string | null>(null)
+  const [loading, setLoading] = React.useState(false)
+  const [error, setError] = React.useState<string | null>(null)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const api: any = (window as any)?.api
+
+  React.useEffect(() => {
+    async function load() {
+      try {
+        setLoading(true)
+        setError(null)
+        const match = window.location.hash.match(/#\/drive\/([^/]+)/)
+        const driveId = match ? match[1] : null
+        if (!driveId || !api?.files?.getFileText) {
+          setError('Preview not available')
+          return
+        }
+        const path = node.id.startsWith('/') ? node.id : `/${node.id}`
+        const text = await api.files.getFileText(driveId, path)
+        if (!text) throw new Error('Empty')
+        setContent(text)
+      } catch (e: any) {
+        setError(String(e?.message || e))
+      } finally {
+        setLoading(false)
+      }
+    }
+    load()
+  }, [node.id])
+
+  if (loading) return <div className="p-6 text-neutral-300">Loading…</div>
+  if (error) return <div className="p-6 text-red-400">{error}</div>
+  if (!content) return null
+
+  return (
+    <div className="p-6">
+      <div className="bg-black/10 rounded-lg p-4 max-h-[480px] overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-600 scrollbar-track-neutral-800">
+        <div className="text-white mb-3">Text Preview:</div>
+        <SyntaxHighlighter
+          language={'text'}
+          style={vscDarkPlus}
+          customStyle={{ background: 'transparent', margin: 0, padding: '1rem', borderRadius: '0.5rem' }}
+          wrapLongLines
+        >
+          {content}
+        </SyntaxHighlighter>
+      </div>
+    </div>
+  )
+}
+
+function MediaPreview({ node, type }: { node: TreeNode; type: 'audio' | 'video' }) {
+  const [url, setUrl] = React.useState<string | null>(null)
+  const [loading, setLoading] = React.useState(false)
+  const [error, setError] = React.useState<string | null>(null)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const api: any = (window as any)?.api
+
+  React.useEffect(() => {
+    async function load() {
+      try {
+        setLoading(true)
+        setError(null)
+        const match = window.location.hash.match(/#\/drive\/([^/]+)/)
+        const driveId = match ? match[1] : null
+        if (!driveId || !api?.files?.getFileUrl) {
+          setError('Preview not available')
+          return
+        }
+        const path = node.id.startsWith('/') ? node.id : `/${node.id}`
+        console.log(`[MediaPreview] Loading ${type} file: ${node.name} (${path})`)
+        const blobUrl = await api.files.getFileUrl(driveId, path)
+        if (!blobUrl) throw new Error('Empty')
+        console.log(`[MediaPreview] Created blob URL for ${node.name}: ${blobUrl}`)
+        setUrl(blobUrl)
+      } catch (e: any) {
+        console.error(`[MediaPreview] Error loading ${node.name}:`, e)
+        setError(String(e?.message || e))
+      } finally {
+        setLoading(false)
+      }
+    }
+    load()
+  }, [node.id, type, node.name])
+
+  if (loading) return <div className="p-6 text-neutral-300">Loading…</div>
+  if (error) return <div className="p-6 text-red-400">{error}</div>
+  if (!url) return null
+
+  return (
+    <div className="p-6">
+      <div className="bg-black/10 rounded-lg p-4">
+        {type === 'video' ? (
+          <video 
+            src={url} 
+            controls 
+            className="max-h-[420px] w-full rounded-md"
+            onError={(e) => console.error(`[MediaPreview] Video error for ${node.name}:`, e)}
+            onLoadStart={() => console.log(`[MediaPreview] Video load started for ${node.name}`)}
+          />
+        ) : (
+          <audio 
+            src={url} 
+            controls 
+            className="w-full"
+            onError={(e) => console.error(`[MediaPreview] Audio error for ${node.name}:`, e)}
+            onLoadStart={() => console.log(`[MediaPreview] Audio load started for ${node.name}`)}
+            onCanPlay={() => console.log(`[MediaPreview] Audio can play for ${node.name}`)}
+            onCanPlayThrough={() => console.log(`[MediaPreview] Audio can play through for ${node.name}`)}
+          />
+        )}
+      </div>
+    </div>
+  )
+}
 
 const FileMetadata = ({ node }: { node: TreeNode }) => {
   return (

@@ -9,8 +9,8 @@ const api = {
     listFolder: async (driveId: string, folder = '/', recursive = false) => ipcRenderer.invoke('drives:listFolder', { driveId, folder, recursive }),
     createFolder: async (driveId: string, folderPath: string) => ipcRenderer.invoke('drives:createFolder', { driveId, folderPath }),
     uploadFiles: async (driveId: string, folderPath: string, files: Array<{ name: string; data: ArrayBuffer }>) => {
-      // Convert ArrayBuffer to Node Buffer for IPC safely
-      const payload = files.map(f => ({ name: f.name, data: Buffer.from(f.data) }))
+      // Convert ArrayBuffer to Uint8Array (safer across IPC)
+      const payload = files.map(f => ({ name: f.name, data: new Uint8Array(f.data) }))
       return ipcRenderer.invoke('drives:uploadFiles', { driveId, folderPath, files: payload })
     }
   },
@@ -20,8 +20,42 @@ const api = {
   },
   files: {
     list: async (_folder?: string) => {
-      // Placeholder for future Hyperdrive-backed files listing via main
       return []
+    },
+    getFileUrl: async (driveId: string, path: string) => {
+      const data: ArrayBuffer | null = await ipcRenderer.invoke('drives:getFile', { driveId, path })
+      if (!data) return null
+      
+      // For audio files, try a different approach to avoid range request issues
+      const extension = path.split('.').pop()?.toLowerCase()
+      const isAudio = ['mp3', 'wav', 'ogg', 'm4a', 'aac'].includes(extension || '')
+      console.log(`[preload] getFileUrl ${path}: extension=${extension}, isAudio=${isAudio}`)
+      
+      if (isAudio) {
+        // Use same logic as mp4/video: make a Blob without forcing MIME and return URL
+        const uint8Array = new Uint8Array(data)
+        const blob = new Blob([uint8Array])
+        const url = URL.createObjectURL(blob)
+        console.log(`[preload] getFileUrl ${path} (audio as blob): bytes=${uint8Array.length}, url=${url}`)
+        return url
+      } else {
+        // For other files (images, video), use the standard approach
+        const uint8Array = new Uint8Array(data)
+        const blob = new Blob([uint8Array])
+        const url = URL.createObjectURL(blob)
+        console.log(`[preload] getFileUrl ${path}: data length=${data.byteLength}, uint8Array length=${uint8Array.length}, blob size=${blob.size}, url=${url}`)
+        return url
+      }
+    },
+    getFileText: async (driveId: string, path: string) => {
+      const data: ArrayBuffer | null = await ipcRenderer.invoke('drives:getFile', { driveId, path })
+      if (!data) return null
+      try {
+        if ((data as ArrayBuffer).byteLength > 1_000_000) return null
+        return new TextDecoder().decode(new Uint8Array(data))
+      } catch {
+        return null
+      }
     }
   }
 }

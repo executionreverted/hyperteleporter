@@ -1,5 +1,6 @@
 import { cn } from "../../renderer/lib/utils";
-import React, { useRef, useState } from "react";
+import * as React from "react";
+import { useRef, useState } from "react";
 import { motion } from "motion/react";
 import { IconUpload } from "@tabler/icons-react";
 import { useDropzone } from "react-dropzone";
@@ -43,7 +44,7 @@ export const FileUpload = ({
   };
 
   const { getRootProps, isDragActive } = useDropzone({
-    multiple: false,
+    multiple: true,
     noClick: true,
     onDrop: handleFileChange,
     onDropRejected: (error) => {
@@ -62,6 +63,7 @@ export const FileUpload = ({
           ref={fileInputRef}
           id="file-upload-handle"
           type="file"
+          multiple
           onChange={(e) => handleFileChange(Array.from(e.target.files || []))}
           className="hidden"
         />
@@ -70,10 +72,10 @@ export const FileUpload = ({
         </div>
         <div className="flex flex-col items-center justify-center">
           <p className="relative z-20 font-sans font-bold text-neutral-700 dark:text-neutral-300 text-sm">
-            Upload file
+            Upload files
           </p>
           <p className="relative z-20 font-sans font-normal text-neutral-400 dark:text-neutral-400 text-xs mt-1">
-            Drag or drop your files here or click to upload
+            Drag or drop files here or click to upload
           </p>
           <div className="relative w-full mt-2 max-w-xl mx-auto">
             {!files.length && (

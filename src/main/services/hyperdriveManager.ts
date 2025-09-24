@@ -123,4 +123,58 @@ export async function uploadFiles(
   return { uploaded }
 }
 
+export async function getFileBuffer(driveId: string, path: string): Promise<Buffer | null> {
+  const drive = activeDrives.get(driveId)?.hyperdrive
+  if (!drive) throw new Error('Drive not found')
+  const normalized = path.startsWith('/') ? path : `/${path}`
+  // If it's a folder marker, ignore
+  if (normalized.endsWith('/.keep')) return null
+
+  // Try direct get() first
+  try {
+    // @ts-ignore
+    const maybe = await (drive as any).get(normalized)
+    if (maybe) {
+      if (Buffer.isBuffer(maybe)) {
+        const direct = Buffer.from(maybe)
+        console.log(`[hyperdrive] getFileBuffer get() ${normalized}: bytes=${direct.length}`)
+        if (direct.length > 0) return direct
+      } else {
+        console.log(`[hyperdrive] getFileBuffer get() ${normalized}: non-buffer result`)
+      }
+    }
+  } catch (err) {
+    console.warn(`[hyperdrive] getFileBuffer get() failed for ${normalized}:`, err)
+  }
+
+  // Read file content via stream as a fallback to ensure we get the actual bytes
+  try {
+    // @ts-ignore - hyperdrive createReadStream exists at runtime
+    const readStream = (drive as any).createReadStream(normalized)
+    const chunks: Buffer[] = []
+    for await (const chunk of readStream) {
+      const buf = Buffer.isBuffer(chunk) ? (chunk as Buffer) : Buffer.from(chunk)
+      chunks.push(buf)
+    }
+    const data = Buffer.concat(chunks)
+    console.log(`[hyperdrive] getFileBuffer stream ${normalized}: bytes=${data.length}`)
+    if (data.length > 0) return data
+  } catch (err) {
+    console.warn(`[hyperdrive] getFileBuffer stream failed for ${normalized}:`, err)
+  }
+
+  // As a diagnostic: scan list to see if entry reports a blob length
+  try {
+    for await (const file of (drive as any).list('/', { recursive: true })) {
+      if (file?.key === normalized) {
+        const reported = file?.value?.blob?.byteLength || file?.value?.blob?.length || 0
+        console.log(`[hyperdrive] getFileBuffer diag ${normalized}: reported blob length=${reported}`)
+        break
+      }
+    }
+  } catch {}
+
+  return null
+}
+
 
