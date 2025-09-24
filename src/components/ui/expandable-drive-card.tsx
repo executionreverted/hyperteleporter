@@ -52,6 +52,10 @@ interface ExpandableDriveCardProps {
   onExpandChange?: (expanded: boolean) => void;
   onExpandComplete?: () => void;
   onCollapseComplete?: () => void;
+  customSizes?: {
+    collapsedSize?: { width?: number; height?: number };
+    expandedSize?: { width?: number; height?: number };
+  };
 }
 
 export function ExpandableDriveCard({ 
@@ -65,7 +69,8 @@ export function ExpandableDriveCard({
   isPending = false,
   onExpandChange,
   onExpandComplete,
-  onCollapseComplete
+  onCollapseComplete,
+  customSizes
 }: ExpandableDriveCardProps) {
 
   const formatDate = (date: Date) => {
@@ -130,8 +135,8 @@ export function ExpandableDriveCard({
           <ExpandableTrigger>
             <ExpandableCard
               className="w-full relative"
-              collapsedSize={{ width: undefined, height: 200 }}
-              expandedSize={{ width: undefined, height: 400 }}
+              collapsedSize={customSizes?.collapsedSize || { width: undefined, height: 200 }}
+              expandedSize={customSizes?.expandedSize || { width: undefined, height: 400 }}
               hoverToExpand={false}
               onExpandComplete={onExpandComplete}
               onCollapseComplete={onCollapseComplete}

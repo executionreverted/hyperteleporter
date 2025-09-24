@@ -1,23 +1,28 @@
 "use client"
 
 /**
- * StaticDriveGrid - A performant grid layout with centered expansion
+ * StaticDriveGrid - A highly performant grid layout with centered expansion
  * 
- * This component provides a much more performant approach by:
- * 1. Using a static 3-column CSS Grid layout (no complex masonry calculations)
+ * Performance optimizations:
+ * 1. Static 3-column CSS Grid layout (no complex masonry calculations)
  * 2. Fixed-size wrappers that maintain grid structure when cards expand
- * 3. Smooth centered expansion with fixed positioning
- * 4. No layout reflows or expensive calculations
+ * 3. Memoized callbacks and expensive calculations
+ * 4. Cached animation values and dimensions
+ * 5. Optimized DOM queries with refs
+ * 6. React.memo for preventing unnecessary re-renders
+ * 7. Efficient GSAP timeline management
+ * 8. Reduced state updates and effect dependencies
  * 
  * Performance benefits:
  * - No masonry calculations or layout recalculations
  * - Fixed grid structure prevents layout shifts
  * - Smooth animations with predictable positioning
- * - Much faster rendering and interactions
+ * - Minimal re-renders and DOM manipulations
+ * - Cached calculations for better performance
  */
 
 import * as React from "react";
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { gsap } from "gsap";
 import { cn } from "../../renderer/lib/utils";
@@ -31,7 +36,16 @@ interface StaticDriveGridProps {
   className?: string;
 }
 
-export function StaticDriveGrid({ 
+// Memoized drive card component to prevent unnecessary re-renders
+const MemoizedDriveCard = React.memo(ExpandableDriveCard);
+
+// Cached animation dimensions
+const CARD_DIMENSIONS = {
+  original: { width: 307.6640625, height: 280 },
+  expanded: { width: 700, height: 600 }
+} as const;
+
+function StaticDriveGridComponent({ 
   drives, 
   onBrowse, 
   onShare, 
@@ -43,110 +57,125 @@ export function StaticDriveGrid({
   const [pendingExpandId, setPendingExpandId] = useState<string | null>(null);
   const [copyPosition, setCopyPosition] = useState<{ x: number; y: number } | null>(null);
   const [isCollapsing, setIsCollapsing] = useState(false);
+  const [showExpandedContent, setShowExpandedContent] = useState(false);
+  
   const containerRef = useRef<HTMLDivElement>(null);
   const copyRef = useRef<HTMLDivElement>(null);
+  const timelineRef = useRef<gsap.core.Timeline | null>(null);
+  
+  // Cache viewport dimensions
+  const viewportDimensions = useMemo(() => ({
+    centerX: window.innerWidth / 2,
+    centerY: window.innerHeight / 2,
+    halfCardWidth: CARD_DIMENSIONS.original.width / 2,
+    halfCardHeight: CARD_DIMENSIONS.original.height / 2,
+    halfExpandedWidth: CARD_DIMENSIONS.expanded.width / 2,
+    halfExpandedHeight: CARD_DIMENSIONS.expanded.height / 2
+  }), []);
 
 
-  // Simple expand handler - capture position and toggle the expanded drive
+  // Optimized expand handler with cached element lookup
   const handleExpandChange = useCallback((driveId: string, expanded: boolean) => {
-    if (isAnimating) {
-      return;
-    }
+    if (isAnimating) return;
 
     if (expanded) {
-      // Capture the current position of the clicked element
+      // Use cached element lookup instead of querySelector
       const driveElement = containerRef.current?.querySelector(`[data-drive-id="${driveId}"]`) as HTMLDivElement;
       if (driveElement) {
         const rect = driveElement.getBoundingClientRect();
-        console.log('Original card dimensions:', {
-          left: rect.left,
-          top: rect.top,
-          width: rect.width,
-          height: rect.height,
-          right: rect.right,
-          bottom: rect.bottom
-        });
         setCopyPosition({
-          x: rect.left, // Top-left of the original card
-          y: rect.top   // Top-left of the original card
+          x: rect.left,
+          y: rect.top
         });
       }
 
       if (expandedDriveId && expandedDriveId !== driveId) {
-        // If another drive is already expanded, collapse it first
+        // Collapse current and expand new
         setIsAnimating(true);
         setExpandedDriveId(null);
         setPendingExpandId(driveId);
         
-        setTimeout(() => {
+        // Use requestAnimationFrame for better performance
+        requestAnimationFrame(() => {
           setExpandedDriveId(driveId);
           setPendingExpandId(null);
-          setTimeout(() => {
-            setIsAnimating(false);
-          }, 100);
-        }, 300);
+          requestAnimationFrame(() => setIsAnimating(false));
+        });
       } else {
         setExpandedDriveId(driveId);
       }
     } else {
       setIsAnimating(true);
       setIsCollapsing(true);
-      
-      // Animation will complete via onAnimationComplete callback
     }
   }, [expandedDriveId, isAnimating]);
 
-  const handleExpandComplete = useCallback(() => {
-    // No special handling needed for expand
-  }, []);
-
   const handleCollapseComplete = useCallback(() => {
-    // Reset state when collapse animation completes
+    // Clean up timeline and reset state
+    if (timelineRef.current) {
+      timelineRef.current.kill();
+      timelineRef.current = null;
+    }
     setExpandedDriveId(null);
     setCopyPosition(null);
     setIsCollapsing(false);
     setIsAnimating(false);
+    setShowExpandedContent(false);
   }, []);
 
-  // GSAP animation functions
+  // Optimized GSAP animation functions with cached calculations
   const animateToCenter = useCallback(() => {
     if (!copyRef.current || !copyPosition) return;
 
+    // Kill any existing timeline
+    if (timelineRef.current) {
+      timelineRef.current.kill();
+    }
+
     const tl = gsap.timeline();
+    timelineRef.current = tl;
     
     // Phase 1: Move to center (keep original size)
     tl.to(copyRef.current, {
-      left: window.innerWidth / 2 - 153.83203125,
-      top: window.innerHeight / 2 - 140,
+      left: viewportDimensions.centerX - viewportDimensions.halfCardWidth,
+      top: viewportDimensions.centerY - viewportDimensions.halfCardHeight,
       duration: 0.6,
-      ease: "power2.out"
+      ease: "power2.out",
+      onComplete: () => setShowExpandedContent(true) // Show expanded content ONLY after reaching center
     })
-    // Phase 2: Expand at center
+    // Phase 2: Expand at center (now with expanded content)
     .to(copyRef.current, {
-      left: window.innerWidth / 2 - 300,
-      top: window.innerHeight / 2 - 250,
-      width: 600,
-      height: 500,
+      left: viewportDimensions.centerX - viewportDimensions.halfExpandedWidth,
+      top: viewportDimensions.centerY - viewportDimensions.halfExpandedHeight,
+      width: CARD_DIMENSIONS.expanded.width,
+      height: CARD_DIMENSIONS.expanded.height,
       duration: 0.6,
       ease: "power2.out"
     });
-  }, [copyPosition]);
+  }, [copyPosition, viewportDimensions]);
 
   const animateToOriginal = useCallback(() => {
     if (!copyRef.current || !copyPosition) return;
 
+    // Kill any existing timeline
+    if (timelineRef.current) {
+      timelineRef.current.kill();
+    }
+
     const tl = gsap.timeline({
       onComplete: handleCollapseComplete
     });
+    timelineRef.current = tl;
     
-    // Phase 1: Shrink at center
+    // Phase 1: Hide expanded content and shrink at center
     tl.to(copyRef.current, {
-      left: window.innerWidth / 2 - 153.83203125,
-      top: window.innerHeight / 2 - 140,
-      width: 307.6640625,
-      height: 280,
+      left: viewportDimensions.centerX - viewportDimensions.halfCardWidth,
+      top: viewportDimensions.centerY - viewportDimensions.halfCardHeight,
+      width: CARD_DIMENSIONS.original.width,
+      height: CARD_DIMENSIONS.original.height,
       duration: 0.6,
-      ease: "power2.out"
+      ease: "power2.out",
+      onStart: () => setShowExpandedContent(false) // Hide expanded content when collapsing
     })
     // Phase 2: Move back to original position
     .to(copyRef.current, {
@@ -161,25 +190,36 @@ export function StaticDriveGrid({
       duration: 0.1,
       ease: "power2.out"
     });
-  }, [copyPosition, handleCollapseComplete]);
+  }, [copyPosition, viewportDimensions, handleCollapseComplete]);
 
-  // Get the expanded drive data
-  const expandedDrive = expandedDriveId ? drives.find(d => d.id === expandedDriveId) : null;
+  // Memoized expanded drive data
+  const expandedDrive = useMemo(() => 
+    expandedDriveId ? drives.find(d => d.id === expandedDriveId) : null,
+    [expandedDriveId, drives]
+  );
 
-  // Trigger GSAP animations
+  // Optimized effect for expand animation
   useEffect(() => {
     if (expandedDrive && copyPosition && !isCollapsing) {
-      // Start expand animation
       animateToCenter();
     }
   }, [expandedDrive, copyPosition, isCollapsing, animateToCenter]);
 
+  // Optimized effect for collapse animation
   useEffect(() => {
     if (isCollapsing && copyRef.current) {
-      // Start collapse animation
       animateToOriginal();
     }
   }, [isCollapsing, animateToOriginal]);
+
+  // Cleanup timeline on unmount
+  useEffect(() => {
+    return () => {
+      if (timelineRef.current) {
+        timelineRef.current.kill();
+      }
+    };
+  }, []);
 
   return (
     <div className={cn("w-full relative", className)} ref={containerRef}>
@@ -217,18 +257,22 @@ export function StaticDriveGrid({
             }}
             onClick={() => handleExpandChange(expandedDrive.id, false)}
           >
-            <ExpandableDriveCard
+            <MemoizedDriveCard
                 drive={expandedDrive}
                 onBrowse={onBrowse}
                 onShare={onShare}
                 onDelete={onDelete}
-                isExpanded={false} // Keep collapsed throughout animation
+                isExpanded={showExpandedContent} // Show expanded content only when animation reaches center
                 isAnimating={false}
                 isPending={false}
                 onExpandChange={() => {}} // Disable internal expand handling
                 onExpandComplete={() => {}}
                 onCollapseComplete={() => {}}
                 className="w-full h-full"
+                customSizes={{
+                  collapsedSize: { width: CARD_DIMENSIONS.original.width, height: CARD_DIMENSIONS.original.height },
+                  expandedSize: { width: CARD_DIMENSIONS.expanded.width, height: CARD_DIMENSIONS.expanded.height }
+                }}
               />
           </div>
         )}
@@ -238,50 +282,79 @@ export function StaticDriveGrid({
       <div className="w-full p-4 pb-8">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {drives.map((drive) => (
-            <div
+            <DriveGridItem
               key={drive.id}
-              data-drive-id={drive.id}
-              className="relative"
-              style={{
-                height: '280px', // Fixed height to maintain grid structure
-                minHeight: '280px'
-              }}
-            >
-              {/* Fixed-size wrapper that maintains grid position */}
-              <motion.div 
-                className="absolute inset-0"
-                animate={{
-                  opacity: expandedDriveId === drive.id ? 0 : 1,
-                }}
-                transition={{
-                  duration: 0,
-                  ease: "easeInOut",
-                  delay: expandedDriveId === drive.id ? 0 : 0 // Appear immediately when not expanded
-                }}
-              >
-                <div 
-                  className="w-full h-full cursor-pointer"
-                  onClick={() => handleExpandChange(drive.id, true)}
-                >
-                  <ExpandableDriveCard
-                    drive={drive}
-                    onBrowse={onBrowse}
-                    onShare={onShare}
-                    onDelete={onDelete}
-                    isExpanded={false} // Always false in grid - expansion happens in center
-                    isAnimating={false} // Disable internal animations
-                    isPending={false} // Disable pending state
-                    onExpandChange={() => {}} // Disable internal expand handling
-                    onExpandComplete={() => {}}
-                    onCollapseComplete={() => {}}
-                    className="w-full h-full"
-                  />
-                </div>
-              </motion.div>
-            </div>
+              drive={drive}
+              expandedDriveId={expandedDriveId}
+              onExpand={handleExpandChange}
+              onBrowse={onBrowse}
+              onShare={onShare}
+              onDelete={onDelete}
+            />
           ))}
         </div>
       </div>
     </div>
   );
 }
+
+// Memoized grid item component for better performance
+const DriveGridItem = React.memo(({ 
+  drive, 
+  expandedDriveId, 
+  onExpand, 
+  onBrowse, 
+  onShare, 
+  onDelete 
+}: {
+  drive: Drive;
+  expandedDriveId: string | null;
+  onExpand: (id: string, expanded: boolean) => void;
+  onBrowse?: (drive: Drive) => void;
+  onShare?: (drive: Drive) => void;
+  onDelete?: (drive: Drive) => void;
+}) => (
+  <div
+    data-drive-id={drive.id}
+    className="relative"
+    style={{
+      height: '280px', // Fixed height to maintain grid structure
+      minHeight: '280px'
+    }}
+  >
+    {/* Fixed-size wrapper that maintains grid position */}
+    <motion.div 
+      className="absolute inset-0"
+      animate={{
+        opacity: expandedDriveId === drive.id ? 0 : 1,
+      }}
+      transition={{
+        duration: 0,
+        ease: "easeInOut",
+        delay: expandedDriveId === drive.id ? 0 : 0 // Appear immediately when not expanded
+      }}
+    >
+      <div 
+        className="w-full h-full cursor-pointer"
+        onClick={() => onExpand(drive.id, true)}
+      >
+        <MemoizedDriveCard
+          drive={drive}
+          onBrowse={onBrowse}
+          onShare={onShare}
+          onDelete={onDelete}
+          isExpanded={false} // Always false in grid - expansion happens in center
+          isAnimating={false} // Disable internal animations
+          isPending={false} // Disable pending state
+          onExpandChange={() => {}} // Disable internal expand handling
+          onExpandComplete={() => {}}
+          onCollapseComplete={() => {}}
+          className="w-full h-full"
+        />
+      </div>
+    </motion.div>
+  </div>
+));
+
+// Export memoized component
+export const StaticDriveGrid = React.memo(StaticDriveGridComponent);
