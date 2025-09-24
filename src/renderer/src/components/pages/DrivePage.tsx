@@ -274,7 +274,7 @@ export function DrivePage() {
       {/* Prism Background */}
       <div className="absolute inset-0 z-0">
         <Prism 
-          height={3.5}
+          height={2}
           baseWidth={5}
           animationType="3drotate"
           glow={0.3}
