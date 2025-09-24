@@ -12,7 +12,9 @@ const api = {
       // Convert ArrayBuffer to Uint8Array (safer across IPC)
       const payload = files.map(f => ({ name: f.name, data: new Uint8Array(f.data) }))
       return ipcRenderer.invoke('drives:uploadFiles', { driveId, folderPath, files: payload })
-    }
+    },
+    deleteFile: async (driveId: string, path: string) => ipcRenderer.invoke('drives:deleteFile', { driveId, path }),
+    getStorageInfo: async (driveId: string) => ipcRenderer.invoke('drives:getStorageInfo', { driveId })
   },
   user: {
     getProfile: async () => ipcRenderer.invoke('user:getProfile'),
@@ -26,10 +28,20 @@ const api = {
       const data: ArrayBuffer | null = await ipcRenderer.invoke('drives:getFile', { driveId, path })
       if (!data) return null
       
-      // For audio files, try a different approach to avoid range request issues
       const extension = path.split('.').pop()?.toLowerCase()
       const isAudio = ['mp3', 'wav', 'ogg', 'm4a', 'aac'].includes(extension || '')
-      console.log(`[preload] getFileUrl ${path}: extension=${extension}, isAudio=${isAudio}`)
+      const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(extension || '')
+      const isVideo = ['mp4', 'webm', 'mov'].includes(extension || '')
+      const isMedia = isAudio || isImage || isVideo
+      
+      console.log(`[preload] getFileUrl ${path}: extension=${extension}, isMedia=${isMedia}, size=${data.byteLength}`)
+      
+      // 50MB limit for media files
+      const MAX_MEDIA_SIZE = 50 * 1024 * 1024 // 50MB
+      if (isMedia && data.byteLength > MAX_MEDIA_SIZE) {
+        console.warn(`[preload] getFileUrl ${path}: file too large (${data.byteLength} bytes > ${MAX_MEDIA_SIZE} bytes). Preview disabled.`)
+        return null
+      }
       
       if (isAudio) {
         // Use same logic as mp4/video: make a Blob without forcing MIME and return URL

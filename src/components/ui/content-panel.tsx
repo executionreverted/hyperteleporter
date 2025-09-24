@@ -14,14 +14,19 @@ import {
   IconFolder, 
   IconDownload, 
   IconShare, 
-  IconTrash 
+  IconTrash,
+  IconEye,
+  IconCopy 
 } from "@tabler/icons-react";
+import { ContextMenu, useContextMenu, type ContextMenuAction } from "./context-menu";
 
 interface ContentPanelProps {
   selectedNode?: TreeNode;
   onFileClick?: (node: TreeNode) => void;
   onNavigateUp?: () => void;
   canNavigateUp?: boolean;
+  driveId?: string;
+  onFileDeleted?: () => void;
   className?: string;
 }
 
@@ -458,10 +463,96 @@ const FileMetadata = ({ node }: { node: TreeNode }) => {
   );
 };
 
-const FolderContents = ({ node, onFileClick, onNavigateUp, canNavigateUp }: { node: TreeNode; onFileClick?: (node: TreeNode) => void; onNavigateUp?: () => void; canNavigateUp?: boolean }) => {
+const FolderContents = ({ node, onFileClick, onNavigateUp, canNavigateUp, driveId, onFileDeleted }: { node: TreeNode; onFileClick?: (node: TreeNode) => void; onNavigateUp?: () => void; canNavigateUp?: boolean; driveId?: string; onFileDeleted?: () => void }) => {
   const totalItems = node.children ? node.children.length : 0;
   const folderCount = node.children ? node.children.filter(c => c.type === 'folder').length : 0;
   const fileCount = totalItems - folderCount;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const api: any = (window as any)?.api
+  const { isOpen, position, actions, openContextMenu, closeContextMenu } = useContextMenu()
+
+  const handleDeleteFile = async (fileNode: TreeNode) => {
+    if (fileNode.type !== 'file') return
+    
+    const confirmed = window.confirm(`Are you sure you want to delete "${fileNode.name}"?`)
+    if (!confirmed) return
+
+    try {
+      const effectiveDriveId = driveId || (window.location.hash.match(/#\/drive\/([^/]+)/)?.[1] ?? null)
+      if (!effectiveDriveId || !api?.drives?.deleteFile) {
+        console.error('Delete failed: no driveId or API')
+        return
+      }
+
+      const path = fileNode.id.startsWith('/') ? fileNode.id : `/${fileNode.id}`
+      const success = await api.drives.deleteFile(effectiveDriveId, path)
+      
+      if (success) {
+        console.log(`[FolderContents] Successfully deleted ${fileNode.name}`)
+        onFileDeleted?.()
+      } else {
+        console.error(`[FolderContents] Failed to delete ${fileNode.name}`)
+        alert('Failed to delete file. Please try again.')
+      }
+    } catch (error) {
+      console.error('[FolderContents] Delete error:', error)
+      alert('An error occurred while deleting the file.')
+    }
+  }
+
+  const handleDownloadFile = async (fileNode: TreeNode) => {
+    if (fileNode.type !== 'file') return
+    try {
+      const effectiveDriveId = driveId || (window.location.hash.match(/#\/drive\/([^/]+)/)?.[1] ?? null)
+      if (!effectiveDriveId || !api?.files?.getFileUrl) return
+      const path = fileNode.id.startsWith('/') ? fileNode.id : `/${fileNode.id}`
+      const url = await api.files.getFileUrl(effectiveDriveId, path)
+      if (!url) throw new Error('No preview URL')
+      const a = document.createElement('a')
+      a.href = url
+      a.download = fileNode.name
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      // Best-effort revoke if blob:
+      if (url.startsWith('blob:')) URL.revokeObjectURL(url)
+    } catch (e) {
+      console.error('[FolderContents] Download error:', e)
+      alert('Failed to download file.')
+    }
+  }
+
+  const handleCopyPath = async (fileNode: TreeNode) => {
+    const path = fileNode.id.startsWith('/') ? fileNode.id : `/${fileNode.id}`
+    try {
+      await navigator.clipboard.writeText(path)
+    } catch {}
+  }
+
+  const buildContextActions = (childNode: TreeNode): ContextMenuAction[] => {
+    const actions: ContextMenuAction[] = []
+    if (childNode.type === 'file') {
+      actions.push(
+        { id: 'open', label: 'Open', icon: <IconEye size={16} />, onClick: () => onFileClick?.(childNode) },
+        { id: 'download', label: 'Download', icon: <IconDownload size={16} />, onClick: () => handleDownloadFile(childNode) },
+        { id: 'copy', label: 'Copy path', icon: <IconCopy size={16} />, onClick: () => handleCopyPath(childNode) },
+        { id: 'delete', label: 'Delete', icon: <IconTrash size={16} />, onClick: () => handleDeleteFile(childNode), destructive: true },
+      )
+    } else {
+      actions.push(
+        { id: 'open', label: 'Open', icon: <IconEye size={16} />, onClick: () => onFileClick?.(childNode) },
+        { id: 'copy', label: 'Copy path', icon: <IconCopy size={16} />, onClick: () => handleCopyPath(childNode) },
+      )
+    }
+    return actions
+  }
+
+  const onChildRightClick = (e: React.MouseEvent, childNode: TreeNode) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const menuActions = buildContextActions(childNode)
+    openContextMenu(e, menuActions)
+  }
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -509,6 +600,7 @@ const FolderContents = ({ node, onFileClick, onNavigateUp, canNavigateUp }: { no
                 key={child.id}
                 className="bg-black/10 rounded-lg p-4 hover:shadow-md transition-shadow cursor-pointer hover:bg-black/20"
                 onClick={() => onFileClick?.(child)}
+                onContextMenu={(e) => onChildRightClick(e, child)}
               >
                 <div className="flex items-center gap-3 mb-2">
                   {child.type === 'folder' ? (
@@ -535,11 +627,105 @@ const FolderContents = ({ node, onFileClick, onNavigateUp, canNavigateUp }: { no
           </div>
         )}
       </div>
+      <ContextMenu isOpen={isOpen} position={position} actions={actions} onClose={closeContextMenu} />
     </motion.div>
   );
 };
 
-export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavigateUp, className }: ContentPanelProps) {
+export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavigateUp, driveId, onFileDeleted, className }: ContentPanelProps) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const api: any = (window as any)?.api
+  const { isOpen, position, actions, openContextMenu, closeContextMenu } = useContextMenu()
+
+  const handleDeleteFile = async () => {
+    if (!selectedNode || selectedNode.type !== 'file') return
+    
+    const confirmed = window.confirm(`Are you sure you want to delete "${selectedNode.name}"?`)
+    if (!confirmed) return
+
+    try {
+      const effectiveDriveId = driveId || (window.location.hash.match(/#\/drive\/([^/]+)/)?.[1] ?? null)
+      const hasApi = !!api?.drives?.deleteFile
+      console.log('[ContentPanel] Delete debug:', { effectiveDriveId, hasApi, selectedNode })
+      if (!effectiveDriveId || !hasApi) {
+        console.error('Delete failed: no driveId or API')
+        return
+      }
+
+      const path = selectedNode.id.startsWith('/') ? selectedNode.id : `/${selectedNode.id}`
+      const success = await api.drives.deleteFile(effectiveDriveId, path)
+      
+      if (success) {
+        console.log(`[ContentPanel] Successfully deleted ${selectedNode.name}`)
+        onFileDeleted?.()
+      } else {
+        console.error(`[ContentPanel] Failed to delete ${selectedNode.name}`)
+        alert('Failed to delete file. Please try again.')
+      }
+    } catch (error) {
+      console.error('[ContentPanel] Delete error:', error)
+      alert('An error occurred while deleting the file.')
+    }
+  }
+
+  const handleDownloadFile = async () => {
+    if (!selectedNode || selectedNode.type !== 'file') return
+    try {
+      const effectiveDriveId = driveId || (window.location.hash.match(/#\/drive\/([^/]+)/)?.[1] ?? null)
+      if (!effectiveDriveId || !api?.files?.getFileUrl) return
+      const path = selectedNode.id.startsWith('/') ? selectedNode.id : `/${selectedNode.id}`
+      const url = await api.files.getFileUrl(effectiveDriveId, path)
+      if (!url) throw new Error('No preview URL')
+      const a = document.createElement('a')
+      a.href = url
+      a.download = selectedNode.name
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      // Best-effort revoke if blob:
+      if (url.startsWith('blob:')) URL.revokeObjectURL(url)
+    } catch (e) {
+      console.error('[ContentPanel] Download error:', e)
+      alert('Failed to download file.')
+    }
+  }
+
+  const handleCopyPath = async () => {
+    if (!selectedNode) return
+    const path = selectedNode.id.startsWith('/') ? selectedNode.id : `/${selectedNode.id}`
+    try {
+      await navigator.clipboard.writeText(path)
+    } catch {}
+  }
+
+  const buildContextActions = React.useCallback((): ContextMenuAction[] => {
+    if (!selectedNode) return []
+    console.log('[ContentPanel] buildContextActions - selectedNode:', selectedNode)
+    const actions: ContextMenuAction[] = []
+    if (selectedNode.type === 'file') {
+      console.log('[ContentPanel] Adding file actions for:', selectedNode.name)
+      actions.push(
+        { id: 'open', label: 'Open', icon: <IconEye size={16} />, onClick: () => {} },
+        { id: 'download', label: 'Download', icon: <IconDownload size={16} />, onClick: handleDownloadFile },
+        { id: 'copy', label: 'Copy path', icon: <IconCopy size={16} />, onClick: handleCopyPath },
+        { id: 'delete', label: 'Delete', icon: <IconTrash size={16} />, onClick: handleDeleteFile, destructive: true },
+      )
+    } else {
+      console.log('[ContentPanel] Adding folder actions for:', selectedNode.name)
+      actions.push(
+        { id: 'copy', label: 'Copy path', icon: <IconCopy size={16} />, onClick: handleCopyPath },
+      )
+    }
+    console.log('[ContentPanel] Built actions:', actions)
+    return actions
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedNode])
+
+  const onRightClick = (e: React.MouseEvent) => {
+    const menuActions = buildContextActions()
+    openContextMenu(e, menuActions)
+  }
+
   if (!selectedNode) {
     return (
       <div className={cn("flex items-center justify-center h-full", className)}>
@@ -559,7 +745,7 @@ export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavig
   }
 
   return (
-    <div className={cn("h-full overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-600 scrollbar-track-neutral-800 bg-black/5", className)}>
+    <div className={cn("h-full overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-600 scrollbar-track-neutral-800 bg-black/5", className)} onContextMenu={onRightClick}>
       {/* Actions Header - only for files */}
       {selectedNode.type === 'file' && (
         <div className="sticky top-0 z-10 bg-black/5 backdrop-blur-sm border-b border-neutral-700/30 p-4">
@@ -573,7 +759,10 @@ export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavig
                 <IconShare size={16} />
                 Share
               </MagicButton>
-              <MagicButton className="text-sm flex items-center gap-2">
+              <MagicButton 
+                className="text-sm flex items-center gap-2"
+                onClick={handleDeleteFile}
+              >
                 <IconTrash size={16} />
                 Delete
               </MagicButton>
@@ -583,13 +772,15 @@ export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavig
       )}
       
       {selectedNode.type === 'folder' ? (
-        <FolderContents node={selectedNode} onFileClick={onFileClick} onNavigateUp={onNavigateUp} canNavigateUp={canNavigateUp} />
+        <FolderContents node={selectedNode} onFileClick={onFileClick} onNavigateUp={onNavigateUp} canNavigateUp={canNavigateUp} driveId={driveId} onFileDeleted={onFileDeleted} />
       ) : (
         <>
           <FilePreview node={selectedNode} />
           <FileMetadata node={selectedNode} />
         </>
       )}
+
+      <ContextMenu isOpen={isOpen} position={position} actions={actions} onClose={closeContextMenu} />
     </div>
   );
 }

@@ -177,4 +177,96 @@ export async function getFileBuffer(driveId: string, path: string): Promise<Buff
   return null
 }
 
+export async function deleteFile(driveId: string, path: string): Promise<boolean> {
+  const drive = activeDrives.get(driveId)?.hyperdrive
+  if (!drive) throw new Error('Drive not found')
+  const normalized = path.startsWith('/') ? path : `/${path}`
+  
+  try {
+    // Check if file exists before deletion
+    const existsBefore = await (drive as any).exists(normalized)
+    console.log(`[hyperdrive] deleteFile ${normalized}: exists before=${existsBefore}`)
+    
+    if (!existsBefore) {
+      console.log(`[hyperdrive] deleteFile ${normalized}: file does not exist, nothing to delete`)
+      return true
+    }
+    
+    // Read entry BEFORE deletion so we can get the blob reference to clear
+    // @ts-ignore - hyperdrive entry method exists at runtime
+    const entryBefore = await (drive as any).entry(normalized)
+    const blobRef = entryBefore?.value?.blob
+    console.log(`[hyperdrive] deleteFile ${normalized}: entry blob before del=`, blobRef)
+
+    // Capture storage info before for diagnostics
+    let blobsLengthBefore: number | undefined
+    try {
+      // @ts-ignore - getBlobsLength exists at runtime
+      blobsLengthBefore = await (drive as any).getBlobsLength()
+    } catch {}
+
+    // Remove file entry from drive structure
+    // @ts-ignore - hyperdrive del method exists at runtime
+    await (drive as any).del(normalized)
+    console.log(`[hyperdrive] deleteFile ${normalized}: del() completed`)
+    
+    // Free blob storage to reclaim disk space using explicit blob reference if available
+    let cleared: any = null
+    if (blobRef) {
+      try {
+        // @ts-ignore - hyperdrive getBlobs exists at runtime
+        const blobs = await (drive as any).getBlobs()
+        // @ts-ignore - blobs.clear exists at runtime
+        cleared = await blobs.clear(blobRef, { diff: true })
+        console.log(`[hyperdrive] deleteFile ${normalized}: blobs.clear() completed, cleared bytes:`, cleared)
+      } catch (err) {
+        console.warn(`[hyperdrive] deleteFile ${normalized}: blobs.clear failed, falling back to drive.clear`, err)
+        // Fallback to path-based clear
+        // @ts-ignore - hyperdrive clear method exists at runtime
+        cleared = await (drive as any).clear(normalized, { diff: true })
+        console.log(`[hyperdrive] deleteFile ${normalized}: drive.clear() completed, cleared bytes:`, cleared)
+      }
+    } else {
+      // No blobRef (e.g., folder or symlink) - attempt path-based clear anyway
+      // @ts-ignore
+      cleared = await (drive as any).clear(normalized, { diff: true })
+      console.log(`[hyperdrive] deleteFile ${normalized}: drive.clear() (no blobRef) completed, cleared bytes:`, cleared)
+    }
+    
+    // Verify file is gone
+    const existsAfter = await (drive as any).exists(normalized)
+    console.log(`[hyperdrive] deleteFile ${normalized}: exists after=${existsAfter}`)
+    
+    // Capture storage info after for diagnostics
+    try {
+      // @ts-ignore - getBlobsLength exists at runtime
+      const blobsLengthAfter = await (drive as any).getBlobsLength()
+      console.log(`[hyperdrive] deleteFile ${normalized}: blobsLength before=${blobsLengthBefore} after=${blobsLengthAfter}`)
+    } catch {}
+
+    console.log(`[hyperdrive] deleteFile ${normalized}: deleted and cleared successfully`)
+    return true
+  } catch (err) {
+    console.error(`[hyperdrive] deleteFile ${normalized}: failed`, err)
+    return false
+  }
+}
+
+export async function getDriveStorageInfo(driveId: string): Promise<{ blobsLength: number, version: number }> {
+  const drive = activeDrives.get(driveId)?.hyperdrive
+  if (!drive) throw new Error('Drive not found')
+  
+  try {
+    // @ts-ignore - hyperdrive getBlobsLength method exists at runtime
+    const blobsLength = await (drive as any).getBlobsLength()
+    const version = drive.version
+    
+    console.log(`[hyperdrive] getDriveStorageInfo ${driveId}: blobsLength=${blobsLength}, version=${version}`)
+    return { blobsLength, version }
+  } catch (err) {
+    console.error(`[hyperdrive] getDriveStorageInfo ${driveId}: failed`, err)
+    throw err
+  }
+}
+
 

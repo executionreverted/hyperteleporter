@@ -666,6 +666,8 @@ export function DrivePage() {
             onFileClick={handleFileClick}
             onNavigateUp={handleBack}
             canNavigateUp={canGoBack}
+            driveId={params.driveId as string}
+            onFileDeleted={reloadCurrentFolder}
           />
           
           {/* Dropzone */}

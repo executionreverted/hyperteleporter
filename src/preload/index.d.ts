@@ -10,6 +10,8 @@ declare global {
         listFolder: (driveId: string, folder?: string, recursive?: boolean) => Promise<any[]>
         createFolder: (driveId: string, folderPath: string) => Promise<boolean>
         uploadFiles: (driveId: string, folderPath: string, files: Array<{ name: string; data: ArrayBuffer }>) => Promise<{ uploaded: number }>
+        deleteFile: (driveId: string, path: string) => Promise<boolean>
+        getStorageInfo: (driveId: string) => Promise<{ blobsLength: number, version: number }>
       }
       user: {
         getProfile: () => Promise<any>

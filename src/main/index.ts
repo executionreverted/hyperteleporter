@@ -2,7 +2,7 @@ import { app, shell, BrowserWindow, ipcMain, screen } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
-import { initializeAllDrives, closeAllDrives, createDrive, listActiveDrives, listDrive, createFolder, uploadFiles, getFileBuffer } from './services/hyperdriveManager'
+import { initializeAllDrives, closeAllDrives, createDrive, listActiveDrives, listDrive, createFolder, uploadFiles, getFileBuffer, deleteFile, getDriveStorageInfo } from './services/hyperdriveManager'
 import { readUserProfile, writeUserProfile } from './services/userProfile'
 
 function createWindow(): void {
@@ -164,6 +164,20 @@ app.whenReady().then(() => {
     view.set(buf)
     console.log(`[ipc] drives:getFile ${path}: original offset=${buf.byteOffset}, length=${buf.length}, new buffer length=${newBuffer.byteLength}`)
     return newBuffer
+  })
+
+  ipcMain.handle('drives:deleteFile', async (_evt, { driveId, path }: { driveId: string, path: string }) => {
+    console.log(`[ipc] drives:deleteFile request: driveId=${driveId}, path=${path}`)
+    const success = await deleteFile(driveId, path)
+    console.log(`[ipc] drives:deleteFile ${path}: success=${success}`)
+    return success
+  })
+
+  ipcMain.handle('drives:getStorageInfo', async (_evt, { driveId }: { driveId: string }) => {
+    console.log(`[ipc] drives:getStorageInfo request: driveId=${driveId}`)
+    const info = await getDriveStorageInfo(driveId)
+    console.log(`[ipc] drives:getStorageInfo ${driveId}: blobsLength=${info.blobsLength}, version=${info.version}`)
+    return info
   })
 
   // Expose user profile IPC (persisted on disk, separate from Hyperdrive for now)

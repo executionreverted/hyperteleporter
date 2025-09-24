@@ -7,8 +7,8 @@ import {
   IconTrash, 
   IconCopy, 
   IconCut, 
-  IconPaste, 
   IconDownload, 
+  IconClipboard, 
   IconShare, 
   IconFolderPlus,
   IconFilePlus,
@@ -119,8 +119,9 @@ export function ContextMenu({ isOpen, position, actions, onClose, className }: C
 export function useContextMenu() {
   const [isOpen, setIsOpen] = useState(false);
   const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [actions, setActions] = useState<ContextMenuAction[]>([]);
 
-  const openContextMenu = (event: React.MouseEvent, actions: ContextMenuAction[]) => {
+  const openContextMenu = (event: React.MouseEvent, menuActions: ContextMenuAction[]) => {
     event.preventDefault();
     event.stopPropagation();
     
@@ -129,22 +130,25 @@ export function useContextMenu() {
     
     // Adjust position if menu would go off screen
     const menuWidth = 200;
-    const menuHeight = actions.length * 40 + 16; // Approximate height
+    const menuHeight = menuActions.length * 40 + 16; // Approximate height
     
     const adjustedX = x + menuWidth > window.innerWidth ? x - menuWidth : x;
     const adjustedY = y + menuHeight > window.innerHeight ? y - menuHeight : y;
     
+    setActions(menuActions);
     setPosition({ x: Math.max(0, adjustedX), y: Math.max(0, adjustedY) });
     setIsOpen(true);
   };
 
   const closeContextMenu = () => {
     setIsOpen(false);
+    setActions([]);
   };
 
   return {
     isOpen,
     position,
+    actions,
     openContextMenu,
     closeContextMenu,
   };
