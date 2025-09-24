@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { gsap } from 'gsap';
 import { ExpandableDriveCard } from './expandable-drive-card';
 
@@ -20,15 +20,31 @@ const useMedia = (queries, values, defaultValue) => {
 const useMeasure = () => {
   const ref = useRef(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
+  const roRef = useRef(null);
 
   useLayoutEffect(() => {
     if (!ref.current) return;
-    const ro = new ResizeObserver(([entry]) => {
-      const { width, height } = entry.contentRect;
-      setSize({ width, height });
-    });
-    ro.observe(ref.current);
-    return () => ro.disconnect();
+    
+    // Create ResizeObserver only once
+    if (!roRef.current) {
+      roRef.current = new ResizeObserver(([entry]) => {
+        const { width, height } = entry.contentRect;
+        setSize(prev => {
+          // Only update if size actually changed to prevent unnecessary re-renders
+          if (prev.width !== width || prev.height !== height) {
+            return { width, height };
+          }
+          return prev;
+        });
+      });
+    }
+    
+    roRef.current.observe(ref.current);
+    return () => {
+      if (roRef.current) {
+        roRef.current.disconnect();
+      }
+    };
   }, []);
 
   return [ref, size];
@@ -56,7 +72,8 @@ const Masonry = ({
   scaleOnHover = true,
   hoverScale = 0.95,
   blurToFocus = true,
-  colorShiftOnHover = false
+  colorShiftOnHover = false,
+  isAnimating = false
 }) => {
   const columns = useMedia(
     ['(min-width:1500px)', '(min-width:1000px)', '(min-width:600px)', '(min-width:400px)'],
@@ -67,6 +84,9 @@ const Masonry = ({
   // @ts-ignore
   const [containerRef, { width }] = useMeasure();
   const [imagesReady, setImagesReady] = useState(false);
+  const [isMasonryAnimating, setIsMasonryAnimating] = useState(false);
+  const animationTimeoutRef = useRef(null);
+  const elementCacheRef = useRef(new Map()); // Cache DOM elements for better performance
 
   const getInitialPosition = item => {
     // @ts-ignore
@@ -102,6 +122,54 @@ const Masonry = ({
     preloadImages(items.map(i => i.img)).then(() => setImagesReady(true));
   }, [items]);
 
+  // Debounced animation function to prevent rapid re-layouts
+  const debouncedAnimate = useCallback((gridItems) => {
+    if (animationTimeoutRef.current) {
+      clearTimeout(animationTimeoutRef.current);
+    }
+    
+    // Don't animate if expand/collapse animation is still running
+    if (isAnimating) {
+      return;
+    }
+    
+    animationTimeoutRef.current = setTimeout(() => {
+      // Double-check animation state before proceeding
+      if (isAnimating) {
+        return;
+      }
+      
+      setIsMasonryAnimating(true);
+      
+      gridItems.forEach((item, index) => {
+        // Use cached element instead of selector query
+        let element = elementCacheRef.current.get(item.id);
+        if (!element) {
+          element = document.querySelector(`[data-key="${item.id}"]`);
+          if (element) {
+            elementCacheRef.current.set(item.id, element);
+          }
+        }
+
+        if (element) {
+          const animProps = { x: item.x, y: item.y, width: item.w, height: item.h };
+
+          gsap.to(element, {
+            ...animProps,
+            duration: duration * 0.6, // Faster for better performance
+            ease: 'power2.out',
+            overwrite: 'auto',
+            onComplete: () => {
+              if (index === gridItems.length - 1) {
+                setIsMasonryAnimating(false);
+              }
+            }
+          });
+        }
+      });
+    }, 10); // Very fast debounce for immediate response
+  }, [duration, isAnimating]);
+
   const grid = useMemo(() => {
     if (!width) return [];
     const colHeights = new Array(columns).fill(0);
@@ -110,12 +178,21 @@ const Masonry = ({
     const columnWidth = (width - totalGaps) / columns;
 
     return items.map(child => {
-      const col = colHeights.indexOf(Math.min(...colHeights));
-      const x = col * (columnWidth + gap);
-      const height = child.height; // Use full height instead of dividing by 2
-      const y = colHeights[col];
+      // Find the shortest column more efficiently
+      let shortestCol = 0;
+      let minHeight = colHeights[0];
+      for (let i = 1; i < columns; i++) {
+        if (colHeights[i] < minHeight) {
+          minHeight = colHeights[i];
+          shortestCol = i;
+        }
+      }
 
-      colHeights[col] += height + gap;
+      const x = shortestCol * (columnWidth + gap);
+      const height = child.height;
+      const y = colHeights[shortestCol];
+
+      colHeights[shortestCol] += height + gap;
       return { ...child, x, y, w: columnWidth, h: height };
     });
   }, [columns, items, width]);
@@ -125,70 +202,87 @@ const Masonry = ({
   useLayoutEffect(() => {
     if (!imagesReady) return;
 
-    grid.forEach((item, index) => {
-      const selector = `[data-key="${item.id}"]`;
-      const animProps = { x: item.x, y: item.y, width: item.w, height: item.h };
-
-      if (!hasMounted.current) {
-        const start = getInitialPosition(item);
-        gsap.fromTo(
-          selector,
-          {
-            opacity: 0,
-            x: start.x,
-            y: start.y,
-            width: item.w,
-            height: item.h,
-            ...(blurToFocus && { filter: 'blur(10px)' })
-          },
-          {
-            opacity: 1,
-            ...animProps,
-            ...(blurToFocus && { filter: 'blur(0px)' }),
-            duration: 0.8,
-            ease: 'power3.out',
-            delay: index * stagger
-          }
-        );
-      } else {
-        gsap.to(selector, {
-          ...animProps,
-          duration,
-          ease,
-          overwrite: 'auto'
-        });
-      }
-    });
-
-    hasMounted.current = true;
+    if (!hasMounted.current) {
+      // Initial mount animation
+      grid.forEach((item, index) => {
+        const element = document.querySelector(`[data-key="${item.id}"]`);
+        if (element) {
+          // Cache the element for future use
+          elementCacheRef.current.set(item.id, element);
+          
+          const animProps = { x: item.x, y: item.y, width: item.w, height: item.h };
+          const start = getInitialPosition(item);
+          
+          gsap.fromTo(
+            element,
+            {
+              opacity: 0,
+              x: start.x,
+              y: start.y,
+              width: item.w,
+              height: item.h,
+              ...(blurToFocus && { filter: 'blur(10px)' })
+            },
+            {
+              opacity: 1,
+              ...animProps,
+              ...(blurToFocus && { filter: 'blur(0px)' }),
+              duration: 0.6, // Faster initial animation
+              ease: 'power2.out',
+              delay: index * stagger
+            }
+          );
+        }
+      });
+      hasMounted.current = true;
+    } else {
+      // Use debounced animation for layout changes
+      debouncedAnimate(grid);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [grid, imagesReady, stagger, animateFrom, blurToFocus, duration, ease]);
+  }, [grid, imagesReady, stagger, animateFrom, blurToFocus, duration, ease, debouncedAnimate]);
+
+  // Cleanup timeout and cache on unmount or items change
+  useEffect(() => {
+    return () => {
+      if (animationTimeoutRef.current) {
+        clearTimeout(animationTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Clear element cache when items change
+  useEffect(() => {
+    elementCacheRef.current.clear();
+  }, [items]);
 
   const handleMouseEnter = (id, element) => {
-    if (scaleOnHover) {
-      gsap.to(`[data-key="${id}"]`, {
+    if (scaleOnHover && !isMasonryAnimating) {
+      const cachedElement = elementCacheRef.current.get(id) || element;
+      gsap.to(cachedElement, {
         scale: hoverScale,
-        duration: 0.3,
+        duration: 0.2, // Faster hover response
         ease: 'power2.out'
       });
     }
     if (colorShiftOnHover) {
       const overlay = element.querySelector('.color-overlay');
-      if (overlay) gsap.to(overlay, { opacity: 0.3, duration: 0.3 });
+      if (overlay) gsap.to(overlay, { opacity: 0.3, duration: 0.2 });
     }
   };
 
   const handleMouseLeave = (id, element) => {
-    if (scaleOnHover) {
-      gsap.to(`[data-key="${id}"]`, {
+    if (scaleOnHover && !isMasonryAnimating) {
+      const cachedElement = elementCacheRef.current.get(id) || element;
+      gsap.to(cachedElement, {
         scale: 1,
-        duration: 0.3,
+        duration: 0.2, // Faster hover response
         ease: 'power2.out'
       });
     }
     if (colorShiftOnHover) {
       const overlay = element.querySelector('.color-overlay');
-      if (overlay) gsap.to(overlay, { opacity: 0, duration: 0.3 });
+      if (overlay) gsap.to(overlay, { opacity: 0, duration: 0.2 });
     }
   };
 
@@ -200,7 +294,11 @@ const Masonry = ({
           key={item.id}
           data-key={item.id}
           className="absolute box-content"
-          style={{ willChange: 'transform, width, height, opacity' }}
+          style={{ 
+            willChange: 'transform, width, height, opacity, z-index',
+            zIndex: item.isExpanded ? 50 : 10, // Higher z-index for expanding cards
+            transition: 'z-index 0.1s ease-in-out' // Smooth z-index transition
+          }}
           onMouseEnter={e => handleMouseEnter(item.id, e.currentTarget)}
           onMouseLeave={e => handleMouseLeave(item.id, e.currentTarget)}
         >
@@ -214,6 +312,8 @@ const Masonry = ({
                 onDelete={item.onDelete}
                 isExpanded={item.isExpanded}
                 onExpandChange={item.onExpandChange}
+                onExpandComplete={item.onExpandComplete}
+                onCollapseComplete={item.onCollapseComplete}
                 className="w-full h-full"
               />
             </div>

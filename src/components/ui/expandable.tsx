@@ -20,7 +20,7 @@ import useMeasure from "react-use-measure"
 
 import { cn } from "../../renderer/lib/utils";
 
-const springConfig = { stiffness: 200, damping: 20, bounce: 0.2 }
+const springConfig = { stiffness: 300, damping: 30, bounce: 0.1 }
 
 interface ExpandableContextType {
   isExpanded: boolean // Indicates whether the component is expanded
@@ -357,6 +357,8 @@ interface ExpandableCardProps {
   hoverToExpand?: boolean // Whether to expand on hover
   expandDelay?: number // Delay before expanding
   collapseDelay?: number // Delay before collapsing
+  onExpandComplete?: () => void // Callback when expand animation completes
+  onCollapseComplete?: () => void // Callback when collapse animation completes
 }
 
 const ExpandableCard = React.forwardRef<HTMLDivElement, ExpandableCardProps>(
@@ -369,6 +371,8 @@ const ExpandableCard = React.forwardRef<HTMLDivElement, ExpandableCardProps>(
       hoverToExpand = false,
       expandDelay = 0,
       collapseDelay = 0,
+      onExpandComplete,
+      onCollapseComplete,
       ...props
     },
     ref
@@ -386,6 +390,56 @@ const ExpandableCard = React.forwardRef<HTMLDivElement, ExpandableCardProps>(
     // Apply spring animation to the motion values
     const smoothWidth = useSpring(animatedWidth, springConfig)
     const smoothHeight = useSpring(animatedHeight, springConfig)
+
+    // Track animation completion using useEffect with timeout fallback
+    useEffect(() => {
+      let timeoutId: NodeJS.Timeout;
+      let hasCompleted = false;
+
+      const checkCompletion = () => {
+        if (hasCompleted) return;
+        
+        const currentWidth = smoothWidth.get();
+        const currentHeight = smoothHeight.get();
+        const targetWidth = isExpanded ? (expandedSize.width || width) : (collapsedSize.width || width);
+        const targetHeight = isExpanded ? (expandedSize.height || height) : (collapsedSize.height || height);
+        
+        // More lenient threshold for faster response
+        const widthClose = Math.abs(currentWidth - targetWidth) < 5;
+        const heightClose = Math.abs(currentHeight - targetHeight) < 5;
+        
+        if (widthClose && heightClose) {
+          hasCompleted = true;
+          if (isExpanded && onExpandComplete) {
+            onExpandComplete();
+          } else if (!isExpanded && onCollapseComplete) {
+            onCollapseComplete();
+          }
+        }
+      };
+
+      // Check completion more frequently
+      const unsubscribeWidth = smoothWidth.on('change', checkCompletion);
+      const unsubscribeHeight = smoothHeight.on('change', checkCompletion);
+
+      // Fallback timeout to ensure we don't wait forever
+      timeoutId = setTimeout(() => {
+        if (!hasCompleted) {
+          hasCompleted = true;
+          if (isExpanded && onExpandComplete) {
+            onExpandComplete();
+          } else if (!isExpanded && onCollapseComplete) {
+            onCollapseComplete();
+          }
+        }
+      }, 250); // 250ms timeout for faster response
+
+      return () => {
+        unsubscribeWidth();
+        unsubscribeHeight();
+        clearTimeout(timeoutId);
+      };
+    }, [isExpanded, smoothWidth, smoothHeight, expandedSize, collapsedSize, width, height, onExpandComplete, onCollapseComplete]);
 
     // Effect to update the animated dimensions when expansion state changes
     useEffect(() => {

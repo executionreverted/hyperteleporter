@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react";
-import { useState } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { 
   Expandable, 
   ExpandableCard, 
@@ -48,6 +48,8 @@ interface ExpandableDriveCardProps {
   className?: string;
   isExpanded?: boolean;
   onExpandChange?: (expanded: boolean) => void;
+  onExpandComplete?: () => void;
+  onCollapseComplete?: () => void;
 }
 
 export function ExpandableDriveCard({ 
@@ -57,7 +59,9 @@ export function ExpandableDriveCard({
   onDelete, 
   className,
   isExpanded: controlledExpanded,
-  onExpandChange
+  onExpandChange,
+  onExpandComplete,
+  onCollapseComplete
 }: ExpandableDriveCardProps) {
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
 
@@ -142,11 +146,14 @@ export function ExpandableDriveCard({
               collapsedSize={{ width: undefined, height: 200 }}
               expandedSize={{ width: undefined, height: 400 }}
               hoverToExpand={false}
+              onExpandComplete={onExpandComplete}
+              onCollapseComplete={onCollapseComplete}
             >
               <div
                 className={cn(
-                  "rounded-2xl h-full w-full overflow-hidden border border-transparent dark:border-white/[0.2] group-hover:border-slate-700 relative z-20 flex flex-col",
-                  "transition-all duration-300 ease-in-out"
+                  "rounded-2xl h-full w-full overflow-hidden border border-transparent dark:border-white/[0.2] group-hover:border-slate-700 relative flex flex-col",
+                  "transition-all duration-300 ease-in-out",
+                  isExpanded ? "z-50 shadow-2xl" : "z-20 shadow-lg" // Higher z-index and shadow when expanded
                 )}
                 style={{
                   backgroundImage: `url(${diskSvg})`,
@@ -360,9 +367,33 @@ export function DynamicDriveGrid({
   className 
 }: ExpandableDriveGridProps) {
   const [expandedDriveId, setExpandedDriveId] = useState<string | null>(null);
+  const [isAnimating, setIsAnimating] = useState(false);
+
+  // Debounced expand handler to prevent rapid state changes
+  const handleExpandChange = useCallback((driveId: string, expanded: boolean) => {
+    setIsAnimating(true); // Set animation state when starting expansion/collapse
+    setExpandedDriveId(expanded ? driveId : null);
+    
+    // Set a timeout to automatically allow masonry rearrangement
+    // This ensures we don't wait too long even if animation completion detection fails
+    setTimeout(() => {
+      setIsAnimating(false);
+    }, 300); // 300ms should be enough for most expand/collapse animations
+  }, []);
+
+  // Handle animation completion with faster response
+  const handleExpandComplete = useCallback(() => {
+    // Immediately allow masonry rearrangement when animation completes
+    setIsAnimating(false);
+  }, []);
+
+  const handleCollapseComplete = useCallback(() => {
+    // Immediately allow masonry rearrangement when animation completes
+    setIsAnimating(false);
+  }, []);
 
   // Transform drives to match Masonry component format
-  const masonryItems = drives.map(drive => ({
+  const masonryItems = useMemo(() => drives.map(drive => ({
     id: drive.id,
     img: diskSvg, // Use the disk SVG as background
     height: expandedDriveId === drive.id ? 400 : 200, // Dynamic height based on expansion
@@ -373,23 +404,29 @@ export function DynamicDriveGrid({
     onDelete,
     isExpanded: expandedDriveId === drive.id,
     onExpandChange: (expanded: boolean) => {
-      setExpandedDriveId(expanded ? drive.id : null);
-    }
-  }));
+      handleExpandChange(drive.id, expanded);
+    },
+    onExpandComplete: handleExpandComplete,
+    onCollapseComplete: handleCollapseComplete
+  })), [drives, expandedDriveId, onBrowse, onShare, onDelete, handleExpandChange, handleExpandComplete, handleCollapseComplete]);
+
+  // Memoize the Masonry component props to prevent unnecessary re-renders
+  const masonryProps = useMemo(() => ({
+    items: masonryItems,
+    ease: "power2.out" as const,
+    duration: 0.3, // Even faster for better performance
+    stagger: 0.01, // Minimal stagger
+    animateFrom: "bottom" as const,
+    scaleOnHover: false,
+    blurToFocus: false,
+    colorShiftOnHover: false,
+    isAnimating // Pass animation state to masonry
+  }), [masonryItems, isAnimating]);
 
   return (
     <div className={cn("w-full", className)}>
       <div className="w-full p-4 pb-8">
-        <Masonry
-          items={masonryItems}
-          ease="power3.out"
-          duration={0.6}
-          stagger={0.05}
-          animateFrom="bottom"
-          scaleOnHover={false}
-          blurToFocus={false}
-          colorShiftOnHover={false}
-        />
+        <Masonry {...masonryProps} />
       </div>
     </div>
   );
