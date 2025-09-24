@@ -22,13 +22,13 @@ export function Dropzone({ onFileUpload, className }: DropzoneProps) {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3 }}
       className={cn(
-        "w-full border-t border-neutral-700/30 bg-black/5 backdrop-blur-sm",
+        "w-full",
         className
       )}
     >
       <div className="p-1">
         <div className="max-w-4xl mx-auto">
-          <div className="border border-dashed border-neutral-700/50 rounded-lg bg-black/10 hover:bg-black/20 transition-colors">
+          <div className="border border-dashed border-neutral-700/50 rounded-lg">
             <FileUpload onChange={handleFileUpload} />
           </div>
         </div>

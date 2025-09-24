@@ -8,10 +8,12 @@ import { Dropzone } from "../../../../components/ui/dropzone";
 import { Meteors } from "../../../../components/ui/meteors";
 import Prism from "../../../../components/ui/prism";
 import { ContextMenu, useContextMenu, ContextMenuAction } from "../../../../components/ui/context-menu";
+import FileSearchModal from "../common/FileSearchModal";
 import { useParams, useNavigate } from "react-router-dom";
 import { IconFolderPlus, IconShare, IconUpload } from "@tabler/icons-react";
 import { IconHome, IconSettings, IconUser } from "@tabler/icons-react";
 import { dummyData } from "../../data/dummy";
+import Shuffle from "../../../../components/ui/Shuffle";
 
 // Mock data for the file system - Complex nested structure
 const mockFileSystem: TreeNode[] = dummyData as TreeNode[];
@@ -298,6 +300,35 @@ export function DrivePage() {
     // Handle quick actions
   };
 
+  // Helper: find a node by path of names (from root)
+  const findNodeByPath = (nodes: TreeNode[], names: string[]): TreeNode | null => {
+    let currentNodes: TreeNode[] = nodes;
+    let found: TreeNode | null = null;
+    for (const name of names) {
+      found = (currentNodes || []).find(n => n.name === name) || null;
+      if (!found) return null;
+      currentNodes = found.children || [];
+    }
+    return found;
+  };
+
+  const handleSearchSelect = (node: TreeNode, pathNames: string[]) => {
+    // pathNames includes the file name; folders are pathNames.slice(0,-1)
+    const folderPath = pathNames.slice(0, -1);
+    const folderNode = folderPath.length > 0 ? findNodeByPath(fileSystem, folderPath) : { id: 'virtual-root', name: 'Root', type: 'folder' as const, children: fileSystem } as TreeNode;
+
+    // Set view to the folder containing the file
+    if (folderNode && folderNode.type === 'folder') {
+      setCurrentView(folderNode.children || []);
+      setBreadcrumbPath(folderPath);
+      setNavigationStack([]);
+      setExpandedNodes(new Set());
+      setLastFocusedFolder(folderNode);
+    }
+    // Select the file itself
+    setSelectedNode(node);
+  };
+
   return (
     <div className="min-h-screen bg-black relative">
       <div
@@ -309,16 +340,26 @@ export function DrivePage() {
         <Sidebar open={true} setOpen={() => {}}>
           <SidebarBody className="justify-between gap-4 h-full relative">
             <div className="flex flex-1 flex-col overflow-x-hidden">
-              {/* Logo */}
-              <div className="flex items-center gap-2 mb-4 flex-shrink-0">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-500 rounded-lg flex items-center justify-center">
-                    <span className="text-white font-bold text-sm">H</span>
-                  </div>
-                  <span className="font-bold text-lg text-white">
-                    Hyperdrive
-                  </span>
-                </div>
+              {/* Brand - Shuffle */}
+              <div className="flex items-center justify-center w-full mb-4 flex-shrink-0">
+                <Shuffle
+                  text="Hyperdrive"
+                  shuffleDirection="right"
+                  duration={0.35}
+                  animationMode="evenodd"
+                  shuffleTimes={1}
+                  loop={false}
+                  ease="power3.out"
+                  stagger={0.03}
+                  threshold={0.1}
+                  triggerOnce={true}
+                  triggerOnHover={true}
+                  respectReducedMotion={true}
+                  useDefaultFont={false}
+                  tag="div"
+                  style={{ fontSize: "1.125rem", lineHeight: "1.75rem", fontFamily: "Electrolize, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica Neue, Arial" }}
+                  className="text-white cursor-pointer font-electrolize"
+                />
               </div>
 
               {/* Navigation Links removed as requested */}
@@ -406,7 +447,24 @@ export function DrivePage() {
               
               <div className="flex items-center gap-4">
                 {/* Quick Actions */}
-                <div className="flex gap-2">
+                <div className="flex items-center gap-2">
+                  {/* Search Button (left of New Folder) */}
+                  <FileSearchModal
+                    fileSystem={fileSystem}
+                    onSelect={handleSearchSelect}
+                    triggerButton={
+                      <button
+                        className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-neutral-400 hover:bg-black/20 hover:text-white transition-colors rounded-lg"
+                        title="Search Files"
+                      >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <circle cx="11" cy="11" r="8"></circle>
+                          <path d="m21 21-4.3-4.3"></path>
+                        </svg>
+                        <span>Search</span>
+                      </button>
+                    }
+                  />
                   {quickActions.map((action, idx) => (
                     <button
                       key={idx}
