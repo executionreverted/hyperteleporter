@@ -2,6 +2,8 @@
 import { cn } from "../../renderer/lib/utils";
 import { TreeNode } from "./tree-view";
 import { motion } from "motion/react";
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { MagicButton } from "../../renderer/src/components/common/MagicButton";
 import { 
   IconPhoto, 
@@ -30,26 +32,108 @@ const FilePreview = ({ node }: { node: TreeNode }) => {
 
   const fileType = getFileType();
 
+  const getMockContent = (ext: string) => {
+    switch (ext) {
+      case 'json':
+        return JSON.stringify({ name: node.name, version: "1.0.0", scripts: { build: "vite build" } }, null, 2);
+      case 'js':
+      case 'jsx':
+        return `export function Hello() {\n  console.log('Hello, world');\n  return <div>Hello</div>;\n}`;
+      case 'ts':
+      case 'tsx':
+        return `type User = { id: string; name: string };\nexport function getUser(id: string): User {\n  return { id, name: 'Ada' };\n}`;
+      case 'html':
+        return `<div class="card">\n  <h1>Hello</h1>\n  <p>Sample preview</p>\n</div>`;
+      case 'css':
+        return `.card {\n  color: white;\n  background: #111;\n}`;
+      case 'md':
+        return `# ${node.name}\n\nPreview of markdown content.`;
+      case 'yml':
+      case 'yaml':
+        return `name: ${node.name}\nversion: 1.0.0`;
+      case 'xml':
+        return `<note>\n  <to>User</to>\n  <from>Hyperdrive</from>\n</note>`;
+      case 'py':
+        return `def greet(name: str) -> None:\n    print(f"Hello {name}")`;
+      case 'sh':
+        return `#!/usr/bin/env bash\necho "Hello"`;
+      default:
+        return `Preview of ${node.name}`;
+    }
+  };
+
+  const inferLanguage = (ext: string): string => {
+    switch (ext) {
+      case 'js':
+      case 'jsx':
+        return 'javascript';
+      case 'ts':
+      case 'tsx':
+        return 'typescript';
+      case 'json':
+        return 'json';
+      case 'html':
+        return 'markup';
+      case 'css':
+        return 'css';
+      case 'md':
+        return 'markdown';
+      case 'yml':
+      case 'yaml':
+        return 'yaml';
+      case 'xml':
+        return 'markup';
+      case 'py':
+        return 'python';
+      case 'sh':
+        return 'bash';
+      case 'sql':
+        return 'sql';
+      default:
+        return 'text';
+    }
+  };
+
+  const renderCodePreview = (ext: string) => {
+    const code = getMockContent(ext);
+    const language = inferLanguage(ext);
+    return (
+      <div className="p-6">
+        <div className="bg-black/10 rounded-lg p-4 max-h-[480px] overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-600 scrollbar-track-neutral-800">
+          <div className="text-white mb-3">Code Preview:</div>
+          <SyntaxHighlighter
+            language={language}
+            style={vscDarkPlus}
+            customStyle={{ background: 'transparent', margin: 0, padding: '1rem', borderRadius: '0.5rem' }}
+            wrapLongLines
+          >
+            {code}
+          </SyntaxHighlighter>
+        </div>
+      </div>
+    );
+  };
+
   const renderPreview = () => {
     switch (fileType) {
       case 'txt':
       case 'md':
-        return (
-          <div className="p-6">
-            <div className="bg-gray-100 dark:bg-black/10 rounded-lg p-4 font-mono text-sm max-h-[480px] overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-600 scrollbar-track-neutral-800">
-              <div className="text-gray-500 mb-2">Preview content:</div>
-              <div className="whitespace-pre-wrap">
-                {`This is a preview of the text file "${node.name}".
+        return renderCodePreview(fileType);
 
-Lorem ipsum dolor sit amet, consectetur adipiscing elit. 
-Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.
-
-Ut enim ad minim veniam, quis nostrud exercitation ullamco 
-laboris nisi ut aliquip ex ea commodo consequat.`}
-              </div>
-            </div>
-          </div>
-        );
+      case 'json':
+      case 'js':
+      case 'jsx':
+      case 'ts':
+      case 'tsx':
+      case 'html':
+      case 'css':
+      case 'yml':
+      case 'yaml':
+      case 'xml':
+      case 'py':
+      case 'sh':
+      case 'sql':
+        return renderCodePreview(fileType);
 
       case 'jpg':
       case 'jpeg':
@@ -59,13 +143,13 @@ laboris nisi ut aliquip ex ea commodo consequat.`}
         return (
           <div className="p-6">
             <div className="bg-gray-100 dark:bg-black/10 rounded-lg p-4 max-h-[480px] overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-600 scrollbar-track-neutral-800">
-              <div className="text-gray-500 mb-4">Image Preview:</div>
+              <div className="text-white mb-4">Image Preview:</div>
               <div className="bg-white dark:bg-neutral-700 rounded-lg p-8 flex items-center justify-center max-h-[400px]">
                 <div className="text-center">
                   <div className="w-16 h-16 bg-gray-300 dark:bg-neutral-600 rounded-lg mx-auto mb-4 flex items-center justify-center">
                     <IconPhoto size={32} className="text-gray-500" />
                   </div>
-                  <p className="text-sm text-gray-500">Image preview would appear here</p>
+                  <p className="text-sm text-white">Image preview would appear here</p>
                 </div>
               </div>
             </div>
@@ -79,13 +163,13 @@ laboris nisi ut aliquip ex ea commodo consequat.`}
         return (
           <div className="p-6">
             <div className="bg-gray-100 dark:bg-black/10 rounded-lg p-4 max-h-[480px] overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-600 scrollbar-track-neutral-800">
-              <div className="text-gray-500 mb-4">Video Preview:</div>
+              <div className="text-white mb-4">Video Preview:</div>
               <div className="bg-black rounded-lg p-8 flex items-center justify-center max-h-[400px]">
                 <div className="text-center">
                   <div className="w-16 h-16 bg-gray-700 rounded-lg mx-auto mb-4 flex items-center justify-center">
                     <IconVideo size={32} className="text-white" />
                   </div>
-                  <p className="text-sm text-gray-300">Video preview would appear here</p>
+                  <p className="text-sm text-white">Video preview would appear here</p>
                 </div>
               </div>
             </div>
@@ -96,13 +180,13 @@ laboris nisi ut aliquip ex ea commodo consequat.`}
         return (
           <div className="p-6">
             <div className="bg-gray-100 dark:bg-black/10 rounded-lg p-4 max-h-[480px] overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-600 scrollbar-track-neutral-800">
-              <div className="text-gray-500 mb-4">PDF Preview:</div>
+              <div className="text-white mb-4">PDF Preview:</div>
               <div className="bg-white dark:bg-neutral-700 rounded-lg p-8 flex items-center justify-center max-h-[400px]">
                 <div className="text-center">
                   <div className="w-16 h-16 bg-red-100 dark:bg-red-900/30 rounded-lg mx-auto mb-4 flex items-center justify-center">
                     <IconFileTypePdf size={32} className="text-red-500" />
                   </div>
-                  <p className="text-sm text-gray-500">PDF preview would appear here</p>
+                  <p className="text-sm text-white">PDF preview would appear here</p>
                 </div>
               </div>
             </div>
@@ -113,13 +197,13 @@ laboris nisi ut aliquip ex ea commodo consequat.`}
         return (
           <div className="p-6">
             <div className="bg-gray-100 dark:bg-black/10 rounded-lg p-4 max-h-[480px] overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-600 scrollbar-track-neutral-800">
-              <div className="text-gray-500 mb-4">File Preview:</div>
+              <div className="text-white mb-4">File Preview:</div>
               <div className="bg-white dark:bg-neutral-700 rounded-lg p-8 flex items-center justify-center max-h-[400px]">
                 <div className="text-center">
                   <div className="w-16 h-16 bg-gray-300 dark:bg-neutral-600 rounded-lg mx-auto mb-4 flex items-center justify-center">
                     <IconFile size={32} className="text-gray-500" />
                   </div>
-                  <p className="text-sm text-gray-500">Preview not available for this file type</p>
+                  <p className="text-sm text-white">Preview not available for this file type</p>
                 </div>
               </div>
             </div>

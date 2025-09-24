@@ -122,7 +122,7 @@ function SearchContent({
         </div>
         <div className="mt-5 h-80 overflow-y-auto rounded-md border border-white/10 scrollbar-thin scrollbar-thumb-neutral-600 scrollbar-track-neutral-800">
           {filtered.length === 0 ? (
-            <div className="p-6 text-center text-neutral-400">No files found</div>
+            <div className="p-6 text-center text-white">No files found</div>
           ) : (
             <ul className="divide-y divide-white/10">
               {filtered.map((res, idx) => (
@@ -132,7 +132,7 @@ function SearchContent({
                     onClick={() => onPick(res, setOpen)}
                   >
                     <div className="text-white text-sm">{res.node.name}</div>
-                    <div className="text-xs text-neutral-400 truncate">{res.pathString}</div>
+                    <div className="text-xs text-white truncate">{res.pathString}</div>
                   </button>
                 </li>
               ))}
