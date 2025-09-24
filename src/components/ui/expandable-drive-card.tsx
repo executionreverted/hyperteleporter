@@ -145,7 +145,7 @@ export function ExpandableDriveCard({
             >
               <div
                 className={cn(
-                  "rounded-2xl h-full w-full overflow-hidden bg-black border border-transparent dark:border-white/[0.2] group-hover:border-slate-700 relative z-20 flex flex-col",
+                  "rounded-2xl h-full w-full overflow-hidden border border-transparent dark:border-white/[0.2] group-hover:border-slate-700 relative z-20 flex flex-col",
                   "transition-all duration-300 ease-in-out"
                 )}
                 style={{
@@ -157,7 +157,7 @@ export function ExpandableDriveCard({
               >
                 {/* Background overlay with B&W filter and low opacity */}
                 <div 
-                  className="absolute inset-0 bg-black/60"
+                  className="absolute inset-0 bg-black/40"
                   style={{
                     filter: 'grayscale(100%)',
                     mixBlendMode: 'multiply',

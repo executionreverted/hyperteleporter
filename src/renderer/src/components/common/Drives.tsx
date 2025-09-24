@@ -1,4 +1,3 @@
-import { Meteors } from "../../../../components/ui/meteors";
 import { useDrives } from "../../contexts/DrivesContext";
 import { MagicButton } from "./MagicButton";
 import { useNavigate } from "react-router-dom";
@@ -6,6 +5,7 @@ import { CreateDriveModal } from "./CreateDriveModal";
 import { useConfirm } from "../../../../components/ui/confirm-modal";
 import { DynamicDriveGrid } from "../../../../components/ui/expandable-drive-card";
 import { Drive } from "../../contexts/DrivesContext";
+import Prism from "../../../../components/ui/prism";
 
 export function DrivesList() {
   const { drives, removeDrive } = useDrives();
@@ -35,16 +35,27 @@ export function DrivesList() {
 
   if (drives.length === 0) {
     return (
-      <div className="h-screen bg-black flex items-center justify-center p-8 overflow-hidden">
-        <div className="relative w-full max-w-4xl">
-          <div className="absolute inset-0 h-full w-full transform rounded-2xl bg-gradient-to-r from-blue-500 to-teal-500 blur-3xl" />
+      <div className="h-screen bg-black flex items-center justify-center p-8 overflow-hidden relative">
+        <div style={{ width: '100%', height: '100%', position: 'absolute', inset: 0 }}>
+          <Prism
+            animationType="rotate"
+            timeScale={0.5}
+            height={3.5}
+            baseWidth={5.5}
+            scale={3.6}
+            hueShift={0}
+            colorFrequency={1}
+            noise={0.5}
+            glow={1}
+          />
+        </div>
+        <div className="relative w-full max-w-4xl z-10">
           <div className="relative flex h-full flex-col items-center justify-center overflow-hidden rounded-2xl border border-gray-800 bg-black/90 px-8 py-20 shadow-xl">
             <h2 className="text-3xl font-bold text-white mb-4">No Drives Yet</h2>
             <p className="text-gray-400 mb-8 text-center">Create your first hyperdrive to start sharing files</p>
             <CreateDriveModal 
               triggerButton={<MagicButton>Create A Drive</MagicButton>} 
             />
-            <Meteors number={20} />
           </div>
         </div>
         <ConfirmDialog />
@@ -53,10 +64,22 @@ export function DrivesList() {
   }
 
   return (
-    <div className="h-screen bg-black flex items-center justify-center overflow-hidden">
-      <div className="relative w-full max-w-6xl flex flex-col p-8">
-        <div className="absolute inset-0 h-full w-full transform rounded-2xl bg-gradient-to-r from-blue-500 to-teal-500 blur-3xl" />
-        <div className="relative flex h-[80vh] flex-col items-start justify-start rounded-2xl border border-gray-800 bg-black/90 px-8 py-8 shadow-xl">
+    <div className="h-screen bg-black flex items-center justify-center overflow-hidden relative">
+      <div style={{ width: '100%', height: '100%', position: 'absolute', inset: 0 }}>
+        <Prism
+          animationType="rotate"
+          timeScale={0.5}
+          height={3.5}
+          baseWidth={6}
+          scale={2.5}
+          hueShift={0}
+          colorFrequency={2.7}
+          noise={0.5}
+          glow={1}
+        />
+      </div>
+      <div className="relative w-full max-w-6xl flex flex-col p-8 z-10">
+        <div className="relative flex h-[80vh] flex-col items-start justify-start rounded-2xl border border-gray-800 bg-black/30 px-8 py-8 shadow-xl">
           <div className="flex justify-between items-center mb-8 w-full flex-shrink-0">
             <h2 className="text-3xl font-bold text-white">Your Drives</h2>
             <CreateDriveModal 
@@ -72,7 +95,6 @@ export function DrivesList() {
             />
           </div>
         </div>
-        <Meteors number={20} />
       </div>
       <ConfirmDialog />
     </div>
