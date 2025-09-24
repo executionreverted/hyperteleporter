@@ -10,6 +10,7 @@ import Prism from "../../../../components/ui/prism";
 import { ContextMenu, useContextMenu, ContextMenuAction } from "../../../../components/ui/context-menu";
 import { useParams, useNavigate } from "react-router-dom";
 import { IconFolderPlus, IconShare, IconUpload } from "@tabler/icons-react";
+import { IconHome, IconSettings, IconUser } from "@tabler/icons-react";
 import { dummyData } from "../../data/dummy";
 
 // Mock data for the file system - Complex nested structure
@@ -34,6 +35,7 @@ export function DrivePage() {
   const [selectedNode, setSelectedNode] = useState<TreeNode | undefined>();
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
   const [fileSystem, setFileSystem] = useState<TreeNode[]>(mockFileSystem);
+  const [lastFocusedFolder, setLastFocusedFolder] = useState<TreeNode | undefined>();
   const params = useParams();
   const navigate = useNavigate();
   
@@ -42,6 +44,25 @@ export function DrivePage() {
   const [breadcrumbPath, setBreadcrumbPath] = useState<string[]>([]);
   const [navigationStack, setNavigationStack] = useState<TreeNode[][]>([]);
   const [navigationDirection, setNavigationDirection] = useState<'forward' | 'backward'>('forward');
+  // Helper: find the path from root to a node id
+  const findPathToNode = (nodes: TreeNode[], targetId: string, path: TreeNode[] = []): TreeNode[] | null => {
+    for (const node of nodes) {
+      const nextPath = [...path, node];
+      if (node.id === targetId) return nextPath;
+      if (node.children) {
+        const found = findPathToNode(node.children, targetId, nextPath);
+        if (found) return found;
+      }
+    }
+    return null;
+  };
+
+  const selectedNodePath = selectedNode?.id ? findPathToNode(fileSystem, selectedNode.id) : null;
+  // Treat top-level folders as having a virtual root parent
+  const selectedFolderHasParent = selectedNode?.type === 'folder' && (
+    (selectedNodePath ? selectedNodePath.length >= 1 : false)
+  );
+  const canGoBack = (selectedNode?.type === 'file' && !!lastFocusedFolder) || selectedFolderHasParent || navigationStack.length > 0 || breadcrumbPath.length > 0;
   
   // Context menu state
   const { isOpen, position, openContextMenu, closeContextMenu } = useContextMenu();
@@ -83,6 +104,10 @@ export function DrivePage() {
       // Fallback: navigate using the general handler (tree-like navigation)
       handleNavigateToFolder(node);
     } else {
+      // Capture the parent folder context when previewing a file
+      if (selectedNode?.type === 'folder') {
+        setLastFocusedFolder(selectedNode);
+      }
       setSelectedNode(node);
     }
   };
@@ -90,6 +115,23 @@ export function DrivePage() {
   const handleContextMenu = (node: TreeNode, actions: ContextMenuAction[], event: React.MouseEvent) => {
     setContextActions(actions);
     openContextMenu(event, actions);
+  };
+
+  const handleGoHome = () => {
+    setNavigationDirection('backward');
+    setCurrentView(fileSystem);
+    setBreadcrumbPath([]);
+    setNavigationStack([]);
+    setExpandedNodes(new Set());
+    setSelectedNode({ id: 'virtual-root', name: 'Root', type: 'folder', children: fileSystem });
+  };
+
+  const handleOpenSettings = () => {
+    console.log("Open Drive Settings");
+  };
+
+  const handleOpenProfileSettings = () => {
+    console.log("Open Profile Settings");
   };
 
   const handleNavigateToFolder = (node: TreeNode) => {
@@ -141,6 +183,56 @@ export function DrivePage() {
       // At root: show root contents
       setSelectedNode({ id: 'virtual-root', name: 'Root', type: 'folder', children: fileSystem });
     }
+  };
+
+  const handleBack = () => {
+    // If currently previewing a file, go back to its parent folder view
+    if (selectedNode?.type === 'file' && lastFocusedFolder) {
+      setNavigationDirection('backward');
+      setSelectedNode(lastFocusedFolder);
+      if (lastFocusedFolder.children) {
+        setCurrentView(lastFocusedFolder.children);
+      }
+      // Ensure breadcrumb reflects the parent folder at the end
+      setBreadcrumbPath(prev => {
+        const next = [...prev];
+        if (next[next.length - 1] !== lastFocusedFolder.name) {
+          next.push(lastFocusedFolder.name);
+        }
+        return next;
+      });
+      // Reset expansion for consistency in the tree view
+      setExpandedNodes(new Set());
+      // Clear the last focused folder to avoid repeated overrides
+      setLastFocusedFolder(undefined);
+      // Do not mutate breadcrumb or navigationStack in this case
+      return;
+    }
+    // If previewing a folder that has a parent but stack/breadcrumb are empty (e.g., selected via tree)
+    if (selectedNode?.type === 'folder' && selectedNodePath) {
+      // If deeper than top-level, go to actual parent in the path
+      if (selectedNodePath.length > 1) {
+        const parent = selectedNodePath[selectedNodePath.length - 2];
+        setNavigationDirection('backward');
+        setSelectedNode(parent);
+        if (parent.children) {
+          setCurrentView(parent.children);
+        }
+        const names = selectedNodePath.slice(0, -1).map(n => n.name);
+        setBreadcrumbPath(names);
+        setExpandedNodes(new Set());
+        return;
+      }
+      // If top-level, go to virtual root
+      setNavigationDirection('backward');
+      setCurrentView(fileSystem);
+      setBreadcrumbPath([]);
+      setExpandedNodes(new Set());
+      setSelectedNode({ id: 'virtual-root', name: 'Root', type: 'folder', children: fileSystem });
+      return;
+    }
+    // Fallback to normal navigate up behavior
+    handleNavigateUp();
   };
 
   const handleFileUpload = (files: File[]) => {
@@ -215,7 +307,7 @@ export function DrivePage() {
         )}
       >
         <Sidebar open={true} setOpen={() => {}}>
-          <SidebarBody className="justify-between gap-4 h-full">
+          <SidebarBody className="justify-between gap-4 h-full relative">
             <div className="flex flex-1 flex-col overflow-x-hidden">
               {/* Logo */}
               <div className="flex items-center gap-2 mb-4 flex-shrink-0">
@@ -234,9 +326,29 @@ export function DrivePage() {
               {/* File Tree - Scrollable */}
               <div className="flex-1 min-h-0">
                 <div className="h-full flex flex-col">
-                  <h3 className="text-sm font-medium text-neutral-300 mb-2 flex-shrink-0">
-                    File System
-                  </h3>
+                  <div className="mb-2 flex-shrink-0 flex items-center justify-center gap-2">
+                    <button
+                      onClick={handleGoHome}
+                      className="p-2 rounded-full bg-black/40 border border-white/15 hover:bg-black/60 text-white transition-colors shadow-lg"
+                      title="Home"
+                    >
+                      <IconHome size={18} />
+                    </button>
+                    <button
+                      onClick={handleOpenSettings}
+                      className="p-2 rounded-full bg-black/40 border border-white/15 hover:bg-black/60 text-white transition-colors shadow-lg"
+                      title="Drive Settings"
+                    >
+                      <IconSettings size={18} />
+                    </button>
+                    <button
+                      onClick={handleOpenProfileSettings}
+                      className="p-2 rounded-full bg-black/40 border border-white/15 hover:bg-black/60 text-white transition-colors shadow-lg"
+                      title="Profile Settings"
+                    >
+                      <IconUser size={18} />
+                    </button>
+                  </div>
                   <div className="flex-1 min-h-0">
                     <TreeView
                       data={currentView}
@@ -255,23 +367,6 @@ export function DrivePage() {
                 </div>
               </div>
             </div>
-
-            {/* Quick Actions removed - now in header */}
-
-            {/* User Profile */}
-            <div className="border-t border-neutral-700 pt-4 flex-shrink-0">
-              <SidebarLink
-                link={{
-                  label: "Drive Settings",
-                  href: "#",
-                  icon: (
-                    <div className="h-7 w-7 shrink-0 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 flex items-center justify-center">
-                      <span className="text-white font-bold text-xs">U</span>
-                    </div>
-                  ),
-                }}
-              />
-            </div>
           </SidebarBody>
         </Sidebar>
 
@@ -280,15 +375,34 @@ export function DrivePage() {
           {/* Header */}
           <div className="border-b border-neutral-700 p-4">
             <div className="flex items-center justify-between">
-              <button
-                onClick={() => navigate("/")}
-                className="flex items-center gap-2 px-4 py-2 bg-neutral-800 text-neutral-300 rounded-lg hover:bg-neutral-700 transition-colors"
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="m15 18-6-6 6-6"/>
-                </svg>
-                Back to Drives
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleBack}
+                  disabled={!canGoBack}
+                  className={cn(
+                    "flex items-center gap-2 px-4 py-2 rounded-lg transition-colors",
+                    canGoBack
+                      ? "bg-neutral-800 text-neutral-300 hover:bg-neutral-700"
+                      : "bg-neutral-900 text-neutral-600 cursor-not-allowed"
+                  )}
+                  title={canGoBack ? "Go back" : "No previous folder"}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="m15 18-6-6 6-6"/>
+                  </svg>
+                  Back
+                </button>
+
+                <button
+                  onClick={() => navigate("/")}
+                  className="flex items-center gap-2 px-4 py-2 bg-neutral-800 text-neutral-300 rounded-lg hover:bg-neutral-700 transition-colors"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M3 12h18"/>
+                  </svg>
+                  Drives
+                </button>
+              </div>
               
               <div className="flex items-center gap-4">
                 {/* Quick Actions */}
@@ -310,7 +424,12 @@ export function DrivePage() {
           </div>
 
           {/* Content Panel */}
-          <ContentPanel selectedNode={selectedNode} onFileClick={handleFileClick} />
+          <ContentPanel 
+            selectedNode={selectedNode} 
+            onFileClick={handleFileClick}
+            onNavigateUp={handleBack}
+            canNavigateUp={canGoBack}
+          />
           
           {/* Dropzone */}
           <Dropzone onFileUpload={handleFileUpload} />

@@ -17,6 +17,8 @@ import {
 interface ContentPanelProps {
   selectedNode?: TreeNode;
   onFileClick?: (node: TreeNode) => void;
+  onNavigateUp?: () => void;
+  canNavigateUp?: boolean;
   className?: string;
 }
 
@@ -191,7 +193,7 @@ const FileMetadata = ({ node }: { node: TreeNode }) => {
   );
 };
 
-const FolderContents = ({ node, onFileClick }: { node: TreeNode; onFileClick?: (node: TreeNode) => void }) => {
+const FolderContents = ({ node, onFileClick, onNavigateUp, canNavigateUp }: { node: TreeNode; onFileClick?: (node: TreeNode) => void; onNavigateUp?: () => void; canNavigateUp?: boolean }) => {
   const totalItems = node.children ? node.children.length : 0;
   const folderCount = node.children ? node.children.filter(c => c.type === 'folder').length : 0;
   const fileCount = totalItems - folderCount;
@@ -222,9 +224,22 @@ const FolderContents = ({ node, onFileClick }: { node: TreeNode; onFileClick?: (
           </div>
         </div>
         
-        {node.children && node.children.length > 0 ? (
+        {(canNavigateUp || (node.children && node.children.length > 0)) ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {node.children.map((child) => (
+            {canNavigateUp && (
+              <div
+                key="pseudo-up"
+                className="bg-black/10 rounded-lg p-4 hover:shadow-md transition-shadow cursor-pointer hover:bg-black/20"
+                onClick={() => onNavigateUp?.()}
+              >
+                <div className="flex items-center gap-3 mb-2">
+                  <IconFolder size={20} className="text-neutral-400" />
+                  <span className="font-medium text-white truncate">..</span>
+                </div>
+                <p className="text-sm text-neutral-400">Go to parent folder</p>
+              </div>
+            )}
+            {node.children?.map((child) => (
               <div
                 key={child.id}
                 className="bg-black/10 rounded-lg p-4 hover:shadow-md transition-shadow cursor-pointer hover:bg-black/20"
@@ -259,7 +274,7 @@ const FolderContents = ({ node, onFileClick }: { node: TreeNode; onFileClick?: (
   );
 };
 
-export function ContentPanel({ selectedNode, onFileClick, className }: ContentPanelProps) {
+export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavigateUp, className }: ContentPanelProps) {
   if (!selectedNode) {
     return (
       <div className={cn("flex items-center justify-center h-full", className)}>
@@ -303,7 +318,7 @@ export function ContentPanel({ selectedNode, onFileClick, className }: ContentPa
       )}
       
       {selectedNode.type === 'folder' ? (
-        <FolderContents node={selectedNode} onFileClick={onFileClick} />
+        <FolderContents node={selectedNode} onFileClick={onFileClick} onNavigateUp={onNavigateUp} canNavigateUp={canNavigateUp} />
       ) : (
         <>
           <FilePreview node={selectedNode} />
