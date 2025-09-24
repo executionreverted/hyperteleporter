@@ -58,6 +58,7 @@ function StaticDriveGridComponent({
   const [copyPosition, setCopyPosition] = useState<{ x: number; y: number } | null>(null);
   const [isCollapsing, setIsCollapsing] = useState(false);
   const [showExpandedContent, setShowExpandedContent] = useState(false);
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   
   const containerRef = useRef<HTMLDivElement>(null);
   const copyRef = useRef<HTMLDivElement>(null);
@@ -326,6 +327,9 @@ function StaticDriveGridComponent({
               onShare={onShare}
               onDelete={onDelete}
               originalCardRefs={originalCardRefs}
+              drives={drives}
+              hoveredIndex={hoveredIndex}
+              setHoveredIndex={setHoveredIndex}
             />
           ))}
         </div>
@@ -342,7 +346,10 @@ const DriveGridItem = React.memo(({
   onBrowse, 
   onShare, 
   onDelete,
-  originalCardRefs
+  originalCardRefs,
+  drives,
+  hoveredIndex,
+  setHoveredIndex
 }: {
   drive: Drive;
   expandedDriveId: string | null;
@@ -351,6 +358,9 @@ const DriveGridItem = React.memo(({
   onShare?: (drive: Drive) => void;
   onDelete?: (drive: Drive) => void;
   originalCardRefs: React.MutableRefObject<Map<string, HTMLDivElement>>;
+  drives: Drive[];
+  hoveredIndex: number | null;
+  setHoveredIndex: (index: number | null) => void;
 }) => (
   <div
     data-drive-id={drive.id}
@@ -375,9 +385,23 @@ const DriveGridItem = React.memo(({
         opacity: expandedDriveId === drive.id ? 0 : 1,
       }}
     >
+      {/* Hover effect overlay */}
+      <motion.div
+        className="absolute inset-0 rounded-2xl bg-gradient-to-r from-violet-600/20 via-purple-600/20 to-cyan-600/20 opacity-0"
+        style={{
+          background: "linear-gradient(45deg, rgba(139, 92, 246, 0.1), rgba(168, 85, 247, 0.1), rgba(6, 182, 212, 0.1))",
+        }}
+        initial={{ opacity: 0 }}
+        animate={{ 
+          opacity: hoveredIndex === drives.findIndex(d => d.id === drive.id) ? 1 : 0 
+        }}
+        transition={{ duration: 0.2, ease: "easeInOut" }}
+      />
       <div 
         className="w-full h-full cursor-pointer"
         onClick={() => onExpand(drive.id, true)}
+        onMouseEnter={() => setHoveredIndex(drives.findIndex(d => d.id === drive.id))}
+        onMouseLeave={() => setHoveredIndex(null)}
       >
         <MemoizedDriveCard
           drive={drive}
