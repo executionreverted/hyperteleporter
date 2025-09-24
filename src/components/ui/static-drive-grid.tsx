@@ -62,6 +62,7 @@ function StaticDriveGridComponent({
   const containerRef = useRef<HTMLDivElement>(null);
   const copyRef = useRef<HTMLDivElement>(null);
   const timelineRef = useRef<gsap.core.Timeline | null>(null);
+  const originalCardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   
   // Cache viewport dimensions
   const viewportDimensions = useMemo(() => ({
@@ -90,6 +91,12 @@ function StaticDriveGridComponent({
         });
       }
 
+      // Hide original card immediately using GSAP
+      const originalCard = originalCardRefs.current.get(driveId);
+      if (originalCard) {
+        gsap.to(originalCard, { opacity: 0, duration: 0.1, ease: "power2.out" });
+      }
+
       if (expandedDriveId && expandedDriveId !== driveId) {
         // Collapse current and expand new
         setIsAnimating(true);
@@ -116,6 +123,10 @@ function StaticDriveGridComponent({
     if (timelineRef.current) {
       timelineRef.current.kill();
       timelineRef.current = null;
+    }
+    // Ensure copy is fully hidden
+    if (copyRef.current) {
+      gsap.set(copyRef.current, { opacity: 0 });
     }
     setExpandedDriveId(null);
     setCopyPosition(null);
@@ -191,15 +202,31 @@ function StaticDriveGridComponent({
       top: copyPosition.y,
       duration: 0.6,
       ease: "power2.out",
-      onStart: () => {
-        // Show original card 0.1s before copy reaches position
-        gsap.delayedCall(0.5, () => {
-          setExpandedDriveId(null);
-        });
-      },
       onComplete: () => {
-        // Hide copy when it reaches position
-        gsap.set(copyRef.current, { opacity: 0 });
+        // Show original card immediately when copy reaches position
+        setExpandedDriveId(null);
+        
+        // Use GSAP to control original card opacity for smooth transition
+        const originalCard = originalCardRefs.current.get(expandedDriveId || '');
+        if (originalCard) {
+          // Make original card fully visible instantly, then hide copy
+          gsap.set(originalCard, { opacity: 1 });
+          
+          // Hide copy immediately after original is visible
+          gsap.to(copyRef.current, { 
+            opacity: 0, 
+            duration: 0.1,
+            ease: "power2.out"
+          });
+        } else {
+          // Fallback if ref not found - show original instantly
+          setExpandedDriveId(null);
+          gsap.to(copyRef.current, { 
+            opacity: 0, 
+            duration: 0.1,
+            ease: "power2.out"
+          });
+        }
       }
     });
   }, [copyPosition, viewportDimensions, handleCollapseComplete]);
@@ -261,6 +288,7 @@ function StaticDriveGridComponent({
               width: CARD_DIMENSIONS.original.width,
               height: CARD_DIMENSIONS.original.height,
               opacity: 1,
+              willChange: 'transform, opacity', // Optimize for animations
             }}
             onClick={() => handleExpandChange(expandedDrive.id, false)}
           >
@@ -297,6 +325,7 @@ function StaticDriveGridComponent({
               onBrowse={onBrowse}
               onShare={onShare}
               onDelete={onDelete}
+              originalCardRefs={originalCardRefs}
             />
           ))}
         </div>
@@ -312,7 +341,8 @@ const DriveGridItem = React.memo(({
   onExpand, 
   onBrowse, 
   onShare, 
-  onDelete 
+  onDelete,
+  originalCardRefs
 }: {
   drive: Drive;
   expandedDriveId: string | null;
@@ -320,6 +350,7 @@ const DriveGridItem = React.memo(({
   onBrowse?: (drive: Drive) => void;
   onShare?: (drive: Drive) => void;
   onDelete?: (drive: Drive) => void;
+  originalCardRefs: React.MutableRefObject<Map<string, HTMLDivElement>>;
 }) => (
   <div
     data-drive-id={drive.id}
@@ -331,15 +362,17 @@ const DriveGridItem = React.memo(({
     }}
   >
     {/* Fixed-size wrapper that maintains grid position */}
-    <motion.div 
-      className="absolute inset-0"
-      animate={{
-        opacity: expandedDriveId === drive.id ? 0 : 1,
+    <div 
+      ref={(el) => {
+        if (el) {
+          originalCardRefs.current.set(drive.id, el);
+        } else {
+          originalCardRefs.current.delete(drive.id);
+        }
       }}
-      transition={{
-        duration: 0,
-        ease: "easeInOut",
-        delay: expandedDriveId === drive.id ? 0 : 0 // Instant transition
+      className="absolute inset-0"
+      style={{
+        opacity: expandedDriveId === drive.id ? 0 : 1,
       }}
     >
       <div 
@@ -364,7 +397,7 @@ const DriveGridItem = React.memo(({
           }}
         />
       </div>
-    </motion.div>
+    </div>
   </div>
 ));
 

@@ -110,7 +110,7 @@ const DrivesList = memo(function DrivesList() {
     <div className="h-screen bg-black flex items-center justify-center overflow-hidden relative">
       <PrismBackground />
       <div className="relative w-full max-w-6xl flex flex-col p-8 z-10">
-        <div className="relative flex h-[80vh] flex-col items-center justify-start rounded-2xl border border-gray-800 bg-black/30 px-8 py-8 shadow-xl">
+        <div className="relative flex h-[85vh] flex-col items-center justify-start rounded-2xl border border-gray-800 bg-black/30 px-8 py-8 shadow-xl">
           <div className="flex justify-between items-center mb-6 w-full flex-shrink-0">
             <div className="flex items-center space-x-6 flex-1">
               <h2 className="text-2xl font-bold text-white flex-shrink-0">Your Drives</h2>
