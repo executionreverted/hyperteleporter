@@ -37,7 +37,8 @@ const DrivesList = memo(function DrivesList() {
   const [filteredDrives, setFilteredDrives] = useState<Drive[]>(drives);
 
   const handleBrowseDrive = useMemo(() => (drive: Drive) => {
-    navigate(drive.link);
+    const path = drive.link && drive.link.trim().length > 0 ? drive.link : `/drive/${drive.id}`;
+    navigate(path);
   }, [navigate]);
 
   const handleShareDrive = useMemo(() => (drive: Drive) => {

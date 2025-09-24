@@ -70,18 +70,7 @@ export function DriveSearchInput({
 
   // No keyboard navigation — no dropdown
 
-  // Handle click outside to close results
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (resultsRef.current && !resultsRef.current.contains(event.target as Node)) {
-        setShowResults(false);
-        setSelectedIndex(-1);
-      }
-    };
-
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+  // No dropdown anymore — no outside click handling needed
 
   return (
     <div className="relative w-full max-w-2xl">

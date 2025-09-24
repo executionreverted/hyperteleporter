@@ -2,6 +2,8 @@ import { app, shell, BrowserWindow, ipcMain, screen } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
+import { initializeAllDrives, closeAllDrives, createDrive, listActiveDrives, listDrive, createFolder, uploadFiles } from './services/hyperdriveManager'
+import { readUserProfile, writeUserProfile } from './services/userProfile'
 
 function createWindow(): void {
   // Create the browser window.
@@ -57,8 +59,78 @@ app.whenReady().then(() => {
     optimizer.watchWindowShortcuts(window)
   })
 
+  // Initialize stored drives on boot
+  initializeAllDrives().catch((err) => {
+    console.error('[hyperdrive] initializeAllDrives failed', err)
+  })
+
   // IPC test
   ipcMain.on('ping', () => console.log('pong'))
+
+  // Expose drives IPC
+  ipcMain.handle('drives:list', async () => {
+    const drives = listActiveDrives().map((d) => ({
+      id: d.record.id,
+      name: d.record.name,
+      publicKeyHex: d.record.publicKeyHex,
+      createdAt: d.record.createdAt
+    }))
+    return drives
+  })
+
+  ipcMain.handle('drives:create', async (_evt, name: string) => {
+    const d = await createDrive(name)
+    return {
+      id: d.record.id,
+      name: d.record.name,
+      publicKeyHex: d.record.publicKeyHex,
+      createdAt: d.record.createdAt
+    }
+  })
+
+  ipcMain.handle('drives:listFolder', async (_evt, { driveId, folder, recursive }: { driveId: string, folder: string, recursive?: boolean }) => {
+    const entries = await listDrive(driveId, folder, !!recursive)
+    return entries
+  })
+
+  ipcMain.handle('drives:createFolder', async (_evt, { driveId, folderPath }: { driveId: string, folderPath: string }) => {
+    await createFolder(driveId, folderPath)
+    return true
+  })
+
+  ipcMain.handle('drives:uploadFiles', async (_evt, { driveId, folderPath, files }: { driveId: string, folderPath: string, files: Array<{ name: string; data: any }> }) => {
+    console.log('[ipc] drives:uploadFiles', {
+      driveId,
+      folderPath,
+      files: files?.map((f) => ({ name: f.name, hasData: !!f.data, type: typeof f.data, dataKeys: f.data ? Object.keys(f.data) : [] }))
+    })
+    // Normalize incoming data to Node Buffers
+    const normalized = files.map(f => {
+      const data = f.data
+      const buf = Buffer.isBuffer(data)
+        ? data
+        : (data && data.buffer instanceof ArrayBuffer)
+          ? Buffer.from(new Uint8Array(data.buffer))
+          : (data instanceof ArrayBuffer)
+            ? Buffer.from(new Uint8Array(data))
+            : Buffer.from([])
+      return { name: f.name, data: buf }
+    })
+    console.log('[ipc] drives:uploadFiles normalized', normalized.map(n => ({ name: n.name, bytes: n.data.length })))
+    const res = await uploadFiles(driveId, folderPath, normalized)
+    return res
+  })
+
+  // Expose user profile IPC (persisted on disk, separate from Hyperdrive for now)
+  ipcMain.handle('user:getProfile', async () => {
+    return await readUserProfile()
+  })
+
+  ipcMain.handle('user:updateProfile', async (_evt, profile: unknown) => {
+    const p = (profile && typeof profile === 'object') ? (profile as Record<string, unknown>) : {}
+    await writeUserProfile(p)
+    return true
+  })
 
   createWindow()
 
@@ -80,3 +152,8 @@ app.on('window-all-closed', () => {
 
 // In this file you can include the rest of your app's specific main process
 // code. You can also put them in separate files and require them here.
+
+app.on('before-quit', () => {
+  // Best-effort close of corestores
+  closeAllDrives().catch(() => {})
+})

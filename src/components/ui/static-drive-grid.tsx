@@ -291,7 +291,12 @@ function StaticDriveGridComponent({
               opacity: 1,
               willChange: 'transform, opacity', // Optimize for animations
             }}
-            onClick={() => handleExpandChange(expandedDrive.id, false)}
+            onClick={(e) => {
+              // Only collapse if the click is on the empty container, not on child controls
+              if (e.currentTarget === e.target) {
+                handleExpandChange(expandedDrive.id, false);
+              }
+            }}
           >
             <MemoizedDriveCard
                 drive={expandedDrive}

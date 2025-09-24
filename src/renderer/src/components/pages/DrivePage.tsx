@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { cn } from "../../../lib/utils";
 import { Sidebar, SidebarBody, SidebarLink } from "../../../../components/ui/sidebar";
 import { TreeView, TreeNode } from "../../../../components/ui/tree-view";
@@ -12,11 +12,12 @@ import FileSearchModal from "../common/FileSearchModal";
 import { useParams, useNavigate } from "react-router-dom";
 import { IconFolderPlus, IconShare, IconUpload } from "@tabler/icons-react";
 import { IconHome, IconSettings, IconUser } from "@tabler/icons-react";
-import { dummyData } from "../../data/dummy";
+// Removed dummy data usage
 import Shuffle from "../../../../components/ui/Shuffle";
+import { Modal, ModalBody, ModalContent, ModalFooter, ModalTrigger, useModal } from "../../../../components/ui/animated-modal";
 
-// Mock data for the file system - Complex nested structure
-const mockFileSystem: TreeNode[] = dummyData as TreeNode[];
+// Start empty; will load from Hyperdrive via IPC
+const mockFileSystem: TreeNode[] = [];
 
 // Removed sidebar navigation links as requested
 
@@ -40,6 +41,195 @@ export function DrivePage() {
   const [lastFocusedFolder, setLastFocusedFolder] = useState<TreeNode | undefined>();
   const params = useParams();
   const navigate = useNavigate();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const api = useMemo(() => (window as any)?.api ?? null, []);
+  // Fallback invokers in case preload did not expose new methods yet
+  async function invokeListFolder(driveId: string, folder: string, recursive = false) {
+    if (api?.drives?.listFolder) return api.drives.listFolder(driveId, folder, recursive)
+    // @ts-ignore
+    const electron = (window as any)?.electron
+    if (electron?.ipcRenderer?.invoke) return electron.ipcRenderer.invoke('drives:listFolder', { driveId, folder, recursive })
+    console.warn('[DrivePage] listFolder not available (no preload + no ipc)')
+    return []
+  }
+
+  async function invokeCreateFolder(driveId: string, folderPath: string) {
+    if (api?.drives?.createFolder) return api.drives.createFolder(driveId, folderPath)
+    // @ts-ignore
+    const electron = (window as any)?.electron
+    if (electron?.ipcRenderer?.invoke) return electron.ipcRenderer.invoke('drives:createFolder', { driveId, folderPath })
+    console.warn('[DrivePage] createFolder not available (no preload + no ipc)')
+    return false
+  }
+
+  async function invokeUploadFiles(driveId: string, folderPath: string, files: Array<{ name: string; data: ArrayBuffer }>) {
+    if (api?.drives?.uploadFiles) return api.drives.uploadFiles(driveId, folderPath, files)
+    // @ts-ignore
+    const electron = (window as any)?.electron
+    if (electron?.ipcRenderer?.invoke) {
+      // Pass ArrayBuffers; main will normalize to Buffers
+      return electron.ipcRenderer.invoke('drives:uploadFiles', {
+        driveId,
+        folderPath,
+        files: files.map(f => ({ name: f.name, data: f.data }))
+      })
+    }
+    console.warn('[DrivePage] uploadFiles not available (no preload + no ipc)')
+    return { uploaded: 0 }
+  }
+  useEffect(() => {
+    // Basic diagnostics
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const w: any = window as any
+    console.log('[DrivePage] diagnostics:', {
+      hasApi: !!w?.api,
+      drivesApi: w?.api?.drives ? Object.keys(w.api.drives) : null
+    })
+    if (!w?.api) {
+      console.warn('[DrivePage] window.api is missing. Is preload loaded?')
+    }
+  }, [])
+
+  // Load folder listing for this drive
+  useEffect(() => {
+    let mounted = true;
+    async function loadRoot() {
+      try {
+        const driveId = params.driveId as string | undefined;
+        if (!driveId) return;
+        const entries: Array<{ key: string, value: any }> = await invokeListFolder(driveId, '/', false);
+        console.log('[DrivePage] listFolder / entries=', entries)
+        if (!mounted) return;
+        const rootChildren = buildNodesForFolder('/', entries);
+        console.log('[DrivePage] computed root children', rootChildren)
+        setFileSystem(rootChildren);
+        setCurrentView(rootChildren);
+        setSelectedNode({ id: 'virtual-root', name: 'Root', type: 'folder', children: rootChildren });
+        setNavigationDirection('forward');
+        setNavigationStack([]);
+        setBreadcrumbPath([]);
+        setLastFocusedFolder(undefined);
+      } catch {}
+    }
+    loadRoot();
+    return () => { mounted = false };
+  }, [api, params.driveId]);
+
+  function buildNodesForFolder(currentFolderPath: string, entries: Array<{ key: string, value: any }>): TreeNode[] {
+    const normalized = currentFolderPath.endsWith('/') ? currentFolderPath : currentFolderPath + '/'
+    const folderNames = new Set<string>()
+    const files: TreeNode[] = []
+    for (const e of entries) {
+      if (!e.key.startsWith(normalized)) continue
+      const rel = e.key.slice(normalized.length)
+      if (!rel) continue
+      const segments = rel.split('/').filter(Boolean)
+      if (segments.length === 0) continue
+      if (segments.length > 1) {
+        // child inside a subfolder ⇒ show top-level folder name only
+        folderNames.add(segments[0])
+      } else {
+        // direct child
+        const baseName = segments[0]
+        if (baseName === '.keep') continue // hide marker
+        const isFile = !!e.value?.blob || !!e.value?.linkname
+        if (isFile) {
+          files.push({ id: e.key, name: baseName, type: 'file' })
+        } else {
+          folderNames.add(baseName)
+        }
+      }
+    }
+    const folders: TreeNode[] = Array.from(folderNames).map((name) => ({ id: normalized + name, name, type: 'folder', children: [] }))
+    return [...folders, ...files]
+  }
+
+  function getCurrentFolderPath(): string {
+    const names = breadcrumbPath.filter((n) => n && n !== 'Root')
+    return names.length > 0 ? '/' + names.join('/') : '/'
+  }
+
+  async function reloadCurrentFolder() {
+    const driveId = params.driveId as string | undefined;
+    if (!driveId) return;
+    const currentFolderPath = getCurrentFolderPath()
+    const entries: Array<{ key: string, value: any }> = await invokeListFolder(driveId, currentFolderPath, false)
+    console.log('[DrivePage] reload entries for', currentFolderPath, entries)
+    try {
+      const allEntries: Array<{ key: string, value: any }> = await invokeListFolder(driveId, '/', true)
+      console.log('[DrivePage] full drive entries (recursive)=', allEntries.map(e => e.key))
+    } catch {}
+    const children = buildNodesForFolder(currentFolderPath, entries)
+    console.log('[DrivePage] computed children for', currentFolderPath, children)
+    setFileSystem(children)
+    setCurrentView(children)
+    setSelectedNode({ id: 'virtual-root', name: currentFolderPath === '/' ? 'Root' : currentFolderPath.split('/').filter(Boolean).slice(-1)[0] || 'Root', type: 'folder', children })
+  }
+
+  function NewFolderModal({ driveId, currentFolder, onCreated, trigger }: { driveId: string, currentFolder: string, onCreated: () => Promise<void>, trigger: React.ReactNode }) {
+    function FormContent() {
+      const { setOpen } = useModal();
+      const [name, setName] = useState("");
+      const [saving, setSaving] = useState(false);
+
+      async function handleCreate() {
+        if (!name.trim()) return;
+        const folderPath = currentFolder.endsWith('/') ? currentFolder + name.trim() : currentFolder + '/' + name.trim();
+        try {
+          setSaving(true);
+          await api?.drives?.createFolder?.(driveId, folderPath)
+          await onCreated();
+          setOpen(false);
+        } finally {
+          setSaving(false);
+        }
+      }
+
+      return (
+        <>
+          <ModalContent>
+            <h4 className="text-lg md:text-2xl text-neutral-100 font-bold text-center mb-4">New Folder</h4>
+            <p className="text-neutral-400 text-center mb-6">Create a folder under <span className="font-mono text-white/80">{currentFolder || '/'}</span></p>
+            <div className="max-w-md mx-auto w-full">
+              <label className="block text-left text-white/90 mb-2">Folder name</label>
+              <input
+                className="w-full rounded-md px-4 py-3 bg-white/10 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white/40"
+                placeholder="e.g. Documents"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+              />
+            </div>
+          </ModalContent>
+          <ModalFooter className="gap-4">
+            <button
+              onClick={() => setOpen(false)}
+              className="px-3 py-2 bg-gray-200 text-black dark:bg-black dark:border-black dark:text-white border border-gray-300 rounded-md text-sm"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleCreate}
+              disabled={saving || !name.trim()}
+              className="px-3 py-2 bg-blue-600 text-white rounded-md text-sm disabled:opacity-50"
+            >
+              {saving ? 'Creating...' : 'Create'}
+            </button>
+          </ModalFooter>
+        </>
+      )
+    }
+
+    return (
+      <Modal>
+        <ModalTrigger className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-neutral-400 hover:bg-black/20 hover:text-white transition-colors rounded-lg">
+          {trigger}
+        </ModalTrigger>
+        <ModalBody>
+          <FormContent />
+        </ModalBody>
+      </Modal>
+    )
+  }
   
   // Breadcrumb navigation state
   const [currentView, setCurrentView] = useState<TreeNode[]>(mockFileSystem);
@@ -60,11 +250,7 @@ export function DrivePage() {
   };
 
   const selectedNodePath = selectedNode?.id ? findPathToNode(fileSystem, selectedNode.id) : null;
-  // Treat top-level folders as having a virtual root parent
-  const selectedFolderHasParent = selectedNode?.type === 'folder' && (
-    (selectedNodePath ? selectedNodePath.length >= 1 : false)
-  );
-  const canGoBack = (selectedNode?.type === 'file' && !!lastFocusedFolder) || selectedFolderHasParent || navigationStack.length > 0 || breadcrumbPath.length > 0;
+  const canGoBack = (selectedNode?.type === 'file' && !!lastFocusedFolder) || navigationStack.length > 0 || breadcrumbPath.length > 0;
   
   // Context menu state
   const { isOpen, position, openContextMenu, closeContextMenu } = useContextMenu();
@@ -74,37 +260,25 @@ export function DrivePage() {
     setSelectedNode(node);
   };
 
-  const handleFileClick = (node: TreeNode) => {
+  const handleFileClick = async (node: TreeNode) => {
     if (node.type === 'folder') {
       setNavigationDirection('forward');
-      // If we're viewing a folder's contents in the right panel (selectedNode is a folder)
-      // and we click one of its child folders, navigate relative to that folder,
-      // not relative to the currentView (which might still be root).
-      if (
-        selectedNode?.type === 'folder' &&
-        selectedNode.children &&
-        selectedNode.children.some((c) => c.id === node.id)
-      ) {
-        // Push the parent folder's children as the previous view
-        setNavigationStack((prev) => [...prev, selectedNode.children as TreeNode[]]);
-        // Ensure breadcrumb reflects parent folder before adding child
-        setBreadcrumbPath((prev) => {
-          const next = [...prev];
-          if (next[next.length - 1] !== selectedNode.name) {
-            next.push(selectedNode.name);
-          }
-          next.push(node.name);
-          return next;
-        });
-        // Move into the clicked child folder
-        setCurrentView(node.children || []);
-        setExpandedNodes(new Set());
-        setSelectedNode(node);
-        return;
-      }
-
-      // Fallback: navigate using the general handler (tree-like navigation)
-      handleNavigateToFolder(node);
+      const driveId = params.driveId as string | undefined
+      if (!driveId) return
+      try {
+        // Stack current view
+        setNavigationStack((prev) => [...prev, currentView]);
+        // Update breadcrumb path
+        setBreadcrumbPath((prev) => [...prev, node.name]);
+        // Load folder contents from IPC
+        const folderPath = node.id.startsWith('/') ? node.id : `/${node.id}`
+        const entries: Array<{ key: string, value: any }> = await invokeListFolder(driveId, folderPath, false)
+        const children = buildNodesForFolder(folderPath, entries)
+        // Apply view
+        setCurrentView(children)
+        setExpandedNodes(new Set())
+        setSelectedNode({ ...node, children })
+      } catch {}
     } else {
       // Capture the parent folder context when previewing a file
       if (selectedNode?.type === 'folder') {
@@ -136,24 +310,20 @@ export function DrivePage() {
     console.log("Open Profile Settings");
   };
 
-  const handleNavigateToFolder = (node: TreeNode) => {
-    if (node.children) {
-      setNavigationDirection('forward');
-      // Add current view to navigation stack
-      setNavigationStack(prev => [...prev, currentView]);
-      
-      // Update breadcrumb path
-      setBreadcrumbPath(prev => [...prev, node.name]);
-      
-      // Set new current view to the folder's children
-      setCurrentView(node.children);
-      
-      // Clear expanded nodes for the new view
-      setExpandedNodes(new Set());
-      
-      // Keep this folder selected so right panel shows its contents
-      setSelectedNode(node);
-    }
+  const handleNavigateToFolder = async (node: TreeNode) => {
+    setNavigationDirection('forward');
+    const driveId = params.driveId as string | undefined
+    if (!driveId) return
+    try {
+      setNavigationStack(prev => [...prev, currentView])
+      setBreadcrumbPath(prev => [...prev, node.name])
+      const folderPath = node.id.startsWith('/') ? node.id : `/${node.id}`
+      const entries: Array<{ key: string, value: any }> = await invokeListFolder(driveId, folderPath, false)
+      const children = buildNodesForFolder(folderPath, entries)
+      setCurrentView(children)
+      setExpandedNodes(new Set())
+      setSelectedNode({ ...node, children })
+    } catch {}
   };
 
   const handleNavigateUp = () => {
@@ -181,6 +351,7 @@ export function DrivePage() {
       setNavigationDirection('backward');
       setCurrentView(fileSystem);
       setBreadcrumbPath([]);
+      setNavigationStack([]);
       setExpandedNodes(new Set());
       // At root: show root contents
       setSelectedNode({ id: 'virtual-root', name: 'Root', type: 'folder', children: fileSystem });
@@ -229,6 +400,7 @@ export function DrivePage() {
       setNavigationDirection('backward');
       setCurrentView(fileSystem);
       setBreadcrumbPath([]);
+      setNavigationStack([]);
       setExpandedNodes(new Set());
       setSelectedNode({ id: 'virtual-root', name: 'Root', type: 'folder', children: fileSystem });
       return;
@@ -237,32 +409,18 @@ export function DrivePage() {
     handleNavigateUp();
   };
 
-  const handleFileUpload = (files: File[]) => {
-    console.log("Files uploaded:", files);
-    
-    // Create new file nodes from uploaded files
-    const newFiles: TreeNode[] = files.map((file, index) => ({
-      id: `uploaded-${Date.now()}-${index}`,
-      name: file.name,
-      type: 'file' as const,
-      size: `${(file.size / (1024 * 1024)).toFixed(2)} MB`,
-      modified: new Date().toLocaleDateString(),
-    }));
-
-    // Add files to the selected folder or root
-    setFileSystem(prevSystem => {
-      if (selectedNode && selectedNode.type === 'folder') {
-        // Add to selected folder
-        return addFilesToFolder(prevSystem, selectedNode.id, newFiles);
-      } else {
-        // Add to root
-        return [...prevSystem, ...newFiles];
-      }
-    });
-
-    // Show success message
-    const targetFolder = selectedNode?.type === 'folder' ? selectedNode.name : 'root folder';
-    alert(`Successfully uploaded ${files.length} file(s) to ${targetFolder}`);
+  const handleFileUpload = async (files: File[]) => {
+    const driveId = params.driveId as string | undefined
+    if (!driveId || !files?.length) return
+    const currentFolderPath = getCurrentFolderPath()
+    try {
+      const payload = await Promise.all(files.map(async (f) => ({ name: f.name, data: await f.arrayBuffer() })))
+      const res = await invokeUploadFiles(driveId, currentFolderPath, payload)
+      console.log('[DrivePage] uploaded files result', res)
+      await reloadCurrentFolder()
+    } catch (e) {
+      console.error('[DrivePage] upload failed', e)
+    }
   };
 
   // Helper function to add files to a specific folder
@@ -465,17 +623,38 @@ export function DrivePage() {
                       </button>
                     }
                   />
-                  {quickActions.map((action, idx) => (
-                    <button
-                      key={idx}
-                      onClick={() => handleQuickAction(action)}
-                      className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-neutral-400 hover:bg-black/20 hover:text-white transition-colors rounded-lg"
-                      title={action.label}
-                    >
-                      {action.icon}
-                      <span>{action.label}</span>
-                    </button>
-                  ))}
+                  <button
+                    onClick={reloadCurrentFolder}
+                    className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-neutral-400 hover:bg-black/20 hover:text-white transition-colors rounded-lg"
+                    title="Refresh"
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21 12a9 9 0 1 1-3-6.708"/>
+                      <path d="M21 3v6h-6"/>
+                    </svg>
+                    <span>Refresh</span>
+                  </button>
+                  {(() => {
+                    const driveId = params.driveId as string
+                    const currentFolderPath = getCurrentFolderPath()
+                    return (
+                      <NewFolderModal
+                        driveId={driveId}
+                        currentFolder={currentFolderPath}
+                        onCreated={reloadCurrentFolder}
+                        trigger={
+                          <>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M3 8l4-4h4l2 2h6v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                              <path d="M12 11v6" />
+                              <path d="M9 14h6" />
+                            </svg>
+                            <span>New Folder</span>
+                          </>
+                        }
+                      />
+                    )
+                  })()}
                 </div>
               </div>
             </div>
