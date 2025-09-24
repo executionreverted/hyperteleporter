@@ -34,6 +34,7 @@
     "electron-updater": "^6.3.9",
     "gsap": "^3.13.0",
     "lucide-react": "^0.544.0",
+    "mathjs": "^14.7.0",
     "motion": "^12.23.19",
     "ogl": "^1.0.11",
     "react-dropzone": "^14.3.8",

@@ -8,7 +8,7 @@ import { Drive } from "../../contexts/DrivesContext";
 import Prism from "../../../../components/ui/prism";
 import { DriveSearchInput } from "../../../../components/ui/drive-search-input";
 import { memo, useMemo, useState } from "react";
-
+import GradualBlur from "../../../../components/ui/GradualBlur";
 // Optimized Prism background component
 const PrismBackground = memo(() => (
   <div className="absolute inset-0 w-full h-full">
@@ -110,7 +110,7 @@ const DrivesList = memo(function DrivesList() {
     <div className="h-screen bg-black flex items-center justify-center overflow-hidden relative">
       <PrismBackground />
       <div className="relative w-full max-w-6xl flex flex-col p-8 z-10">
-        <div className="relative flex h-[80vh] flex-col items-start justify-start rounded-2xl border border-gray-800 bg-black/30 px-8 py-8 shadow-xl">
+        <div className="relative flex h-[80vh] flex-col items-center justify-start rounded-2xl border border-gray-800 bg-black/30 px-8 py-8 shadow-xl">
           <div className="flex justify-between items-center mb-6 w-full flex-shrink-0">
             <div className="flex items-center space-x-6 flex-1">
               <h2 className="text-2xl font-bold text-white flex-shrink-0">Your Drives</h2>
@@ -127,7 +127,14 @@ const DrivesList = memo(function DrivesList() {
             />
           </div>
 
-          <div className="flex-1 min-h-0 w-full overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-600 scrollbar-track-neutral-800 pr-2">
+          <div 
+            className="flex-1 min-h-0 w-full overflow-y-auto relative"
+            style={{
+              scrollbarWidth: 'none', /* Firefox */
+              msOverflowStyle: 'none', /* IE and Edge */
+              WebkitScrollbar: 'none', /* Chrome, Safari, Opera */
+            }}
+          >
             {filteredDrives.length > 0 ? (
               <StaticDriveGrid 
                 drives={filteredDrives} 
@@ -144,8 +151,21 @@ const DrivesList = memo(function DrivesList() {
                 <p className="text-sm">Try searching with different keywords</p>
               </div>
             ) : null}
+            
+         
           </div>
+          <GradualBlur
+              target="parent"
+              position="bottom"
+              height="6rem"
+              strength={2}
+              divCount={12}
+              curve="bezier"
+              exponential={true}
+              opacity={1}
+            />
         </div>
+        
       </div>
       <ConfirmDialog />
     </div>

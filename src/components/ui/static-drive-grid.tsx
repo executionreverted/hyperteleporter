@@ -41,7 +41,7 @@ const MemoizedDriveCard = React.memo(ExpandableDriveCard);
 
 // Cached animation dimensions
 const CARD_DIMENSIONS = {
-  original: { width: 307.6640625, height: 280 },
+  original: { width: 280, height: 280 }, // Square cards
   expanded: { width: 700, height: 600 }
 } as const;
 
@@ -72,6 +72,7 @@ function StaticDriveGridComponent({
     halfExpandedWidth: CARD_DIMENSIONS.expanded.width / 2,
     halfExpandedHeight: CARD_DIMENSIONS.expanded.height / 2
   }), []);
+
 
 
   // Optimized expand handler with cached element lookup
@@ -175,20 +176,31 @@ function StaticDriveGridComponent({
       height: CARD_DIMENSIONS.original.height,
       duration: 0.6,
       ease: "power2.out",
-      onStart: () => setShowExpandedContent(false) // Hide expanded content when collapsing
+      onStart: () => {
+        setShowExpandedContent(false); // Hide expanded content when collapsing
+        // Fade out overlay immediately when collapse starts
+        const overlay = document.querySelector('.backdrop-overlay');
+        if (overlay) {
+          gsap.to(overlay, { opacity: 0, duration: 0.3, ease: "power2.out" });
+        }
+      }
     })
     // Phase 2: Move back to original position
     .to(copyRef.current, {
       left: copyPosition.x,
       top: copyPosition.y,
       duration: 0.6,
-      ease: "power2.out"
-    })
-    // Phase 3: Fade out
-    .to(copyRef.current, {
-      opacity: 0,
-      duration: 0.1,
-      ease: "power2.out"
+      ease: "power2.out",
+      onStart: () => {
+        // Show original card 0.1s before copy reaches position
+        gsap.delayedCall(0.5, () => {
+          setExpandedDriveId(null);
+        });
+      },
+      onComplete: () => {
+        // Hide copy when it reaches position
+        gsap.set(copyRef.current, { opacity: 0 });
+      }
     });
   }, [copyPosition, viewportDimensions, handleCollapseComplete]);
 
@@ -222,24 +234,19 @@ function StaticDriveGridComponent({
   }, []);
 
   return (
-    <div className={cn("w-full relative", className)} ref={containerRef}>
+    <div className={cn("w-full relative flex flex-col items-center", className)} ref={containerRef}>
       {/* Backdrop overlay when drive is expanded */}
-      <AnimatePresence>
-        {expandedDriveId && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.3, delay: 0 }}
-            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40"
-            onClick={() => {
-              if (expandedDriveId) {
-                handleExpandChange(expandedDriveId, false);
-              }
-            }}
-          />
-        )}
-      </AnimatePresence>
+      {expandedDriveId && (
+        <div
+          className="backdrop-overlay fixed inset-0 bg-black/50 backdrop-blur-sm z-40"
+          style={{ opacity: 1 }}
+          onClick={() => {
+            if (expandedDriveId) {
+              handleExpandChange(expandedDriveId, false);
+            }
+          }}
+        />
+      )}
 
       {/* Animated copy of the expanded drive */}
       <AnimatePresence>
@@ -251,8 +258,8 @@ function StaticDriveGridComponent({
             style={{
               left: copyPosition.x,
               top: copyPosition.y,
-              width: 307.6640625,
-              height: 280,
+              width: CARD_DIMENSIONS.original.width,
+              height: CARD_DIMENSIONS.original.height,
               opacity: 1,
             }}
             onClick={() => handleExpandChange(expandedDrive.id, false)}
@@ -279,8 +286,8 @@ function StaticDriveGridComponent({
       </AnimatePresence>
 
       {/* Static 3-column grid */}
-      <div className="w-full p-4 pb-8">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="w-full p-4 pb-8 flex justify-center">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 justify-items-center">
           {drives.map((drive) => (
             <DriveGridItem
               key={drive.id}
@@ -318,7 +325,8 @@ const DriveGridItem = React.memo(({
     data-drive-id={drive.id}
     className="relative"
     style={{
-      height: '280px', // Fixed height to maintain grid structure
+      width: '280px', // Square cards
+      height: '280px', // Square cards
       minHeight: '280px'
     }}
   >
@@ -331,7 +339,7 @@ const DriveGridItem = React.memo(({
       transition={{
         duration: 0,
         ease: "easeInOut",
-        delay: expandedDriveId === drive.id ? 0 : 0 // Appear immediately when not expanded
+        delay: expandedDriveId === drive.id ? 0 : 0 // Instant transition
       }}
     >
       <div 
@@ -350,6 +358,10 @@ const DriveGridItem = React.memo(({
           onExpandComplete={() => {}}
           onCollapseComplete={() => {}}
           className="w-full h-full"
+          customSizes={{
+            collapsedSize: { width: CARD_DIMENSIONS.original.width, height: CARD_DIMENSIONS.original.height },
+            expandedSize: { width: CARD_DIMENSIONS.expanded.width, height: CARD_DIMENSIONS.expanded.height }
+          }}
         />
       </div>
     </motion.div>
