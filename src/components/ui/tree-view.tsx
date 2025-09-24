@@ -138,11 +138,9 @@ const TreeNodeComponent = ({ node, level, onNodeSelect, onNodeToggle, selectedNo
     // @ts-ignore - window.setTimeout returns a number in browsers
     clickTimeoutRef.current = window.setTimeout(() => {
       onNodeSelect?.(node);
-      if (node.type === 'folder') {
-        // Single click expands/collapses up to 3 levels deep
-        if (hasChildren && level < 3) {
-          onNodeToggle?.(node);
-        }
+      // If first focus on a collapsed folder, expand it
+      if (node.type === 'folder' && hasChildren && level < 3 && !isExpanded) {
+        onNodeToggle?.(node);
       }
       clickTimeoutRef.current = null;
     }, 200);
@@ -389,6 +387,31 @@ export function TreeView({
           path={breadcrumbPath}
           onNavigateTo={handleNavigateTo}
         />
+      )}
+
+      {/* Context header showing parent and current for better orientation */}
+      {showBreadcrumb && (
+        (() => {
+          const currentName = breadcrumbPath[breadcrumbPath.length - 1];
+          const parentName = breadcrumbPath.length > 1 ? breadcrumbPath[breadcrumbPath.length - 2] : undefined;
+          return (
+            <div className="flex items-center gap-2 px-2 py-1 mb-1 text-xs text-neutral-500">
+              {parentName && (
+                <>
+                  <span className="text-neutral-400">Parent:</span>
+                  <span className="text-neutral-300 truncate max-w-[140px]" title={parentName}>{parentName}</span>
+                  <span className="text-neutral-600">/</span>
+                </>
+              )}
+              {currentName && (
+                <>
+                  <span className="text-neutral-400">Current:</span>
+                  <span className="text-neutral-200 truncate max-w-[160px]" title={currentName}>{currentName}</span>
+                </>
+              )}
+            </div>
+          );
+        })()
       )}
       
       <AnimatePresence mode="wait">

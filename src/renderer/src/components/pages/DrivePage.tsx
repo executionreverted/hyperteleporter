@@ -40,7 +40,7 @@ export function DrivePage() {
   // Breadcrumb navigation state
   const [currentView, setCurrentView] = useState<TreeNode[]>(mockFileSystem);
   const [breadcrumbPath, setBreadcrumbPath] = useState<string[]>([]);
-  const [navigationStack, setNavigationStack] = useState<TreeNode[][]>([mockFileSystem]);
+  const [navigationStack, setNavigationStack] = useState<TreeNode[][]>([]);
   const [navigationDirection, setNavigationDirection] = useState<'forward' | 'backward'>('forward');
   
   // Context menu state
@@ -52,7 +52,39 @@ export function DrivePage() {
   };
 
   const handleFileClick = (node: TreeNode) => {
-    setSelectedNode(node);
+    if (node.type === 'folder') {
+      setNavigationDirection('forward');
+      // If we're viewing a folder's contents in the right panel (selectedNode is a folder)
+      // and we click one of its child folders, navigate relative to that folder,
+      // not relative to the currentView (which might still be root).
+      if (
+        selectedNode?.type === 'folder' &&
+        selectedNode.children &&
+        selectedNode.children.some((c) => c.id === node.id)
+      ) {
+        // Push the parent folder's children as the previous view
+        setNavigationStack((prev) => [...prev, selectedNode.children as TreeNode[]]);
+        // Ensure breadcrumb reflects parent folder before adding child
+        setBreadcrumbPath((prev) => {
+          const next = [...prev];
+          if (next[next.length - 1] !== selectedNode.name) {
+            next.push(selectedNode.name);
+          }
+          next.push(node.name);
+          return next;
+        });
+        // Move into the clicked child folder
+        setCurrentView(node.children || []);
+        setExpandedNodes(new Set());
+        setSelectedNode(node);
+        return;
+      }
+
+      // Fallback: navigate using the general handler (tree-like navigation)
+      handleNavigateToFolder(node);
+    } else {
+      setSelectedNode(node);
+    }
   };
 
   const handleContextMenu = (node: TreeNode, actions: ContextMenuAction[], event: React.MouseEvent) => {
@@ -75,29 +107,39 @@ export function DrivePage() {
       // Clear expanded nodes for the new view
       setExpandedNodes(new Set());
       
-      // Clear selected node
-      setSelectedNode(undefined);
+      // Keep this folder selected so right panel shows its contents
+      setSelectedNode(node);
     }
   };
 
   const handleNavigateUp = () => {
-    if (navigationStack.length > 1) {
+    if (navigationStack.length > 0) {
       setNavigationDirection('backward');
-      // Remove the last item from navigation stack
-      const newStack = navigationStack.slice(0, -1);
-      setNavigationStack(newStack);
+      // Determine previous view and pop stack
+      const previousView = navigationStack[navigationStack.length - 1];
+      setCurrentView(previousView);
+      setNavigationStack(prev => prev.slice(0, -1));
       
-      // Update breadcrumb path
-      setBreadcrumbPath(prev => prev.slice(0, -1));
-      
-      // Set current view to the previous level
-      setCurrentView(newStack[newStack.length - 1]);
+      // Update breadcrumb path and set selected node to a virtual parent folder
+      setBreadcrumbPath(prev => {
+        const newPath = prev.slice(0, -1);
+        const parentName = newPath.length > 0 ? newPath[newPath.length - 1] : 'Root';
+        const virtualId = `virtual-${newPath.join('/') || 'root'}`;
+        setSelectedNode({ id: virtualId, name: parentName, type: 'folder', children: previousView });
+        return newPath;
+      });
       
       // Clear expanded nodes
       setExpandedNodes(new Set());
-      
-      // Clear selected node
-      setSelectedNode(undefined);
+    } else if (breadcrumbPath.length > 0) {
+      // Fallback: if stack is empty but breadcrumb says we're not at root,
+      // go to root view to keep UX consistent
+      setNavigationDirection('backward');
+      setCurrentView(fileSystem);
+      setBreadcrumbPath([]);
+      setExpandedNodes(new Set());
+      // At root: show root contents
+      setSelectedNode({ id: 'virtual-root', name: 'Root', type: 'folder', children: fileSystem });
     }
   };
 
