@@ -327,11 +327,12 @@ const Masonry = ({
 
   return (
     // @ts-ignore
-    <div ref={containerRef} className="relative w-full h-full">
+    <div ref={containerRef} className="masonry-grid relative w-full h-full">
       {grid.map(item => (
         <div
           key={item.id}
           data-key={item.id}
+          data-drive-id={item.drive?.id}
           className="absolute box-content"
           style={{ 
             willChange: 'transform, width, height, opacity, z-index',

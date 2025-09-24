@@ -3,7 +3,7 @@ import { MagicButton } from "./MagicButton";
 import { useNavigate } from "react-router-dom";
 import { CreateDriveModal } from "./CreateDriveModal";
 import { useConfirm } from "../../../../components/ui/confirm-modal";
-import { DynamicDriveGrid } from "../../../../components/ui/expandable-drive-card";
+import { StaticDriveGrid } from "../../../../components/ui/static-drive-grid";
 import { Drive } from "../../contexts/DrivesContext";
 import Prism from "../../../../components/ui/prism";
 import { DriveSearchInput } from "../../../../components/ui/drive-search-input";
@@ -129,7 +129,7 @@ const DrivesList = memo(function DrivesList() {
 
           <div className="flex-1 min-h-0 w-full overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-600 scrollbar-track-neutral-800 pr-2">
             {filteredDrives.length > 0 ? (
-              <DynamicDriveGrid 
+              <StaticDriveGrid 
                 drives={filteredDrives} 
                 onBrowse={handleBrowseDrive}
                 onShare={handleShareDrive}
