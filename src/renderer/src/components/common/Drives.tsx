@@ -10,6 +10,7 @@ import Prism from "../../../../components/ui/prism";
 import { DriveSearchInput } from "../../../../components/ui/drive-search-input";
 import { memo, useMemo, useState } from "react";
 import GradualBlur from "../../../../components/ui/GradualBlur";
+import { ShareModal } from "./ShareModal";
 // Optimized Prism background component
 const PrismBackground = memo(() => (
   <div className="absolute inset-0 w-full h-full">
@@ -36,6 +37,8 @@ const DrivesList = memo(function DrivesList() {
   const { confirm, ConfirmDialog } = useConfirm();
   const [searchQuery, setSearchQuery] = useState("");
   const [filteredDrives, setFilteredDrives] = useState<Drive[]>(drives);
+  const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [selectedDrive, setSelectedDrive] = useState<Drive | null>(null);
 
   const handleBrowseDrive = useMemo(() => (drive: Drive) => {
     const path = drive.link && drive.link.trim().length > 0 ? drive.link : `/drive/${drive.id}`;
@@ -43,8 +46,8 @@ const DrivesList = memo(function DrivesList() {
   }, [navigate]);
 
   const handleShareDrive = useMemo(() => (drive: Drive) => {
-    // TODO: Implement share functionality
-    console.log('Sharing drive:', drive.title);
+    setSelectedDrive(drive);
+    setShareModalOpen(true);
   }, []);
 
   const handleDeleteDrive = useMemo(() => (drive: Drive) => {
@@ -184,6 +187,21 @@ const DrivesList = memo(function DrivesList() {
         </div>
         
       </div>
+      
+      {/* Share Modal */}
+      {selectedDrive && (
+        <ShareModal
+          driveKey={selectedDrive.driveKey || ''}
+          driveName={selectedDrive.title}
+          triggerButton={null}
+          isOpen={shareModalOpen}
+          onClose={() => {
+            setShareModalOpen(false);
+            setSelectedDrive(null);
+          }}
+        />
+      )}
+      
       <ConfirmDialog />
     </div>
   );

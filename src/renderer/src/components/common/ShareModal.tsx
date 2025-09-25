@@ -12,11 +12,17 @@ interface ShareModalProps {
   driveName?: string;
   triggerButton?: React.ReactNode;
   className?: string;
+  isOpen?: boolean;
+  onClose?: () => void;
 }
 
-export function ShareModal({ driveKey, driveName, triggerButton, className }: ShareModalProps) {
+export function ShareModal({ driveKey, driveName, triggerButton, className, isOpen: externalIsOpen, onClose }: ShareModalProps) {
   const [copied, setCopied] = useState(false);
-  const [isOpen, setIsOpen] = useState(false);
+  const [internalIsOpen, setInternalIsOpen] = useState(false);
+  
+  // Use external isOpen if provided, otherwise use internal state
+  const isOpen = externalIsOpen !== undefined ? externalIsOpen : internalIsOpen;
+  const setIsOpen = onClose || setInternalIsOpen;
 
   const handleCopyKey = async () => {
     try {

@@ -27,6 +27,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { gsap } from "gsap";
 import { cn } from "../../renderer/lib/utils";
 import { ExpandableDriveCard, Drive } from "./expandable-drive-card";
+import { ShareModal } from "../../renderer/src/components/common/ShareModal";
 
 interface StaticDriveGridProps {
   drives: Drive[];
@@ -164,6 +165,13 @@ function StaticDriveGridComponent({
     setShowExpandedContent(false);
   }, []);
 
+  // Handle share drive - use the existing onShare prop
+  const handleShareDrive = useCallback((drive: Drive) => {
+    if (onShare) {
+      onShare(drive);
+    }
+  }, [onShare]);
+
   // Optimized GSAP animation functions with cached calculations
   const animateToCenter = useCallback(() => {
     if (!copyRef.current || !copyPosition) return;
@@ -291,6 +299,7 @@ function StaticDriveGridComponent({
 
   return (
     <div className={cn("w-full relative flex flex-col items-center", className)} ref={containerRef}>
+
       {/* Backdrop overlay when drive is expanded */}
       {expandedDriveId && (
         <div
@@ -329,7 +338,7 @@ function StaticDriveGridComponent({
             <MemoizedDriveCard
                 drive={expandedDrive}
                 onBrowse={onBrowse}
-                onShare={onShare}
+                onShare={handleShareDrive}
                 onDelete={onDelete}
                 isExpanded={showExpandedContent} // Show expanded content only when animation reaches center
                 isAnimating={false}
