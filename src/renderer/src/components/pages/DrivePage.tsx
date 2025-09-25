@@ -1230,7 +1230,7 @@ export function DrivePage() {
               {/* Brand - Shuffle */}
               <div className="flex items-center justify-center w-full mb-4 flex-shrink-0">
                 <Shuffle
-                  text="Hyperdrive"
+                  text="Hyperteleporter"
                   shuffleDirection="right"
                   duration={0.35}
                   animationMode="evenodd"
@@ -1244,7 +1244,7 @@ export function DrivePage() {
                   respectReducedMotion={true}
                   useDefaultFont={false}
                   tag="div"
-                  style={{ fontSize: "1.125rem", lineHeight: "1.75rem", fontFamily: "Electrolize, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica Neue, Arial" }}
+                  style={{ fontSize: "1rem", lineHeight: "1.5rem", fontFamily: "Electrolize, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica Neue, Arial" }}
                   className="text-white cursor-pointer font-electrolize"
                 />
               </div>
