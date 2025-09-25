@@ -6,6 +6,7 @@ const api = {
   drives: {
     list: async () => ipcRenderer.invoke('drives:list'),
     create: async (name: string) => ipcRenderer.invoke('drives:create', name),
+    join: async (name: string, publicKeyHex: string) => ipcRenderer.invoke('drives:join', { name, publicKeyHex }),
     listFolder: async (driveId: string, folder = '/', recursive = false) => ipcRenderer.invoke('drives:listFolder', { driveId, folder, recursive }),
     createFolder: async (driveId: string, folderPath: string) => ipcRenderer.invoke('drives:createFolder', { driveId, folderPath }),
     uploadFiles: async (driveId: string, folderPath: string, files: Array<{ name: string; data: ArrayBuffer }>) => {

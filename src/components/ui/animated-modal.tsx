@@ -8,6 +8,8 @@ import React, {
   useEffect,
   useRef,
   useState,
+  isValidElement,
+  cloneElement,
 } from "react";
 
 interface ModalContextType {
@@ -42,11 +44,28 @@ export function Modal({ children }: { children: ReactNode }) {
 export const ModalTrigger = ({
   children,
   className,
+  asChild,
 }: {
   children: ReactNode;
   className?: string;
+  asChild?: boolean;
 }) => {
   const { setOpen } = useModal();
+  if (asChild) {
+    if (isValidElement(children)) {
+      const originalOnClick = (children as any).props?.onClick as ((e: any) => void) | undefined
+      const mergedOnClick = (e: any) => {
+        if (typeof originalOnClick === 'function') originalOnClick(e)
+        setOpen(true)
+      }
+      return cloneElement(children as any, { onClick: mergedOnClick })
+    }
+    return (
+      <div className={className} onClick={() => setOpen(true)}>
+        {children}
+      </div>
+    )
+  }
   return (
     <button
       className={cn(

@@ -1,6 +1,6 @@
 import { promises as fs } from 'fs'
 import { dirname, join } from 'path'
-import { app } from 'electron'
+import { getHyperdriveBaseDir } from './appPaths'
 
 export type DriveRecord = {
   id: string
@@ -9,6 +9,8 @@ export type DriveRecord = {
   publicKeyHex: string
   contentKeyHex?: string
   createdAt: string
+  type?: 'owned' | 'readonly'
+  ownerKey?: string
 }
 
 type Registry = {
@@ -18,8 +20,7 @@ type Registry = {
 const REGISTRY_FILENAME = 'drives.json'
 
 function getRegistryDir(): string {
-  const baseDir = app.getPath('userData')
-  return join(baseDir, 'hyperdrive')
+  return getHyperdriveBaseDir()
 }
 
 export function getRegistryPath(): string {

@@ -7,6 +7,7 @@ declare global {
       drives: {
         list: () => Promise<any[]>
         create: (name: string) => Promise<any>
+        join: (name: string, publicKeyHex: string) => Promise<any>
         listFolder: (driveId: string, folder?: string, recursive?: boolean) => Promise<any[]>
         createFolder: (driveId: string, folderPath: string) => Promise<boolean>
         uploadFiles: (driveId: string, folderPath: string, files: Array<{ name: string; data: ArrayBuffer }>) => Promise<{ uploaded: number }>

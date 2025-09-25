@@ -24,6 +24,8 @@ import MagicButtonWide from "../../../../components/ui/magic-button-wide";
 import { DelayedTooltip } from "../../../../components/ui/delayed-tooltip";
 import { HardDriveIcon } from "../../../../components/ui/hard-drive-icon";
 import { ShareModal } from "../common/ShareModal";
+// @ts-ignore
+const { ipcRenderer } = (window as any)?.electron || {}
 
 // Start empty; will load from Hyperdrive via IPC
 const mockFileSystem: TreeNode[] = [];
@@ -52,13 +54,14 @@ export function DrivePage() {
   // Tree system state
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
   const [treeRoot, setTreeRoot] = useState<string>('/'); // Current root path for tree
+  const currentPathRef = useRef<string>('/')
   const [hoveredEllipsis, setHoveredEllipsis] = useState<boolean>(false);
   const [hideTimeout, setHideTimeout] = useState<NodeJS.Timeout | null>(null);
   const [showNewFolderModal, setShowNewFolderModal] = useState(false);
   const [targetFolderForNewFolder, setTargetFolderForNewFolder] = useState<string>('/');
   
   // Drive information state
-  const [currentDrive, setCurrentDrive] = useState<{ id: string; name: string; driveKey: string } | null>(null);
+  const [currentDrive, setCurrentDrive] = useState<{ id: string; name: string; driveKey: string; type?: 'owned' | 'readonly'; isWritable?: boolean } | null>(null);
   
   const params = useParams();
   const navigate = useNavigate();
@@ -120,6 +123,33 @@ export function DrivePage() {
     }
   }, [])
 
+  // Keep stable ref for current folder path
+  useEffect(() => {
+    currentPathRef.current = treeRoot || '/'
+  }, [treeRoot])
+
+  // Live change subscription: refresh on backend watcher events
+  useEffect(() => {
+    if (!ipcRenderer) return
+    let retryTimer: number | null = null
+    const handler = (_event: any, payload: { driveId: string }) => {
+      const currentId = params.driveId as string
+      if (payload?.driveId !== currentId) return
+      reloadCurrentFolder()
+      if (retryTimer) window.clearTimeout(retryTimer)
+      // @ts-ignore - setTimeout returns number
+      retryTimer = window.setTimeout(() => {
+        reloadCurrentFolder()
+        retryTimer = null
+      }, 300)
+    }
+    ipcRenderer.on('drive:changed', handler)
+    return () => {
+      if (retryTimer) window.clearTimeout(retryTimer)
+      try { ipcRenderer.removeListener('drive:changed', handler) } catch {}
+    }
+  }, [params.driveId])
+
   // Cleanup timeout on unmount
   useEffect(() => {
     return () => {
@@ -142,10 +172,14 @@ export function DrivePage() {
         
         const currentDriveInfo = drives.find((d: any) => d.id === driveId);
         if (currentDriveInfo) {
+          const type = currentDriveInfo.type ?? 'owned'
+          const isWritable = type === 'owned'
           setCurrentDrive({
             id: currentDriveInfo.id,
             name: currentDriveInfo.name,
-            driveKey: currentDriveInfo.publicKeyHex
+            driveKey: currentDriveInfo.publicKeyHex,
+            type,
+            isWritable
           });
         }
       } catch (error) {
@@ -208,13 +242,36 @@ export function DrivePage() {
     return () => { mounted = false };
   }, [api, params.driveId]);
 
-  // Auto-expand all folders when file system is loaded and has nodes
+  // Auto-expand all folders only once on first full load
+  const hasAutoExpandedRef = useRef(false)
   useEffect(() => {
+    if (hasAutoExpandedRef.current) return
     if (completeFileSystem.length > 0) {
-      const allExpanded = expandAllFolders(completeFileSystem);
-      setExpandedNodes(allExpanded);
+      hasAutoExpandedRef.current = true
+      const allExpanded = expandAllFolders(completeFileSystem)
+      setExpandedNodes(allExpanded)
     }
-  }, [completeFileSystem]);
+  }, [completeFileSystem])
+
+  // Keep right panel (currentView) in sync with the tree data and current treeRoot
+  useEffect(() => {
+    if (treeRoot === '/') {
+      const rootChildren = completeFileSystem.filter(node => node.id.startsWith('/') && !node.id.slice(1).includes('/'))
+      setCurrentView(rootChildren)
+      // Keep virtual root node selected when appropriate
+      if (!selectedNode || selectedNode.type !== 'folder' || selectedNode.id === 'virtual-root') {
+        setSelectedNode({ id: 'virtual-root', name: 'Root', type: 'folder', children: rootChildren })
+      }
+      return
+    }
+    const folderNode = findNodeById(completeFileSystem, treeRoot)
+    if (folderNode && folderNode.children) {
+      setCurrentView(folderNode.children)
+      if (!selectedNode || selectedNode.type !== 'folder' || selectedNode.id === treeRoot) {
+        setSelectedNode(folderNode)
+      }
+    }
+  }, [completeFileSystem, treeRoot])
 
   function buildNodesForFolder(currentFolderPath: string, entries: Array<{ key: string, value: any }>): TreeNode[] {
     const normalized = currentFolderPath.endsWith('/') ? currentFolderPath : currentFolderPath + '/'
@@ -242,6 +299,9 @@ export function DrivePage() {
       }
     }
     const folders: TreeNode[] = Array.from(folderNames).map((name) => ({ id: normalized + name, name, type: 'folder', children: [] }))
+    // Stable sort: folders first already, then files, both A→Z
+    folders.sort((a, b) => a.name.localeCompare(b.name))
+    files.sort((a, b) => a.name.localeCompare(b.name))
     return [...folders, ...files]
   }
 
@@ -341,7 +401,7 @@ export function DrivePage() {
   async function reloadCurrentFolder() {
     const driveId = params.driveId as string | undefined;
     if (!driveId) return;
-    const currentFolderPath = getCurrentFolderPath()
+    const currentFolderPath = currentPathRef.current
     const entries: Array<{ key: string, value: any }> = await invokeListFolder(driveId, currentFolderPath, false)
     console.log('[DrivePage] reload entries for', currentFolderPath, entries)
     
@@ -351,6 +411,26 @@ export function DrivePage() {
       console.log('[DrivePage] full drive entries (recursive)=', allEntries.map(e => e.key))
       const completeTree = buildCompleteFileSystemTree(allEntries)
       setCompleteFileSystem(completeTree)
+      // Sync the folder view from the updated tree so its children reflect live changes
+      const isRoot = currentFolderPath === '/'
+      if (isRoot) {
+        // Build fresh root children from complete tree (top-level only)
+        const rootChildren = completeTree.filter(node => node.id.startsWith('/') && !node.id.slice(1).includes('/'))
+        setCurrentView(rootChildren)
+        // If right panel is showing virtual root, update that node as well
+        if (selectedNode && selectedNode.type === 'folder' && selectedNode.id === 'virtual-root') {
+          setSelectedNode({ id: 'virtual-root', name: 'Root', type: 'folder', children: rootChildren })
+        }
+      } else {
+        // Update current folder node from the fresh tree
+        const updatedFolder = findNodeById(completeTree, currentFolderPath)
+        if (updatedFolder && updatedFolder.children) {
+          setCurrentView(updatedFolder.children)
+          if (selectedNode && selectedNode.type === 'folder' && selectedNode.id === currentFolderPath) {
+            setSelectedNode(updatedFolder)
+          }
+        }
+      }
       
       // Don't auto-expand all folders on refresh - preserve current expansion state
       // const allExpanded = expandAllFolders(completeTree);
@@ -434,13 +514,15 @@ export function DrivePage() {
 
     return (
       <>
-        <MagicButton
-          variant="blue"
-          onClick={onOpen}
-          className="h-10 flex items-center gap-2 text-sm font-medium"
-        >
-          {trigger}
-        </MagicButton>
+        {trigger ? (
+          <MagicButton
+            variant="blue"
+            onClick={onOpen}
+            className="h-10 flex items-center gap-2 text-sm font-medium"
+          >
+            {trigger}
+          </MagicButton>
+        ) : null}
         {isOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center">
             <div className="fixed inset-0 bg-black/70 bg-opacity-20" onClick={onClose} />
@@ -673,7 +755,7 @@ export function DrivePage() {
   const handleFileUpload = async (files: File[]) => {
     const driveId = params.driveId as string | undefined
     if (!driveId || !files?.length) return
-    const currentFolderPath = getCurrentFolderPath()
+    const currentFolderPath = currentPathRef.current
     try {
       const payload = await Promise.all(files.map(async (f) => ({ name: f.name, data: await f.arrayBuffer() })))
       const res = await invokeUploadFiles(driveId, currentFolderPath, payload)
@@ -1261,9 +1343,10 @@ export function DrivePage() {
                       }
                     />
                   )}
-                  {(() => {
+                {(() => {
                     const driveId = params.driveId as string
                     const currentFolderPath = getCurrentFolderPath()
+                    const canWrite = currentDrive?.isWritable ?? true
                     return (
                       <NewFolderModal
                         driveId={driveId}
@@ -1275,18 +1358,21 @@ export function DrivePage() {
                           setTargetFolderForNewFolder('/'); // Reset to root
                         }}
                         onOpen={() => {
+                          if (!canWrite) return
                           setShowNewFolderModal(true);
                           setTargetFolderForNewFolder(getCurrentFolderPath()); // Set to current folder
                         }}
                         trigger={
-                          <>
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                              <path d="M3 8l4-4h4l2 2h6v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-                              <path d="M12 11v6" />
-                              <path d="M9 14h6" />
-                            </svg>
-                            <span>New Folder</span>
-                          </>
+                          canWrite ? (
+                            <>
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M3 8l4-4h4l2 2h6v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                                <path d="M12 11v6" />
+                                <path d="M9 14h6" />
+                              </svg>
+                              <span>New Folder</span>
+                            </>
+                          ) : null
                         }
                       />
                     )
@@ -1306,10 +1392,13 @@ export function DrivePage() {
             onFileDeleted={reloadCurrentFolder}
             onCreateFolder={handleCreateFolderFromTree}
             onRefresh={reloadCurrentFolder}
+            canWrite={currentDrive?.isWritable ?? true}
           />
           
           {/* Dropzone */}
-          <Dropzone onFileUpload={handleFileUpload} />
+          {(currentDrive?.isWritable ?? true) && (
+            <Dropzone onFileUpload={handleFileUpload} />
+          )}
         </div>
       </div>
       

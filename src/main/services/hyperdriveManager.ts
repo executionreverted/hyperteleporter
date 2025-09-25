@@ -1,7 +1,9 @@
 import Corestore from 'corestore'
 import Hyperdrive from 'hyperdrive'
 import { join } from 'path'
-import { app } from 'electron'
+import { getHyperdriveBaseDir } from './appPaths'
+import { setupReplication, joinTopicOnce } from './swarm'
+import { BrowserWindow } from 'electron'
 import { randomUUID } from 'crypto'
 import {
   addOrUpdateDrive,
@@ -16,10 +18,58 @@ export type InitializedDrive = {
 }
 
 const activeDrives = new Map<string, InitializedDrive>()
+const activeWatchers = new Map<string, { watcher: AsyncIterableIterator<any>; running: boolean }>()
+
+async function startDriveWatcher(id: string, hyperdrive: Hyperdrive): Promise<void> {
+  if (activeWatchers.has(id)) return
+  try {
+    // @ts-ignore - hyperdrive watch exists at runtime
+    const watcher: any = (hyperdrive as any).watch('/')
+    if (watcher && typeof watcher.ready === 'function') {
+      await watcher.ready()
+    }
+    const state = { watcher, running: true }
+    activeWatchers.set(id, state)
+    ;(async () => {
+      try {
+        for await (const _change of watcher) { // eslint-disable-line @typescript-eslint/no-unused-vars
+          // Broadcast to all renderer windows that this drive changed
+          const windows = BrowserWindow.getAllWindows()
+          for (const win of windows) {
+            try {
+              win.webContents.send('drive:changed', { driveId: id })
+            } catch {}
+          }
+        }
+      } catch (err) {
+        console.warn(`[hyperdrive] watcher loop ended for drive ${id}`, err)
+      } finally {
+        activeWatchers.delete(id)
+        try { await watcher?.destroy?.() } catch {}
+      }
+    })()
+  } catch (err) {
+    console.warn(`[hyperdrive] failed to start watcher for drive ${id}`, err)
+  }
+}
+
+export async function stopAllDriveWatchers(): Promise<void> {
+  const entries = Array.from(activeWatchers.entries())
+  activeWatchers.clear()
+  await Promise.all(entries.map(async ([id, w]) => { // eslint-disable-line @typescript-eslint/no-unused-vars
+    try { await (w.watcher as any)?.destroy?.() } catch {}
+  }))
+}
+
+function broadcastDriveChanged(driveId: string): void {
+  const windows = BrowserWindow.getAllWindows()
+  for (const win of windows) {
+    try { win.webContents.send('drive:changed', { driveId }) } catch {}
+  }
+}
 
 function resolveStorageDir(id: string): string {
-  const baseDir = app.getPath('userData')
-  return join(baseDir, 'hyperdrive', 'stores', id)
+  return join(getHyperdriveBaseDir(), 'stores', id)
 }
 
 export async function createDrive(name: string): Promise<InitializedDrive> {
@@ -29,13 +79,19 @@ export async function createDrive(name: string): Promise<InitializedDrive> {
   const hyperdrive = new Hyperdrive(corestore)
   await hyperdrive.ready()
 
+  // Setup swarm replication for this corestore and join discovery topic
+  setupReplication(corestore)
+  await joinTopicOnce(hyperdrive.discoveryKey)
+  await startDriveWatcher(id, hyperdrive)
+
   const record: DriveRecord = {
     id,
     name,
     storageDir,
     publicKeyHex: hyperdrive.key.toString('hex'),
     contentKeyHex: hyperdrive.contentKey?.toString('hex'),
-    createdAt: new Date().toISOString()
+    createdAt: new Date().toISOString(),
+    type: 'owned'
   }
 
   await addOrUpdateDrive(record)
@@ -52,10 +108,43 @@ export async function initializeAllDrives(): Promise<InitializedDrive[]> {
     const corestore = new Corestore(record.storageDir)
     const hyperdrive = new Hyperdrive(corestore, Buffer.from(record.publicKeyHex, 'hex'))
     await hyperdrive.ready()
-    const drive: InitializedDrive = { record, corestore, hyperdrive }
+    setupReplication(corestore)
+    await joinTopicOnce(hyperdrive.discoveryKey)
+    await startDriveWatcher(record.id, hyperdrive)
+    // Ensure backward compatibility: default type to 'owned' if missing
+    const normalizedRecord: DriveRecord = { ...record, type: record.type ?? 'owned' }
+    const drive: InitializedDrive = { record: normalizedRecord, corestore, hyperdrive }
     activeDrives.set(record.id, drive)
     initialized.push(drive)
   }
+  return initialized
+}
+
+export async function joinDrive(name: string, publicKeyHex: string): Promise<InitializedDrive> {
+  const id = randomUUID()
+  const storageDir = resolveStorageDir(id)
+  const corestore = new Corestore(storageDir)
+  const hyperdrive = new Hyperdrive(corestore, Buffer.from(publicKeyHex, 'hex'))
+  await hyperdrive.ready()
+
+  setupReplication(corestore)
+  await joinTopicOnce(hyperdrive.discoveryKey)
+  await startDriveWatcher(id, hyperdrive)
+
+  const record: DriveRecord = {
+    id,
+    name,
+    storageDir,
+    publicKeyHex,
+    contentKeyHex: hyperdrive.contentKey?.toString('hex'),
+    createdAt: new Date().toISOString(),
+    type: 'readonly',
+    ownerKey: publicKeyHex
+  }
+
+  await addOrUpdateDrive(record)
+  const initialized: InitializedDrive = { record, corestore, hyperdrive }
+  activeDrives.set(id, initialized)
   return initialized
 }
 
@@ -102,6 +191,8 @@ export async function createFolder(driveId: string, folderPath: string): Promise
   // Create a directory marker file so the folder appears even when empty
   const markerPath = `${base.replace(/\/$/, '')}/.keep`
   await drive.put(markerPath, Buffer.alloc(0))
+  try { await (drive as any).update({ wait: false }) } catch {}
+  broadcastDriveChanged(driveId)
 }
 
 export async function uploadFiles(
@@ -120,6 +211,12 @@ export async function uploadFiles(
     uploaded += 1
   }
   console.log(`[hyperdrive] upload complete count=${uploaded}`)
+  try {
+    // Hint replication layer we expect updates soon
+    // @ts-ignore - update exists at runtime
+    await (drive as any).update({ wait: false })
+  } catch {}
+  broadcastDriveChanged(driveId)
   return { uploaded }
 }
 
@@ -245,6 +342,8 @@ export async function deleteFile(driveId: string, path: string): Promise<boolean
     } catch {}
 
     console.log(`[hyperdrive] deleteFile ${normalized}: deleted and cleared successfully`)
+    try { await (drive as any).update({ wait: false }) } catch {}
+    broadcastDriveChanged(driveId)
     return true
   } catch (err) {
     console.error(`[hyperdrive] deleteFile ${normalized}: failed`, err)

@@ -38,6 +38,8 @@ export interface Drive {
   status: 'active' | 'inactive' | 'syncing';
   lastAccessed?: Date;
   driveKey?: string;
+  type?: 'owned' | 'readonly';
+  isWritable?: boolean;
 }
 
 interface ExpandableDriveCardProps {
@@ -169,12 +171,20 @@ export function ExpandableDriveCard({
                   <ExpandableCardHeader className="p-0">
                     <div className="flex justify-between items-start w-full">
                       <div className="flex-1">
-                        <div className={cn(
-                          "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium mb-2 border",
-                          getStatusColor(drive.status)
-                        )}>
-                          <IconActivity className="h-3 w-3 mr-1" />
-                          {getStatusText(drive.status)}
+                        <div className="flex items-center gap-2 mb-2">
+                          <div className={cn(
+                            "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium border",
+                            getStatusColor(drive.status)
+                          )}>
+                            <IconActivity className="h-3 w-3 mr-1" />
+                            {getStatusText(drive.status)}
+                          </div>
+                          <div className={cn(
+                            "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium border",
+                            (drive.isWritable ?? true) ? 'bg-blue-500/20 text-blue-300 border-blue-500/30' : 'bg-purple-500/20 text-purple-300 border-purple-500/30'
+                          )}>
+                            {(drive.isWritable ?? true) ? 'Local Drive' : 'Remote Drive'}
+                          </div>
                         </div>
                         <h4 
                           className="text-zinc-100 font-bold tracking-wide text-sm leading-tight mb-2"

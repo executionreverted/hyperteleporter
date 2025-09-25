@@ -6,29 +6,12 @@ import { motion } from "motion/react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { MagicButton } from "../../renderer/src/components/common/MagicButton";
-import { 
-  IconPhoto, 
-  IconVideo, 
-  IconFileTypePdf, 
-  IconFile, 
-  IconDownload, 
-  IconShare, 
-  IconTrash,
-  IconEye,
-  IconCopy,
-  IconFolderPlus,
-  IconArrowUp,
-  IconFileText,
-  IconFileCode,
-  IconFileMusic,
-  IconFileZip,
-  IconFileSpreadsheet,
-  IconPresentation
-} from "@tabler/icons-react";
+import { IconDownload, IconShare, IconTrash, IconEye, IconCopy, IconFolderPlus, IconArrowUp, IconFileTypePdf } from "@tabler/icons-react";
 import FolderIcon from "../../renderer/src/assets/folder.svg";
 import FolderOpenIcon from "../../renderer/src/assets/folder-open.svg";
 import { ContextMenu, useContextMenu, type ContextMenuAction } from "./context-menu";
 import GlareHover from "./glare-hover";
+import { AnimatePresence } from "motion/react";
 
 interface ContentPanelProps {
   selectedNode?: TreeNode;
@@ -40,125 +23,10 @@ interface ContentPanelProps {
   onCreateFolder?: (parentPath: string) => void;
   onRefresh?: () => void;
   className?: string;
+  canWrite?: boolean;
 }
 
-const FileIcon = ({ node }: { node: TreeNode }) => {
-  const getFileType = () => {
-    const extension = node.name.split('.').pop()?.toLowerCase();
-    return extension || 'unknown';
-  };
-
-  const fileType = getFileType();
-
-  const getIconForFileType = () => {
-    switch (fileType) {
-      // Images
-      case 'jpg':
-      case 'jpeg':
-      case 'png':
-      case 'gif':
-      case 'webp':
-      case 'svg':
-      case 'bmp':
-      case 'ico':
-        return <IconPhoto size={32} className="text-blue-400" />;
-      
-      // Videos
-      case 'mp4':
-      case 'webm':
-      case 'mov':
-      case 'avi':
-      case 'mkv':
-      case 'flv':
-        return <IconVideo size={32} className="text-purple-400" />;
-      
-      // Audio
-      case 'mp3':
-      case 'wav':
-      case 'flac':
-      case 'aac':
-      case 'ogg':
-        return <IconFileMusic size={32} className="text-green-400" />;
-      
-      // Documents
-      case 'pdf':
-        return <IconFileTypePdf size={32} className="text-red-400" />;
-      
-      case 'doc':
-      case 'docx':
-        return <IconFileText size={32} className="text-blue-500" />;
-      
-      case 'xls':
-      case 'xlsx':
-      case 'csv':
-        return <IconFileSpreadsheet size={32} className="text-green-500" />;
-      
-      case 'ppt':
-      case 'pptx':
-        return <IconPresentation size={32} className="text-orange-400" />;
-      
-      // Code files
-      case 'js':
-      case 'jsx':
-      case 'ts':
-      case 'tsx':
-      case 'html':
-      case 'css':
-      case 'scss':
-      case 'sass':
-      case 'less':
-      case 'py':
-      case 'java':
-      case 'cpp':
-      case 'c':
-      case 'cs':
-      case 'php':
-      case 'rb':
-      case 'go':
-      case 'rs':
-      case 'swift':
-      case 'kt':
-      case 'sh':
-      case 'bash':
-      case 'zsh':
-      case 'fish':
-      case 'ps1':
-      case 'bat':
-      case 'cmd':
-        return <IconFileCode size={32} className="text-yellow-400" />;
-      
-      // Archives
-      case 'zip':
-      case 'rar':
-      case '7z':
-      case 'tar':
-      case 'gz':
-      case 'bz2':
-        return <IconFileZip size={32} className="text-orange-500" />;
-      
-      // Text files
-      case 'txt':
-      case 'md':
-      case 'rtf':
-        return <IconFileText size={32} className="text-gray-400" />;
-      
-      // JSON and config files
-      case 'json':
-      case 'xml':
-      case 'yml':
-      case 'yaml':
-      case 'ini':
-      case 'cfg':
-      case 'conf':
-        return <IconFileCode size={32} className="text-indigo-400" />;
-      
-      default:
-        return <IconFile size={32} className="text-neutral-400" />;
-    }
-  };
-
-  return getIconForFileType();
-};
+import { FileIcon } from "./file-icons";
 
 const FilePreview = ({ node }: { node: TreeNode }) => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -604,7 +472,7 @@ const FileMetadata = ({ node }: { node: TreeNode }) => {
   );
 };
 
-const FolderContents = ({ node, onFileClick, onNavigateUp, canNavigateUp, driveId, onFileDeleted }: { node: TreeNode; onFileClick?: (node: TreeNode) => void; onNavigateUp?: () => void; canNavigateUp?: boolean; driveId?: string; onFileDeleted?: () => void }) => {
+const FolderContents = ({ node, onFileClick, onNavigateUp, canNavigateUp, driveId, onFileDeleted, onPreviewAnchor, canWrite = true }: { node: TreeNode; onFileClick?: (node: TreeNode) => void; onNavigateUp?: () => void; canNavigateUp?: boolean; driveId?: string; onFileDeleted?: () => void; onPreviewAnchor?: (rect: DOMRect, node: TreeNode) => void; canWrite?: boolean }) => {
   const totalItems = node.children ? node.children.length : 0;
   const folderCount = node.children ? node.children.filter(c => c.type === 'folder').length : 0;
   const fileCount = totalItems - folderCount;
@@ -677,8 +545,8 @@ const FolderContents = ({ node, onFileClick, onNavigateUp, canNavigateUp, driveI
         { id: 'open', label: 'Open', icon: <IconEye size={16} />, onClick: () => onFileClick?.(childNode) },
         { id: 'download', label: 'Download', icon: <IconDownload size={16} />, onClick: () => handleDownloadFile(childNode) },
         { id: 'copy', label: 'Copy path', icon: <IconCopy size={16} />, onClick: () => handleCopyPath(childNode) },
-        { id: 'delete', label: 'Delete', icon: <IconTrash size={16} />, onClick: () => handleDeleteFile(childNode), destructive: true },
       )
+      if (canWrite) actions.push({ id: 'delete', label: 'Delete', icon: <IconTrash size={16} />, onClick: () => handleDeleteFile(childNode), destructive: true })
     } else {
       actions.push(
         { id: 'open', label: 'Open', icon: <IconEye size={16} />, onClick: () => onFileClick?.(childNode) },
@@ -703,9 +571,32 @@ const FolderContents = ({ node, onFileClick, onNavigateUp, canNavigateUp, driveI
     >
       <div className="bg-black/10 rounded-lg p-8 h-full">
         <div className="flex items-center justify-between mb-4 gap-2">
-          <h3 className="text-lg font-semibold text-white">
-            Folder Contents
-          </h3>
+          <div className="flex items-center gap-2">
+            {canNavigateUp ? (
+              <span
+                role="button"
+                aria-label="Back"
+                title="Back"
+                onClick={() => onNavigateUp?.()}
+                className="text-neutral-400 hover:text-white cursor-pointer select-none"
+              >
+                {/* minimal chevron */}
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M15 18l-6-6 6-6" />
+                </svg>
+              </span>
+            ) : (
+              <span className="text-neutral-700 select-none" aria-hidden="true">
+                {/* placeholder to preserve width/height */}
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                  <circle cx="12" cy="12" r="3" />
+                </svg>
+              </span>
+            )}
+            <h3 className="text-lg font-semibold text-white">
+              Folder Contents
+            </h3>
+          </div>
           <div className="text-sm text-neutral-400 truncate">
             <span className="text-white font-medium">{node.name}</span>
             <span className="mx-2">•</span>
@@ -755,7 +646,17 @@ const FolderContents = ({ node, onFileClick, onNavigateUp, canNavigateUp, driveI
               <div
                 key={child.id}
                 className="flex flex-col items-center p-4 cursor-pointer group"
-                onClick={() => onFileClick?.(child)}
+                onClick={(e) => {
+                  if (child.type === 'file') {
+                    try {
+                      const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect()
+                      onPreviewAnchor?.(rect, child)
+                    } catch {}
+                    // Do not change selection/view; just open modal
+                    return
+                  }
+                  onFileClick?.(child)
+                }}
                 onContextMenu={(e) => onChildRightClick(e, child)}
               >
                 <GlareHover
@@ -805,10 +706,26 @@ const FolderContents = ({ node, onFileClick, onNavigateUp, canNavigateUp, driveI
   );
 };
 
-export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavigateUp, driveId, onFileDeleted, onCreateFolder, onRefresh, className }: ContentPanelProps) {
+export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavigateUp, driveId, onFileDeleted, onCreateFolder, onRefresh, className, canWrite = true }: ContentPanelProps) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const api: any = (window as any)?.api
   const { isOpen, position, actions, openContextMenu, closeContextMenu } = useContextMenu()
+
+  // Preview modal state MUST be declared before any early returns to preserve hook order
+  const [previewRect, setPreviewRect] = React.useState<DOMRect | null>(null)
+  const [isPreviewOpen, setIsPreviewOpen] = React.useState(false)
+  const [previewNode, setPreviewNode] = React.useState<TreeNode | null>(null)
+
+  const openPreviewFromRect = (rect: DOMRect, node?: TreeNode) => {
+    setPreviewRect(rect)
+    if (node) setPreviewNode(node)
+    setIsPreviewOpen(true)
+  }
+
+  const closePreview = () => {
+    // Trigger exit animation by closing; keep node until onExited
+    setIsPreviewOpen(false)
+  }
 
   const handleDeleteFile = async () => {
     if (!selectedNode || selectedNode.type !== 'file') return
@@ -881,17 +798,18 @@ export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavig
         { id: 'open', label: 'Open', icon: <IconEye size={16} />, onClick: () => {} },
         { id: 'download', label: 'Download', icon: <IconDownload size={16} />, onClick: handleDownloadFile },
         { id: 'copy', label: 'Copy path', icon: <IconCopy size={16} />, onClick: handleCopyPath },
-        { id: 'delete', label: 'Delete', icon: <IconTrash size={16} />, onClick: handleDeleteFile, destructive: true },
       )
+      if (canWrite) actions.push({ id: 'delete', label: 'Delete', icon: <IconTrash size={16} />, onClick: handleDeleteFile, destructive: true })
     } else {
       console.log('[ContentPanel] Adding folder actions for:', selectedNode.name)
-      actions.push(
-        { id: 'create-folder', label: 'Create Folder', icon: <IconFolderPlus size={16} />, onClick: () => {
+      if (canWrite) {
+        actions.push({ id: 'create-folder', label: 'Create Folder', icon: <IconFolderPlus size={16} />, onClick: () => {
           console.log('[ContentPanel] Create folder clicked, selectedNode.id:', selectedNode.id)
-          // If we're at virtual-root (fresh app state), use actual root '/'
           const currentFolderPath = selectedNode.id === 'virtual-root' ? '/' : selectedNode.id
           onCreateFolder?.(currentFolderPath)
-        }},
+        }})
+      }
+      actions.push(
         { id: 'refresh', label: 'Refresh', icon: <IconArrowUp size={16} />, onClick: () => onRefresh?.() },
         { id: 'copy', label: 'Copy path', icon: <IconCopy size={16} />, onClick: handleCopyPath },
       )
@@ -899,7 +817,7 @@ export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavig
     console.log('[ContentPanel] Built actions:', actions)
     return actions
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedNode])
+  }, [selectedNode, canWrite])
 
   const onRightClick = (e: React.MouseEvent) => {
     const menuActions = buildContextActions()
@@ -910,17 +828,16 @@ export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavig
     e.preventDefault()
     e.stopPropagation()
     
-    const emptyAreaActions: ContextMenuAction[] = [
-      { id: 'create-folder', label: 'Create Folder', icon: <IconFolderPlus size={16} />, onClick: () => {
-        // Use the current folder's path instead of hardcoded root
-        // If we're at virtual-root (fresh app state), use actual root '/'
+    const emptyAreaActions: ContextMenuAction[] = []
+    if (canWrite) {
+      emptyAreaActions.push({ id: 'create-folder', label: 'Create Folder', icon: <IconFolderPlus size={16} />, onClick: () => {
         const currentFolderPath = selectedNode?.id === 'virtual-root' ? '/' : (selectedNode?.id || '/')
         onCreateFolder?.(currentFolderPath)
-      }},
-      { id: 'refresh', label: 'Refresh', icon: <IconArrowUp size={16} />, onClick: () => {
-        onRefresh?.()
-      }},
-    ]
+      }})
+    }
+    emptyAreaActions.push({ id: 'refresh', label: 'Refresh', icon: <IconArrowUp size={16} />, onClick: () => {
+      onRefresh?.()
+    }})
     
     openContextMenu(e, emptyAreaActions)
   }
@@ -949,7 +866,13 @@ export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavig
       {/* Actions Header - only for files */}
       {selectedNode.type === 'file' && (
         <div className="sticky top-0 z-10 bg-black/5 backdrop-blur-sm border-b border-neutral-700/30 p-4">
-          <div className="flex justify-end">
+          <div className="flex justify-between items-center">
+            <div>
+              <MagicButton className="text-sm flex items-center gap-2" onClick={() => onNavigateUp?.()}>
+                <IconArrowUp size={16} />
+                Back
+              </MagicButton>
+            </div>
             <div className="flex gap-2">
               <MagicButton className="text-sm flex items-center gap-2">
                 <IconDownload size={16} />
@@ -959,13 +882,15 @@ export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavig
                 <IconShare size={16} />
                 Share
               </MagicButton>
-              <MagicButton 
-                className="text-sm flex items-center gap-2"
-                onClick={handleDeleteFile}
-              >
-                <IconTrash size={16} />
-                Delete
-              </MagicButton>
+              {canWrite && (
+                <MagicButton 
+                  className="text-sm flex items-center gap-2"
+                  onClick={handleDeleteFile}
+                >
+                  <IconTrash size={16} />
+                  Delete
+                </MagicButton>
+              )}
             </div>
           </div>
         </div>
@@ -973,16 +898,95 @@ export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavig
       
       {selectedNode.type === 'folder' ? (
         <div className="h-full" onContextMenu={onRightClick}>
-          <FolderContents node={selectedNode} onFileClick={onFileClick} onNavigateUp={onNavigateUp} canNavigateUp={canNavigateUp} driveId={driveId} onFileDeleted={onFileDeleted} />
+          <FolderContents node={selectedNode} onFileClick={onFileClick} onNavigateUp={onNavigateUp} canNavigateUp={canNavigateUp} driveId={driveId} onFileDeleted={onFileDeleted} onPreviewAnchor={openPreviewFromRect} canWrite={canWrite} />
         </div>
       ) : (
-        <div onContextMenu={onRightClick}>
-          <FilePreview node={selectedNode} />
-          <FileMetadata node={selectedNode} />
-        </div>
+        <>
+          {!isPreviewOpen && (
+            <div onContextMenu={onRightClick}>
+              <div className="max-h-[480px] overflow-y-auto">
+                <FilePreview node={selectedNode} />
+              </div>
+              <FileMetadata node={selectedNode} />
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Preview Modal with zoom-from-source animation */}
+      {previewNode && (
+        <ZoomPreview open={isPreviewOpen} sourceRect={previewRect} onClose={closePreview} onExited={() => setPreviewNode(null)}>
+          <div className="max-h-[70vh] overflow-y-auto">
+            <FilePreview node={previewNode} />
+          </div>
+          <FileMetadata node={previewNode} />
+        </ZoomPreview>
       )}
 
       <ContextMenu isOpen={isOpen} position={position} actions={actions} onClose={closeContextMenu} />
     </div>
   );
+}
+
+function ZoomPreview({ open = true, sourceRect, onClose, onExited, children }: { open?: boolean; sourceRect: DOMRect | null; onClose: () => void; onExited?: () => void; children: React.ReactNode }) {
+  const [mounted, setMounted] = React.useState(false)
+  const [viewport, setViewport] = React.useState<{ w: number; h: number }>({ w: window.innerWidth, h: window.innerHeight })
+
+  React.useEffect(() => {
+    setMounted(true)
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    const onResize = () => setViewport({ w: window.innerWidth, h: window.innerHeight })
+    window.addEventListener('keydown', onKey)
+    window.addEventListener('resize', onResize)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('resize', onResize)
+    }
+  }, [onClose])
+
+  const targetWidth = Math.min(viewport.w - 64, 1000)
+  const targetHeight = Math.min(viewport.h - 64, 800)
+  const targetX = Math.max(32, Math.floor((viewport.w - targetWidth) / 2))
+  const targetY = Math.max(32, Math.floor((viewport.h - targetHeight) / 2))
+
+  const initial = sourceRect
+    ? { left: sourceRect.left, top: sourceRect.top, width: sourceRect.width, height: sourceRect.height, opacity: 0 }
+    : { left: targetX, top: targetY, width: targetWidth, height: targetHeight, opacity: 0 }
+
+  const animate = { left: targetX, top: targetY, width: targetWidth, height: targetHeight, opacity: 1 }
+
+  return (
+    <AnimatePresence onExitComplete={onExited}>
+      {mounted && open && (
+        <>
+          {/* Backdrop */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 0.5, backdropFilter: 'blur(6px)' as any }}
+            exit={{ opacity: 0, backdropFilter: 'blur(0px)' as any }}
+            className="fixed inset-0 z-[100] bg-black/80"
+            onClick={onClose}
+          />
+
+          {/* Window */}
+          <motion.div
+            initial={initial}
+            animate={animate}
+            exit={initial}
+            transition={{ type: 'spring', stiffness: 260, damping: 20 }}
+            className="fixed z-[101] rounded-2xl overflow-hidden border border-white/10 bg-neutral-950 shadow-2xl"
+          >
+            {/* Header */}
+            <div className="flex items-center justify-end p-2 border-b border-white/10">
+              <button onClick={onClose} className="text-neutral-400 hover:text-white px-2 py-1">✕</button>
+            </div>
+            {/* Body */}
+            <div className="max-h-[80vh] overflow-y-auto">
+              {children}
+            </div>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
+  )
 }

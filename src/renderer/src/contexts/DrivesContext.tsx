@@ -10,6 +10,8 @@ export interface Drive {
   status: 'active' | 'inactive' | 'syncing';
   lastAccessed?: Date;
   driveKey?: string;
+  type?: 'owned' | 'readonly';
+  isWritable?: boolean;
 }
 
 interface DrivesContextType {
@@ -17,6 +19,7 @@ interface DrivesContextType {
   addDrive: (drive: Omit<Drive, 'id' | 'createdAt'>) => void;
   removeDrive: (id: string) => void;
   updateDrive: (id: string, updates: Partial<Drive>) => void;
+  joinReadOnlyDrive: (name: string, publicKeyHex: string) => Promise<Drive | void>;
 }
 
 const DrivesContext = createContext<DrivesContextType | undefined>(undefined);
@@ -40,7 +43,9 @@ export function DrivesProvider({ children }: { children: ReactNode }) {
             link: `/drive/${d.id}`,
             createdAt: new Date(d.createdAt),
             status: 'active',
-            driveKey: d.publicKeyHex
+            driveKey: d.publicKeyHex,
+            type: d.type ?? 'owned',
+            isWritable: (d.type ?? 'owned') === 'owned'
           }));
           setDrives(mapped);
         }
@@ -59,7 +64,9 @@ export function DrivesProvider({ children }: { children: ReactNode }) {
           id: created.id,
           createdAt: new Date(created.createdAt),
           driveKey: created.publicKeyHex,
-          link: `/drive/${created.id}`
+          link: `/drive/${created.id}`,
+          type: created.type ?? 'owned',
+          isWritable: (created.type ?? 'owned') === 'owned'
         };
         setDrives(prev => [...prev, newDrive]);
         return;
@@ -69,6 +76,25 @@ export function DrivesProvider({ children }: { children: ReactNode }) {
     const fallback: Drive = { ...driveData, id: Date.now().toString(), createdAt: new Date() };
     setDrives(prev => [...prev, fallback]);
   };
+
+  // Join an existing drive by key
+  const joinReadOnlyDrive = async (name: string, publicKeyHex: string) => {
+    if (!api?.drives?.join) return
+    const created = await api.drives.join(name, publicKeyHex)
+    const newDrive: Drive = {
+      id: created.id,
+      title: created.name,
+      description: '',
+      link: `/drive/${created.id}`,
+      createdAt: new Date(created.createdAt),
+      status: 'active',
+      driveKey: created.publicKeyHex,
+      type: created.type ?? 'readonly',
+      isWritable: false
+    }
+    setDrives(prev => [...prev, newDrive])
+    return newDrive
+  }
 
   const removeDrive = (id: string) => {
     setDrives(prev => prev.filter(drive => drive.id !== id));
@@ -83,7 +109,7 @@ export function DrivesProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <DrivesContext.Provider value={{ drives, addDrive, removeDrive, updateDrive }}>
+    <DrivesContext.Provider value={{ drives, addDrive, removeDrive, updateDrive, joinReadOnlyDrive }}>
       {children}
     </DrivesContext.Provider>
   );

@@ -1,14 +1,13 @@
 import { promises as fs } from 'fs'
 import { dirname, join } from 'path'
-import { app } from 'electron'
+import { getHyperdriveBaseDir } from './appPaths'
 
 export type UserProfile = Record<string, unknown>
 
 const PROFILE_FILENAME = 'profile.json'
 
 function getProfileDir(): string {
-  const baseDir = app.getPath('userData')
-  return join(baseDir, 'hyperdrive')
+  return getHyperdriveBaseDir()
 }
 
 export function getProfilePath(): string {

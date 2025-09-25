@@ -2,7 +2,8 @@ import { app, shell, BrowserWindow, ipcMain, screen } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
-import { initializeAllDrives, closeAllDrives, createDrive, listActiveDrives, listDrive, createFolder, uploadFiles, getFileBuffer, deleteFile, getDriveStorageInfo } from './services/hyperdriveManager'
+import { initializeAllDrives, closeAllDrives, createDrive, listActiveDrives, listDrive, createFolder, uploadFiles, getFileBuffer, deleteFile, getDriveStorageInfo, joinDrive, stopAllDriveWatchers } from './services/hyperdriveManager'
+import { destroySwarm, getSwarm } from './services/swarm'
 import { readUserProfile, writeUserProfile } from './services/userProfile'
 
 function createWindow(): void {
@@ -91,6 +92,8 @@ app.whenReady().then(() => {
   console.log('[main] Starting initializeAllDrives')
   initializeAllDrives().then(() => {
     console.log('[main] initializeAllDrives completed successfully')
+    // Touch swarm to ensure it is created early
+    getSwarm()
   }).catch((err) => {
     console.error('[main] initializeAllDrives failed', err)
   })
@@ -105,7 +108,8 @@ app.whenReady().then(() => {
       id: d.record.id,
       name: d.record.name,
       publicKeyHex: d.record.publicKeyHex,
-      createdAt: d.record.createdAt
+      createdAt: d.record.createdAt,
+      type: d.record.type ?? 'owned'
     }))
     console.log('[main] drives:list returning:', drives)
     return drives
@@ -117,7 +121,20 @@ app.whenReady().then(() => {
       id: d.record.id,
       name: d.record.name,
       publicKeyHex: d.record.publicKeyHex,
-      createdAt: d.record.createdAt
+      createdAt: d.record.createdAt,
+      type: d.record.type ?? 'owned'
+    }
+  })
+
+  ipcMain.handle('drives:join', async (_evt, { name, publicKeyHex }: { name: string, publicKeyHex: string }) => {
+    console.log('[main] drives:join called', { name, publicKeyHex })
+    const d = await joinDrive(name, publicKeyHex)
+    return {
+      id: d.record.id,
+      name: d.record.name,
+      publicKeyHex: d.record.publicKeyHex,
+      createdAt: d.record.createdAt,
+      type: d.record.type ?? 'readonly'
     }
   })
 
@@ -225,4 +242,6 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   // Best-effort close of corestores
   closeAllDrives().catch(() => {})
+  stopAllDriveWatchers().catch(() => {})
+  destroySwarm().catch(() => {})
 })

@@ -2,6 +2,7 @@ import { useDrives } from "../../contexts/DrivesContext";
 import { MagicButton } from "./MagicButton";
 import { useNavigate } from "react-router-dom";
 import { CreateDriveModal } from "./CreateDriveModal";
+import { JoinDrive } from "./JoinDrive";
 import { useConfirm } from "../../../../components/ui/confirm-modal";
 import { StaticDriveGrid } from "../../../../components/ui/static-drive-grid";
 import { Drive } from "../../contexts/DrivesContext";
@@ -97,9 +98,12 @@ const DrivesList = memo(function DrivesList() {
           <div className="relative flex h-full flex-col items-center justify-center overflow-hidden rounded-2xl border border-gray-800 bg-black/90 px-8 py-20 shadow-xl">
             <h2 className="text-3xl font-bold text-white mb-4">No Drives Yet</h2>
             <p className="text-gray-400 mb-8 text-center">Create your first hyperdrive to start sharing files</p>
-            <CreateDriveModal 
-              triggerButton={<MagicButton>Create A Drive</MagicButton>} 
-            />
+            <div className="flex items-center gap-3">
+              <JoinDrive triggerButton={<MagicButton>Join A Drive</MagicButton>} />
+              <CreateDriveModal 
+                triggerButton={<MagicButton>Create A Drive</MagicButton>} 
+              />
+            </div>
           </div>
         </div>
         <ConfirmDialog />
@@ -133,6 +137,7 @@ const DrivesList = memo(function DrivesList() {
             style={{
               scrollbarWidth: 'none', /* Firefox */
               msOverflowStyle: 'none', /* IE and Edge */
+              // @ts-ignore vendor property for webkit
               WebkitScrollbar: 'none', /* Chrome, Safari, Opera */
             }}
           >
