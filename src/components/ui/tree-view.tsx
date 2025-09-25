@@ -3,8 +3,6 @@ import { cn } from "../../renderer/lib/utils";
 import { useState, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { 
-  IconFolder, 
-  IconFolderOpen, 
   IconChevronRight, 
   IconFileText, 
   IconFile, 
@@ -26,6 +24,8 @@ import {
   IconArrowUp,
   
 } from "@tabler/icons-react";
+import FolderSvg from "../../renderer/src/assets/folder.svg";
+import FolderOpenSvg from "../../renderer/src/assets/folder-open.svg";
 import { ContextMenuAction, useContextMenu, ContextMenu } from "./context-menu";
 
 export interface TreeNode {
@@ -54,6 +54,7 @@ interface TreeViewProps {
   className?: string;
   onCreateFolder?: (parentPath: string) => void;
   onRefresh?: () => void;
+  onDelete?: (node: TreeNode) => void;
 }
 
 interface TreeNodeProps {
@@ -67,13 +68,14 @@ interface TreeNodeProps {
   onNavigateToFolder?: (node: TreeNode) => void;
   onCreateFolder?: (parentPath: string) => void;
   onRefresh?: () => void;
+  onDelete?: (node: TreeNode) => void;
 }
 
 const FolderIcon = ({ isOpen }: { isOpen: boolean }) => (
   isOpen ? (
-    <IconFolderOpen size={16} className="text-blue-500" />
+    <img src={FolderOpenSvg} alt="Open Folder" className="w-4 h-4" />
   ) : (
-    <IconFolder size={16} className="text-blue-500" />
+    <img src={FolderSvg} alt="Folder" className="w-4 h-4" />
   )
 );
 
@@ -121,7 +123,7 @@ const FileIcon = ({ type }: { type: string }) => {
   return getFileIcon();
 };
 
-const TreeNodeComponent = ({ node, level, onNodeSelect, onNodeToggle, selectedNodeId, expandedNodes, onContextMenu, onNavigateToFolder, onCreateFolder, onRefresh }: TreeNodeProps) => {
+const TreeNodeComponent = ({ node, level, onNodeSelect, onNodeToggle, selectedNodeId, expandedNodes, onContextMenu, onNavigateToFolder, onCreateFolder, onRefresh, onDelete }: TreeNodeProps) => {
   const hasChildren = node.children && node.children.length > 0;
   const isSelected = selectedNodeId === node.id;
   const isExpanded = expandedNodes?.has(node.id) || false;
@@ -227,7 +229,7 @@ const TreeNodeComponent = ({ node, level, onNodeSelect, onNodeToggle, selectedNo
         id: 'delete',
         label: 'Delete',
         icon: <IconTrash size={16} />,
-        onClick: () => console.log('Delete', node.name),
+        onClick: () => onDelete?.(node),
         destructive: true,
       },
     ];
@@ -314,6 +316,7 @@ const TreeNodeComponent = ({ node, level, onNodeSelect, onNodeToggle, selectedNo
                 onNavigateToFolder={onNavigateToFolder}
                 onCreateFolder={onCreateFolder}
                 onRefresh={onRefresh}
+                onDelete={onDelete}
               />
             ))}
           </motion.div>
@@ -385,7 +388,8 @@ export function TreeView({
   navigationDirection = 'forward',
   className,
   onCreateFolder,
-  onRefresh
+  onRefresh,
+  onDelete
 }: TreeViewProps) {
   const { isOpen, position, actions, openContextMenu, closeContextMenu } = useContextMenu()
 
@@ -469,6 +473,7 @@ export function TreeView({
               onNavigateToFolder={onNavigateToFolder}
               onCreateFolder={onCreateFolder}
               onRefresh={onRefresh}
+              onDelete={onDelete}
             />
           ))}
         </motion.div>

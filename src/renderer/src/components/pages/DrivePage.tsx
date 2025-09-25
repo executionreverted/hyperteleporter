@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState, startTransition } from "react";
+import { useEffect, useMemo, useState, startTransition, useRef } from "react";
 import { cn } from "../../../lib/utils";
 import { Sidebar, SidebarBody, SidebarLink } from "../../../../components/ui/sidebar";
 import { TreeView, TreeNode } from "../../../../components/ui/tree-view";
@@ -11,12 +11,18 @@ import { ContextMenu, useContextMenu, ContextMenuAction } from "../../../../comp
 import FileSearchModal from "../common/FileSearchModal";
 import { useParams, useNavigate } from "react-router-dom";
 import { IconFolderPlus, IconShare, IconUpload } from "@tabler/icons-react";
-import { IconHome, IconSettings, IconUser, IconLayoutNavbarCollapse, IconLayoutNavbarExpand } from "@tabler/icons-react";
+import { IconHome, IconSettings, IconUser } from "@tabler/icons-react";
+import ExpandAllIcon from "../../assets/expand-all.svg";
+import CollapseAllIcon from "../../assets/collapse-all.svg";
+import FolderIcon from "../../assets/folder.svg";
+import FolderOpenIcon from "../../assets/folder-open.svg";
 // Removed dummy data usage
 import Shuffle from "../../../../components/ui/Shuffle";
 import { Modal, ModalBody, ModalContent, ModalFooter, ModalTrigger, useModal } from "../../../../components/ui/animated-modal";
 import { MagicButton } from "../common/MagicButton";
 import MagicButtonWide from "../../../../components/ui/magic-button-wide";
+import { DelayedTooltip } from "../../../../components/ui/delayed-tooltip";
+import { HardDriveIcon } from "../../../../components/ui/hard-drive-icon";
 
 // Start empty; will load from Hyperdrive via IPC
 const mockFileSystem: TreeNode[] = [];
@@ -27,7 +33,7 @@ const quickActions = [
   {
     label: "New Folder",
     href: "#",
-    icon: <IconFolderPlus size={16} className="text-blue-500" />,
+    icon: <img src={FolderIcon} alt="New Folder" className="w-4 h-4" />,
   },
   {
     label: "Share",
@@ -86,6 +92,15 @@ export function DrivePage() {
     }
     console.warn('[DrivePage] uploadFiles not available (no preload + no ipc)')
     return { uploaded: 0 }
+  }
+
+  async function invokeDeleteFile(driveId: string, path: string) {
+    if (api?.drives?.deleteFile) return api.drives.deleteFile(driveId, path)
+    // @ts-ignore
+    const electron = (window as any)?.electron
+    if (electron?.ipcRenderer?.invoke) return electron.ipcRenderer.invoke('drives:deleteFile', { driveId, path })
+    console.warn('[DrivePage] deleteFile not available (no preload + no ipc)')
+    return false
   }
   useEffect(() => {
     // Basic diagnostics
@@ -160,6 +175,14 @@ export function DrivePage() {
     loadRoot();
     return () => { mounted = false };
   }, [api, params.driveId]);
+
+  // Auto-expand all folders when file system is loaded and has nodes
+  useEffect(() => {
+    if (completeFileSystem.length > 0) {
+      const allExpanded = expandAllFolders(completeFileSystem);
+      setExpandedNodes(allExpanded);
+    }
+  }, [completeFileSystem]);
 
   function buildNodesForFolder(currentFolderPath: string, entries: Array<{ key: string, value: any }>): TreeNode[] {
     const normalized = currentFolderPath.endsWith('/') ? currentFolderPath : currentFolderPath + '/'
@@ -279,8 +302,8 @@ export function DrivePage() {
   }
 
   function getCurrentFolderPath(): string {
-    const names = breadcrumbPath.filter((n) => n && n !== 'Root')
-    return names.length > 0 ? '/' + names.join('/') : '/'
+    // Use treeRoot which represents the current folder path in the new tree navigation system
+    return treeRoot
   }
 
   async function reloadCurrentFolder() {
@@ -296,6 +319,10 @@ export function DrivePage() {
       console.log('[DrivePage] full drive entries (recursive)=', allEntries.map(e => e.key))
       const completeTree = buildCompleteFileSystemTree(allEntries)
       setCompleteFileSystem(completeTree)
+      
+      // Auto-expand all folders when reloading
+      const allExpanded = expandAllFolders(completeTree);
+      setExpandedNodes(allExpanded);
     } catch {}
     
     const children = buildNodesForFolder(currentFolderPath, entries)
@@ -498,6 +525,10 @@ export function DrivePage() {
         const updatedCompleteTree = buildCompleteFileSystemTree(allEntries);
         setCompleteFileSystem(updatedCompleteTree);
         
+        // Auto-expand all folders including the newly created ones
+        const allExpanded = expandAllFolders(updatedCompleteTree);
+        setExpandedNodes(allExpanded);
+        
         // Reload the current folder to show the newly created folder
         await reloadCurrentFolder();
         
@@ -579,6 +610,37 @@ export function DrivePage() {
       await reloadCurrentFolder()
     } catch (e) {
       console.error('[DrivePage] upload failed', e)
+    }
+  };
+
+  const handleDeleteNode = async (node: TreeNode) => {
+    const driveId = params.driveId as string | undefined
+    if (!driveId) return
+    
+    // Show confirmation dialog
+    const confirmed = window.confirm(
+      `Are you sure you want to delete "${node.name}"?${node.type === 'folder' ? ' This will delete all contents inside the folder.' : ''}`
+    )
+    
+    if (!confirmed) return
+    
+    try {
+      const success = await invokeDeleteFile(driveId, node.id)
+      if (success) {
+        console.log('[DrivePage] successfully deleted:', node.name)
+        // Reload the current folder to refresh the view
+        await reloadCurrentFolder()
+        // If we deleted the currently selected node, clear the selection
+        if (selectedNode?.id === node.id) {
+          setSelectedNode(undefined)
+        }
+      } else {
+        console.error('[DrivePage] failed to delete:', node.name)
+        alert('Failed to delete the item. Please try again.')
+      }
+    } catch (e) {
+      console.error('[DrivePage] delete failed', e)
+      alert('An error occurred while deleting the item. Please try again.')
     }
   };
 
@@ -868,27 +930,30 @@ export function DrivePage() {
               <div className="flex-1 min-h-0">
                 <div className="h-full flex flex-col">
                   <div className="mb-2 flex-shrink-0 flex items-center justify-center gap-2">
-                    <button
-                      onClick={handleGoHome}
-                      className="p-2 rounded-full bg-black/40 border border-white/15 hover:bg-black/60 text-white transition-colors shadow-lg"
-                      title="Home"
-                    >
-                      <IconHome size={18} />
-                    </button>
-                    <button
-                      onClick={handleOpenSettings}
-                      className="p-2 rounded-full bg-black/40 border border-white/15 hover:bg-black/60 text-white transition-colors shadow-lg"
-                      title="Drive Settings"
-                    >
-                      <IconSettings size={18} />
-                    </button>
-                    <button
-                      onClick={handleOpenProfileSettings}
-                      className="p-2 rounded-full bg-black/40 border border-white/15 hover:bg-black/60 text-white transition-colors shadow-lg"
-                      title="Profile Settings"
-                    >
-                      <IconUser size={18} />
-                    </button>
+                    <DelayedTooltip description="Navigate to drives overview">
+                      <button
+                        onClick={() => navigate('/drives')}
+                        className="p-2 rounded-full bg-black/40 border border-white/15 hover:bg-black/60 text-white transition-colors shadow-lg"
+                      >
+                        <HardDriveIcon size={18} />
+                      </button>
+                    </DelayedTooltip>
+                    <DelayedTooltip description="Configure drive preferences and options">
+                      <button
+                        onClick={handleOpenSettings}
+                        className="p-2 rounded-full bg-black/40 border border-white/15 hover:bg-black/60 text-white transition-colors shadow-lg"
+                      >
+                        <IconSettings size={18} />
+                      </button>
+                    </DelayedTooltip>
+                    <DelayedTooltip description="Manage your user profile and account">
+                      <button
+                        onClick={handleOpenProfileSettings}
+                        className="p-2 rounded-full bg-black/40 border border-white/15 hover:bg-black/60 text-white transition-colors shadow-lg"
+                      >
+                        <IconUser size={18} />
+                      </button>
+                    </DelayedTooltip>
                   </div>
                   <div className="flex-1 min-h-0 flex flex-col">
                     {/* Breadcrumb */}
@@ -953,9 +1018,7 @@ export function DrivePage() {
                                 title={item.path === '/' ? 'Drive Root' : item.path.split('/').pop()}
                               >
                                 {item.isHome ? (
-                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-                                  </svg>
+                                  <HardDriveIcon size={12} />
                                 ) : (
                                   item.name
                                 )}
@@ -970,20 +1033,22 @@ export function DrivePage() {
                     {/* Tree Controls */}
                     <div className="flex items-center justify-between p-2 border-b border-neutral-700">
                       <div className="flex items-center gap-2">
-                        <button
-                          onClick={handleExpandAll}
-                          className="p-1.5 rounded hover:bg-black/20 text-neutral-400 hover:text-white transition-colors"
-                          title="Expand All"
-                        >
-                          <IconLayoutNavbarExpand size={16} />
-                        </button>
-                        <button
-                          onClick={handleCollapseAll}
-                          className="p-1.5 rounded hover:bg-black/20 text-neutral-400 hover:text-white transition-colors"
-                          title="Collapse All"
-                        >
-                          <IconLayoutNavbarCollapse size={16} />
-                        </button>
+                        <DelayedTooltip description="Expand all folders in the current view">
+                          <button
+                            onClick={handleExpandAll}
+                            className="p-1.5 rounded hover:bg-black/20 text-neutral-400 hover:text-white transition-colors"
+                          >
+                            <img src={ExpandAllIcon} alt="Expand All" className="w-4 h-4" />
+                          </button>
+                        </DelayedTooltip>
+                        <DelayedTooltip description="Collapse all folders in the current view">
+                          <button
+                            onClick={handleCollapseAll}
+                            className="p-1.5 rounded hover:bg-black/20 text-neutral-400 hover:text-white transition-colors"
+                          >
+                            <img src={CollapseAllIcon} alt="Collapse All" className="w-4 h-4" />
+                          </button>
+                        </DelayedTooltip>
                       </div>
                     </div>
 
@@ -992,18 +1057,20 @@ export function DrivePage() {
                       {/* Show ".." navigation if not at root */}
                       {treeRoot !== '/' && (
                         <div className="p-2 border-b border-neutral-700">
-                          <button
-                            onClick={() => {
-                              const parentPath = treeRoot.split('/').slice(0, -1).join('/') || '/';
-                              handleBreadcrumbClick(parentPath);
-                            }}
-                            className="flex items-center gap-2 w-full px-3 py-2 text-left text-neutral-400 hover:text-white hover:bg-black/20 rounded transition-colors"
-                          >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                            </svg>
-                            <span className="text-sm">..</span>
-                          </button>
+                          <DelayedTooltip description="Navigate to the parent folder">
+                            <button
+                              onClick={() => {
+                                const parentPath = treeRoot.split('/').slice(0, -1).join('/') || '/';
+                                handleBreadcrumbClick(parentPath);
+                              }}
+                              className="flex items-center gap-2 w-full px-3 py-2 text-left text-neutral-400 hover:text-white hover:bg-black/20 rounded transition-colors"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                              </svg>
+                              <span className="text-sm">..</span>
+                            </button>
+                          </DelayedTooltip>
                         </div>
                       )}
                       
@@ -1035,6 +1102,7 @@ export function DrivePage() {
                             navigationDirection={navigationDirection}
                             onCreateFolder={handleCreateFolderFromTree}
                             onRefresh={reloadCurrentFolder}
+                            onDelete={handleDeleteNode}
                           />
                         )}
                       </div>
@@ -1052,32 +1120,21 @@ export function DrivePage() {
           <div className="border-b border-neutral-700 p-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <button
-                  onClick={handleBack}
-                  disabled={!canGoBack}
-                  className={cn(
-                    "flex items-center gap-2 px-4 py-2 rounded-lg transition-colors",
-                    canGoBack
-                      ? "bg-neutral-800 text-neutral-300 hover:bg-neutral-700"
-                      : "bg-neutral-900 text-neutral-600 cursor-not-allowed"
-                  )}
-                  title={canGoBack ? "Go back" : "No previous folder"}
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="m15 18-6-6 6-6"/>
-                  </svg>
-                  Back
-                </button>
-
-                <button
-                  onClick={() => navigate("/")}
-                  className="flex items-center gap-2 px-4 py-2 bg-neutral-800 text-neutral-300 rounded-lg hover:bg-neutral-700 transition-colors"
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M3 12h18"/>
-                  </svg>
-                  Drives
-                </button>
+                <DelayedTooltip description={canGoBack ? "Go back to previous folder" : "No previous folder to go back to"}>
+                  <MagicButton
+                    onClick={handleBack}
+                    disabled={!canGoBack}
+                    variant="blue"
+                    className="h-10"
+                  >
+                    <div className="flex items-center gap-2">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="m15 18-6-6 6-6"/>
+                      </svg>
+                      Back
+                    </div>
+                  </MagicButton>
+                </DelayedTooltip>
               </div>
               
               <div className="flex items-center gap-4">
@@ -1179,8 +1236,6 @@ export function DrivePage() {
         />
       </div>
       
-      {/* Meteors Background */}
-      <Meteors number={20} />
       
       {/* Context Menu - rendered outside all containers */}
       <ContextMenu

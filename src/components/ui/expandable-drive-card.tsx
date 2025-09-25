@@ -17,12 +17,12 @@ import {
   IconCalendar, 
   IconClock, 
   IconKey, 
-  IconFolderOpen, 
   IconShare, 
   IconTrash,
   IconDeviceUsb as IconHardDrive,
   IconActivity
 } from "@tabler/icons-react";
+import FolderOpenIcon from "../../renderer/src/assets/folder-open.svg";
 import { MagicButton } from "../../renderer/src/components/common/MagicButton";
 import MagicButtonWide from "./magic-button-wide";
 import diskSvg from "../../renderer/src/assets/disk.svg";
@@ -253,7 +253,7 @@ export function ExpandableDriveCard({
                             }}
                           >
                             <div className="flex items-center justify-center gap-2">
-                              <IconFolderOpen className="h-4 w-4" />
+                              <img src={FolderOpenIcon} alt="Browse Drive" className="h-4 w-4" />
                               Browse Drive
                             </div>
                           </MagicButton>

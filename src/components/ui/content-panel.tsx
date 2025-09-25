@@ -11,7 +11,6 @@ import {
   IconVideo, 
   IconFileTypePdf, 
   IconFile, 
-  IconFolder, 
   IconDownload, 
   IconShare, 
   IconTrash,
@@ -20,6 +19,8 @@ import {
   IconFolderPlus,
   IconArrowUp
 } from "@tabler/icons-react";
+import FolderIcon from "../../renderer/src/assets/folder.svg";
+import FolderOpenIcon from "../../renderer/src/assets/folder-open.svg";
 import { ContextMenu, useContextMenu, type ContextMenuAction } from "./context-menu";
 
 interface ContentPanelProps {
@@ -40,12 +41,48 @@ const FilePreview = ({ node }: { node: TreeNode }) => {
   const [imgUrl, setImgUrl] = React.useState<string | null>(null)
   const [loadingImg, setLoadingImg] = React.useState(false)
   const [imgError, setImgError] = React.useState<string | null>(null)
+  
+  // Code preview hooks - moved to top level to avoid conditional hook calls
+  const [code, setCode] = React.useState<string | null>(null)
+  const [loading, setLoading] = React.useState(false)
+  const [error, setError] = React.useState<string | null>(null)
   const getFileType = () => {
     const extension = node.name.split('.').pop()?.toLowerCase();
     return extension || 'unknown';
   };
 
   const fileType = getFileType();
+
+  // Load code content when node changes and it's a code file
+  React.useEffect(() => {
+    const codeExtensions = ['json', 'js', 'jsx', 'ts', 'tsx', 'html', 'css', 'yml', 'yaml', 'xml', 'py', 'sh', 'sql'];
+    if (codeExtensions.includes(fileType)) {
+      (async () => {
+        try {
+          setLoading(true)
+          setError(null)
+          const match = window.location.hash.match(/#\/drive\/([^/]+)/)
+          const driveId = match ? match[1] : null
+          if (!driveId || !api?.files?.getFileText) {
+            setError('Preview not available')
+            return
+          }
+          const path = node.id.startsWith('/') ? node.id : `/${node.id}`
+          const text = await api.files.getFileText(driveId, path)
+          setCode(text)
+        } catch (e: any) {
+          setError(String(e?.message || e))
+        } finally {
+          setLoading(false)
+        }
+      })()
+    } else {
+      // Reset code state for non-code files
+      setCode(null)
+      setLoading(false)
+      setError(null)
+    }
+  }, [node.id, fileType, api])
 
   const inferLanguage = (ext: string): string => {
     switch (ext) {
@@ -80,31 +117,6 @@ const FilePreview = ({ node }: { node: TreeNode }) => {
   };
 
   const renderCodePreview = (ext: string) => {
-    const [code, setCode] = React.useState<string | null>(null)
-    const [loading, setLoading] = React.useState(false)
-    const [error, setError] = React.useState<string | null>(null)
-    const api: any = (window as any)?.api
-    React.useEffect(() => {
-      (async () => {
-        try {
-          setLoading(true)
-          setError(null)
-          const match = window.location.hash.match(/#\/drive\/([^/]+)/)
-          const driveId = match ? match[1] : null
-          if (!driveId || !api?.files?.getFileText) {
-            setError('Preview not available')
-            return
-          }
-          const path = node.id.startsWith('/') ? node.id : `/${node.id}`
-          const text = await api.files.getFileText(driveId, path)
-          setCode(text)
-        } catch (e: any) {
-          setError(String(e?.message || e))
-        } finally {
-          setLoading(false)
-        }
-      })()
-    }, [node.id])
     const language = inferLanguage(ext);
     return (
       <div className="p-6">
@@ -593,7 +605,7 @@ const FolderContents = ({ node, onFileClick, onNavigateUp, canNavigateUp, driveI
                 onClick={() => onNavigateUp?.()}
               >
                 <div className="flex items-center gap-3 mb-2">
-                  <IconFolder size={20} className="text-neutral-400" />
+                  <img src={FolderIcon} alt="Folder" className="w-5 h-5" />
                   <span className="font-medium text-white truncate">..</span>
                 </div>
                 <p className="text-sm text-neutral-400">Go to parent folder</p>
@@ -608,7 +620,7 @@ const FolderContents = ({ node, onFileClick, onNavigateUp, canNavigateUp, driveI
               >
                 <div className="flex items-center gap-3 mb-2">
                   {child.type === 'folder' ? (
-                    <IconFolder size={20} className="text-blue-500" />
+                    <img src={FolderIcon} alt="Folder" className="w-5 h-5" />
                   ) : (
                     <IconFile size={20} className="text-neutral-400" />
                   )}
@@ -625,7 +637,7 @@ const FolderContents = ({ node, onFileClick, onNavigateUp, canNavigateUp, driveI
         ) : (
           <div className="text-center py-8">
             <div className="w-16 h-16 bg-black/20 rounded-lg mx-auto mb-4 flex items-center justify-center">
-              <IconFolder size={32} className="text-neutral-400" />
+              <img src={FolderIcon} alt="Folder" className="w-8 h-8" />
             </div>
             <p className="text-neutral-400">This folder is empty</p>
           </div>
@@ -761,7 +773,7 @@ export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavig
       <div className={cn("flex items-center justify-center h-full", className)} onContextMenu={onEmptyAreaRightClick}>
       <div className="text-center">
         <div className="w-16 h-16 bg-black/20 rounded-lg mx-auto mb-4 flex items-center justify-center">
-          <IconFolder size={32} className="text-neutral-400" />
+          <img src={FolderIcon} alt="Folder" className="w-8 h-8" />
         </div>
         <h3 className="text-lg font-medium text-white mb-2">
           Select a file or folder
