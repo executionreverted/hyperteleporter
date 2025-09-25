@@ -25,7 +25,7 @@ export function NewFolderModal({ driveId, currentFolder, onCreated, trigger, isO
       <>
         <ModalContent>
           <h4 className="text-lg md:text-2xl text-neutral-100 font-bold text-center mb-4">New Folder</h4>
-          <p className="text-neutral-400 text-center mb-6">Create a folder under <span className="font-mono text-white/80">{currentFolder || '/'}</span></n p>
+          <p className="text-neutral-400 text-center mb-6">Create a folder under <span className="font-mono text-white/80">{currentFolder || '/'}</span></p>
           <div className="max-w-md mx-auto w-full">
             <label className="block text-left text-white/90 mb-2">Folder name</label>
             <input

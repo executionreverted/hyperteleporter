@@ -449,7 +449,7 @@ export async function downloadFileToDownloads(driveId: string, filePath: string,
   const drive = activeDrives.get(driveId)?.hyperdrive
   if (!drive) throw new Error('Drive not found')
   
-  const downloadsDir = join(homedir(), 'Downloads', 'Teleporter', driveName)
+  const downloadsDir = join(homedir(), 'Downloads', 'HyperTeleporter', driveName)
   const normalizedPath = filePath.startsWith('/') ? filePath : `/${filePath}`
   
   try {
@@ -494,7 +494,7 @@ export async function downloadFolderToDownloads(driveId: string, folder: string,
   const drive = activeDrives.get(driveId)?.hyperdrive
   if (!drive) throw new Error('Drive not found')
 
-  const downloadsDir = join(homedir(), 'Downloads', 'Teleporter', driveName)
+  const downloadsDir = join(homedir(), 'Downloads', 'HyperTeleporter', driveName)
   const folderPath = folder === '/' ? '' : folder.replace(/^\//, '')
   const targetDir = join(downloadsDir, folderPath)
 
@@ -507,7 +507,7 @@ export async function downloadFolderToDownloads(driveId: string, folder: string,
     // First, download all blobs for the folder using the proper Hyperdrive API
     console.log(`[hyperdrive] Downloading all blobs for folder: ${folder}`)
     try {
-      const download = await drive.download(folder, { recursive: true, wait: false })
+      await drive.download(folder, { recursive: true, wait: false })
       // Don't wait for completion - let it download in background
       console.log(`[hyperdrive] Started background download for folder: ${folder}`)
     } catch (err) {
@@ -525,7 +525,7 @@ export async function downloadFolderToDownloads(driveId: string, folder: string,
           console.log(`[hyperdrive] Downloading file: ${entry.key}`)
           // Prefetch this file's blobs to reduce timeouts
           try {
-            const prefetch = await drive.download(entry.key, { wait: false })
+            await drive.download(entry.key, { wait: false })
             // best-effort prefetch; do not await
           } catch (e) {
             console.warn(`[hyperdrive] Prefetch failed for ${entry.key}:`, e)

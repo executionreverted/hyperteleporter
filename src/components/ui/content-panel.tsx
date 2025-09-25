@@ -529,7 +529,7 @@ const FolderContents = ({ node, onFileClick, onNavigateUp, canNavigateUp, driveI
       
       if (result?.success) {
         console.log('[FolderContents] Successfully downloaded file:', fileNode.name, 'to', result.downloadPath)
-        toaster.showSuccess('Download Complete', `${fileNode.name} saved to Downloads/Teleporter/${currentDrive.name}/`, {
+        toaster.showSuccess('Download Complete', `${fileNode.name} saved to Downloads/HyperTeleporter/${currentDrive.name}/`, {
           label: 'Open Folder',
           onClick: () => api?.downloads?.openFolder?.(result.downloadPath)
         })
@@ -808,7 +808,7 @@ export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavig
       
       if (result?.success) {
         console.log('[ContentPanel] Successfully downloaded file:', selectedNode.name, 'to', result.downloadPath)
-        toaster.showSuccess('Download Complete', `${selectedNode.name} saved to Downloads/Teleporter/${currentDrive.name}/`, {
+        toaster.showSuccess('Download Complete', `${selectedNode.name} saved to Downloads/HyperTeleporter/${currentDrive.name}/`, {
           label: 'Open Folder',
           onClick: () => api?.downloads?.openFolder?.(result.downloadPath)
         })
@@ -857,7 +857,7 @@ export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavig
       
       if (result?.success) {
         console.log('[ContentPanel] Successfully downloaded file:', previewNode.name, 'to', result.downloadPath)
-        toaster.showSuccess('Download Complete', `${previewNode.name} saved to Downloads/Teleporter/${currentDrive.name}/`, {
+        toaster.showSuccess('Download Complete', `${previewNode.name} saved to Downloads/HyperTeleporter/${currentDrive.name}/`, {
           label: 'Open Folder',
           onClick: () => api?.downloads?.openFolder?.(result.downloadPath)
         })

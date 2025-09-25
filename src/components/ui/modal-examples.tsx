@@ -4,7 +4,7 @@
 
 import { ConfirmModal, useConfirm } from './confirm-modal';
 import { AlertModal, useAlert } from './alert-modal';
-import { MagicButton } from '../renderer/src/components/common/MagicButton';
+import { MagicButton } from '../../renderer/src/components/common/MagicButton';
 
 // Example 1: Using ConfirmModal with a trigger button
 export function ConfirmModalExample() {

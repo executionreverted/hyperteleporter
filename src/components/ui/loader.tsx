@@ -9,7 +9,7 @@ export const LoaderOne = () => {
       repeat: Infinity,
       repeatType: "loop" as const,
       delay: x * 0.2,
-      ease: "easeInOut",
+      ease: "easeInOut" as any,
     };
   };
   return (
@@ -61,7 +61,7 @@ export const LoaderTwo = () => {
   return (
     <div className="flex items-center">
       <motion.div
-        transition={transition(0)}
+        transition={transition(0) as any}
         initial={{
           x: 0,
         }}
@@ -77,7 +77,7 @@ export const LoaderTwo = () => {
         animate={{
           x: [0, 20, 0],
         }}
-        transition={transition(0.4)}
+        transition={transition(0.4) as any}
         className="h-4 w-4 -translate-x-2 rounded-full bg-neutral-200 shadow-md dark:bg-neutral-500"
       />
       <motion.div
@@ -87,7 +87,7 @@ export const LoaderTwo = () => {
         animate={{
           x: [0, 20, 0],
         }}
-        transition={transition(0.8)}
+        transition={transition(0.8) as any}
         className="h-4 w-4 -translate-x-4 rounded-full bg-neutral-200 shadow-md dark:bg-neutral-500"
       />
     </div>
@@ -129,9 +129,8 @@ export const LoaderFour = ({ text = "Loading..." }: { text?: string }) => {
     <div className="relative font-bold text-black [perspective:1000px] dark:text-white">
       <motion.span
         animate={{
-          skew: [0, -40, 0],
           scaleX: [1, 2, 1],
-        }}
+        } as any}
         transition={{
           duration: 0.05,
           repeat: Infinity,

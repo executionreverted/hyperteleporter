@@ -902,7 +902,7 @@ export function DrivePage() {
       
       if (result?.success) {
         console.log('[DrivePage] Successfully downloaded file:', node.name, 'to', result.downloadPath)
-        toaster.showSuccess('Download Complete', `${node.name} saved to Downloads/Teleporter/${currentDrive.name}/`, {
+        toaster.showSuccess('Download Complete', `${node.name} saved to Downloads/HyperTeleporter/${currentDrive.name}/`, {
           label: 'Open Folder',
           onClick: () => api?.downloads?.openFolder?.(result.downloadPath)
         })
@@ -930,7 +930,7 @@ export function DrivePage() {
       
       if (result?.success) {
         console.log('[DrivePage] Successfully downloaded folder:', node.name, 'to', result.downloadPath)
-        toaster.showSuccess('Download Complete', `${result.fileCount} files saved to Downloads/Teleporter/${currentDrive.name}/`, {
+        toaster.showSuccess('Download Complete', `${result.fileCount} files saved to Downloads/HyperTeleporter/${currentDrive.name}/`, {
           label: 'Open Folder',
           onClick: () => api?.downloads?.openFolder?.(result.downloadPath)
         })

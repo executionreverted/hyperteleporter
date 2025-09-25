@@ -2,14 +2,14 @@
 import React, { useState } from "react";
 import { useMultiStepLoader, COMMON_LOADING_STATES } from "./use-multi-step-loader";
 import { MultiStepLoaderWrapper } from "./multi-step-loader-wrapper";
-import { MagicButton } from "../renderer/src/components/common/MagicButton";
+import { MagicButton } from "../../renderer/src/components/common/MagicButton";
 
 // Example 1: Using the hook for programmatic control
 export function HookExample() {
   const { isLoading, startLoading, stopLoading, MultiStepLoaderComponent } = useMultiStepLoader();
 
   const handleFileUpload = () => {
-    startLoading(COMMON_LOADING_STATES.FILE_UPLOAD, {
+    startLoading(COMMON_LOADING_STATES.FILE_UPLOAD as any, {
       duration: 1500,
       loop: false,
       onComplete: () => {
@@ -19,7 +19,7 @@ export function HookExample() {
   };
 
   const handleDriveCreate = () => {
-    startLoading(COMMON_LOADING_STATES.DRIVE_CREATE, {
+    startLoading(COMMON_LOADING_STATES.DRIVE_CREATE as any, {
       duration: 2000,
       loop: false,
     });
@@ -90,19 +90,19 @@ export function ScenariosExample() {
 
   const scenarios = {
     sync: {
-      states: COMMON_LOADING_STATES.SYNC,
+      states: COMMON_LOADING_STATES.SYNC as any,
       duration: 1500,
     },
     saving: {
-      states: COMMON_LOADING_STATES.SAVING,
+      states: COMMON_LOADING_STATES.SAVING as any,
       duration: 1000,
     },
     connecting: {
-      states: COMMON_LOADING_STATES.CONNECTING,
+      states: COMMON_LOADING_STATES.CONNECTING as any,
       duration: 2000,
     },
     deleting: {
-      states: COMMON_LOADING_STATES.DRIVE_DELETE,
+      states: COMMON_LOADING_STATES.DRIVE_DELETE as any,
       duration: 2500,
     },
   };

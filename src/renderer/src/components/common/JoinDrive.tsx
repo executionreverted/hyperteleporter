@@ -110,7 +110,6 @@ export function JoinDrive({ triggerButton, className }: JoinDriveProps) {
                       Cancel
                     </button>
                     <MagicButtonWide
-                      type="submit"
                       disabled={submitting}
                     >
                       {submitting ? 'Joining…' : 'Join Drive'}

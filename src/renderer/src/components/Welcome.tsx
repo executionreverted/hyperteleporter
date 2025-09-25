@@ -68,7 +68,7 @@ export function Welcome() {
 
             <div className="relative z-10 w-full max-w-4xl mx-auto px-6 text-center">
                 <p className="text-2xl md:text-4xl lg:text-7xl text-white font-bold inter-var">
-                    Welcome to Teleport
+                    Welcome to HyperTeleporter
                 </p>
                 <p className="text-base md:text-lg mt-4 text-white/90 font-normal inter-var">
                     The ultimate P2P file sharing app powered by Hyperdrive.
