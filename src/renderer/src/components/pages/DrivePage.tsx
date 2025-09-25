@@ -1,5 +1,6 @@
 "use client";
-import { useEffect, useMemo, useState, startTransition, useRef } from "react";
+import { useEffect, useMemo, useState, startTransition, useRef, useCallback } from "react";
+import * as React from "react";
 import { cn } from "../../../lib/utils";
 import { Sidebar, SidebarBody, SidebarLink } from "../../../../components/ui/sidebar";
 import { TreeView, TreeNode } from "../../../../components/ui/tree-view";
@@ -19,7 +20,6 @@ import FolderOpenIcon from "../../assets/folder-open.svg";
 // Removed dummy data usage
 import Shuffle from "../../../../components/ui/Shuffle";
 import { Modal, ModalBody, ModalContent, ModalFooter, ModalTrigger, useModal } from "../../../../components/ui/animated-modal";
-import NewFolderModal from "./drive/NewFolderModal";
 import { DownloadsModal } from "../common/DownloadsModal";
 import { MagicButton } from "../common/MagicButton";
 import MagicButtonWide from "../../../../components/ui/magic-button-wide";
@@ -48,7 +48,98 @@ const quickActions = [
   },
 ];
 
+// Move FormContent completely outside DrivePage to prevent recreation
+const FormContent = React.memo(({ driveId, currentFolder, onCreated, onClose }: { driveId: string, currentFolder: string, onCreated: () => Promise<void>, onClose: () => void }) => {
+  const [name, setName] = useState("");
+  const [saving, setSaving] = useState(false);
+  
+  console.log('[FormContent] Rendering with name:', name);
+
+  const handleCreate = useCallback(async () => {
+    if (!name.trim()) return;
+    const folderPath = currentFolder.endsWith('/') ? currentFolder + name.trim() : currentFolder + '/' + name.trim();
+    try {
+      setSaving(true);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const api: any = (window as any)?.api;
+      await api?.drives?.createFolder?.(driveId, folderPath)
+      await onCreated();
+      onClose();
+      setName(""); // Reset form
+    } finally {
+      setSaving(false);
+    }
+  }, [name, currentFolder, driveId, onCreated, onClose]);
+
+  const handleCancel = useCallback(() => {
+    onClose();
+    setName(""); // Reset form
+  }, [onClose]);
+
+  return (
+    <>
+      <ModalContent>
+        <h4 className="text-lg md:text-2xl text-neutral-100 font-bold text-center mb-4">New Folder</h4>
+        <p className="text-neutral-400 text-center mb-6">Create a folder under <span className="font-mono text-white/80">{currentFolder || '/'}</span></p>
+        <div className="max-w-md mx-auto w-full">
+          <label className="block text-left text-white/90 mb-2">Folder name</label>
+          <input
+            className="w-full rounded-md px-4 py-3 bg-white/10 text-white placeholder-white/50 focus:outline-none"
+            placeholder="e.g. Documents"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+        </div>
+      </ModalContent>
+      <ModalFooter className="gap-4">
+        <MagicButtonWide
+          variant="default"
+          onClick={handleCancel}
+        >
+          Cancel
+        </MagicButtonWide>
+        <MagicButtonWide
+          variant="green"
+          onClick={handleCreate}
+          disabled={saving || !name.trim()}
+          loading={saving}
+        >
+          Create
+        </MagicButtonWide>
+      </ModalFooter>
+    </>
+  )
+});
+
+// Move NewFolderModal outside to prevent recreation
+const NewFolderModal = React.memo(({ driveId, currentFolder, onCreated, trigger, isOpen, onClose, onOpen }: { driveId: string, currentFolder: string, onCreated: () => Promise<void>, trigger: React.ReactNode, isOpen: boolean, onClose: () => void, onOpen: () => void }) => {
+  console.log('[NewFolderModal] Rendering with isOpen:', isOpen);
+  
+  return (
+    <>
+      {trigger ? (
+        <MagicButton
+          variant="blue"
+          onClick={onOpen}
+          className="h-10 flex items-center gap-2 text-sm font-medium"
+        >
+          {trigger}
+        </MagicButton>
+      ) : null}
+      {isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="fixed inset-0 bg-black/70 bg-opacity-20" onClick={onClose} />
+          <div className="relative bg-neutral-950 border border-neutral-800 rounded-2xl max-w-md w-full mx-4">
+            <FormContent driveId={driveId} currentFolder={currentFolder} onCreated={onCreated} onClose={onClose} />
+          </div>
+        </div>
+      )}
+    </>
+  )
+});
+
 export function DrivePage() {
+  console.log('[DrivePage] Rendering');
   const toaster = useToaster();
   const [selectedNode, setSelectedNode] = useState<TreeNode | undefined>();
   const [fileSystem, setFileSystem] = useState<TreeNode[]>(mockFileSystem);
@@ -77,7 +168,7 @@ export function DrivePage() {
   const api = useMemo(() => (window as any)?.api ?? null, []);
   
   // Sync status checking
-  const checkSyncStatus = async () => {
+  const checkSyncStatus = useCallback(async () => {
     if (!currentDrive?.id) return;
     
     try {
@@ -97,7 +188,7 @@ export function DrivePage() {
     } catch (error) {
       console.error('Failed to check sync status:', error);
     }
-  };
+  }, [currentDrive?.id, currentDrive?.type, api?.drives?.checkSyncStatus]);
 
   // Fallback invokers in case preload did not expose new methods yet
   async function invokeListFolder(driveId: string, folder: string, recursive = false) {
@@ -500,85 +591,7 @@ export function DrivePage() {
     }
   }
 
-  function NewFolderModal({ driveId, currentFolder, onCreated, trigger, isOpen, onClose, onOpen }: { driveId: string, currentFolder: string, onCreated: () => Promise<void>, trigger: React.ReactNode, isOpen: boolean, onClose: () => void, onOpen: () => void }) {
-    function FormContent() {
-      const [name, setName] = useState("");
-      const [saving, setSaving] = useState(false);
 
-      async function handleCreate() {
-        if (!name.trim()) return;
-        const folderPath = currentFolder.endsWith('/') ? currentFolder + name.trim() : currentFolder + '/' + name.trim();
-        try {
-          setSaving(true);
-          await api?.drives?.createFolder?.(driveId, folderPath)
-          await onCreated();
-          onClose();
-          setName(""); // Reset form
-        } finally {
-          setSaving(false);
-        }
-      }
-
-      return (
-        <>
-          <ModalContent>
-            <h4 className="text-lg md:text-2xl text-neutral-100 font-bold text-center mb-4">New Folder</h4>
-            <p className="text-neutral-400 text-center mb-6">Create a folder under <span className="font-mono text-white/80">{currentFolder || '/'}</span></p>
-            <div className="max-w-md mx-auto w-full">
-              <label className="block text-left text-white/90 mb-2">Folder name</label>
-              <input
-                className="w-full rounded-md px-4 py-3 bg-white/10 text-white placeholder-white/50 focus:outline-none"
-                placeholder="e.g. Documents"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-              />
-            </div>
-          </ModalContent>
-          <ModalFooter className="gap-4">
-            <MagicButtonWide
-              variant="default"
-              onClick={() => {
-                onClose();
-                setName(""); // Reset form
-              }}
-            >
-              Cancel
-            </MagicButtonWide>
-            <MagicButtonWide
-              variant="green"
-              onClick={handleCreate}
-              disabled={saving || !name.trim()}
-              loading={saving}
-            >
-              Create
-            </MagicButtonWide>
-          </ModalFooter>
-        </>
-      )
-    }
-
-    return (
-      <>
-        {trigger ? (
-          <MagicButton
-            variant="blue"
-            onClick={onOpen}
-            className="h-10 flex items-center gap-2 text-sm font-medium"
-          >
-            {trigger}
-          </MagicButton>
-        ) : null}
-        {isOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center">
-            <div className="fixed inset-0 bg-black/70 bg-opacity-20" onClick={onClose} />
-            <div className="relative bg-neutral-950 border border-neutral-800 rounded-2xl max-w-md w-full mx-4">
-              <FormContent />
-            </div>
-          </div>
-        )}
-      </>
-    )
-  }
   
   // Breadcrumb navigation state
   const [currentView, setCurrentView] = useState<TreeNode[]>(mockFileSystem);
