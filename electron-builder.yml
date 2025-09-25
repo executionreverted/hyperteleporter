@@ -40,5 +40,7 @@ appImage:
 npmRebuild: false
 publish:
   provider: github
+  releaseType: draft
+  publish: always
   owner: executionreverted
   repo: hyperteleporter
