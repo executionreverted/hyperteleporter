@@ -31,11 +31,15 @@ export function DrivesProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let mounted = true;
+    
     async function load() {
       try {
         if (api?.drives?.list) {
+          console.log('[DrivesContext] Loading drives...');
           const list = await api.drives.list();
           if (!mounted) return;
+          console.log('[DrivesContext] Received drives:', list);
+          
           const mapped: Drive[] = list.map((d: any) => ({
             id: d.id,
             title: d.name,
@@ -47,12 +51,53 @@ export function DrivesProvider({ children }: { children: ReactNode }) {
             type: d.type ?? 'owned',
             isWritable: (d.type ?? 'owned') === 'owned'
           }));
+          console.log('[DrivesContext] Mapped drives:', mapped);
           setDrives(mapped);
         }
-      } catch {}
+      } catch (err) {
+        console.error('[DrivesContext] Failed to load drives:', err);
+      }
     }
     load();
     return () => { mounted = false };
+  }, [api]);
+
+  // Listen for drives initialization completion
+  useEffect(() => {
+    const { ipcRenderer } = (window as any).electron || {};
+    if (!ipcRenderer) return;
+
+    const handleDrivesInitialized = () => {
+      console.log('[DrivesContext] Received drives:initialized event, refreshing drives...');
+      // Force a refresh of drives
+      if (api?.drives?.list) {
+        api.drives.list().then((list: any) => {
+          console.log('[DrivesContext] Refreshed drives after initialization:', list);
+          const mapped: Drive[] = list.map((d: any) => ({
+            id: d.id,
+            title: d.name,
+            description: '',
+            link: `/drive/${d.id}`,
+            createdAt: new Date(d.createdAt),
+            status: 'active',
+            driveKey: d.publicKeyHex,
+            type: d.type ?? 'owned',
+            isWritable: (d.type ?? 'owned') === 'owned'
+          }));
+          console.log('[DrivesContext] Setting drives after initialization:', mapped);
+          setDrives(mapped);
+        }).catch((err: any) => {
+          console.error('[DrivesContext] Failed to refresh drives:', err);
+        });
+      }
+    };
+
+    ipcRenderer.on('drives:initialized', handleDrivesInitialized);
+    return () => {
+      try {
+        ipcRenderer.removeListener('drives:initialized', handleDrivesInitialized);
+      } catch {}
+    };
   }, [api]);
 
   const addDrive = async (driveData: Omit<Drive, 'id' | 'createdAt'>) => {

@@ -105,19 +105,42 @@ export async function createDrive(name: string): Promise<InitializedDrive> {
 export async function initializeAllDrives(): Promise<InitializedDrive[]> {
   const records = await listDriveRecords()
   const initialized: InitializedDrive[] = []
+  
+  console.log(`[hyperdrive] initializeAllDrives: Found ${records.length} drive records to initialize`)
+  
   for (const record of records) {
-    const corestore = new Corestore(record.storageDir)
-    const hyperdrive = new Hyperdrive(corestore, Buffer.from(record.publicKeyHex, 'hex'))
-    await hyperdrive.ready()
-    setupReplication(corestore)
-    await joinTopicOnce(hyperdrive.discoveryKey)
-    await startDriveWatcher(record.id, hyperdrive)
-    // Ensure backward compatibility: default type to 'owned' if missing
-    const normalizedRecord: DriveRecord = { ...record, type: record.type ?? 'owned' }
-    const drive: InitializedDrive = { record: normalizedRecord, corestore, hyperdrive, isSyncing: false }
-    activeDrives.set(record.id, drive)
-    initialized.push(drive)
+    try {
+      console.log(`[hyperdrive] initializeAllDrives: Initializing drive ${record.id} (${record.name}, type: ${record.type ?? 'owned'})`)
+      
+      const corestore = new Corestore(record.storageDir)
+      const hyperdrive = new Hyperdrive(corestore, Buffer.from(record.publicKeyHex, 'hex'))
+      
+      // Add timeout to hyperdrive.ready() to prevent hanging
+      await Promise.race([
+        hyperdrive.ready(),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('hyperdrive.ready() timeout')), 10000)
+        )
+      ])
+      
+      setupReplication(corestore)
+      await joinTopicOnce(hyperdrive.discoveryKey)
+      await startDriveWatcher(record.id, hyperdrive)
+      
+      // Ensure backward compatibility: default type to 'owned' if missing
+      const normalizedRecord: DriveRecord = { ...record, type: record.type ?? 'owned' }
+      const drive: InitializedDrive = { record: normalizedRecord, corestore, hyperdrive, isSyncing: false }
+      activeDrives.set(record.id, drive)
+      initialized.push(drive)
+      
+      console.log(`[hyperdrive] initializeAllDrives: Successfully initialized drive ${record.id}`)
+    } catch (err) {
+      console.error(`[hyperdrive] initializeAllDrives: Failed to initialize drive ${record.id} (${record.name}):`, err)
+      // Continue with other drives even if one fails
+    }
   }
+  
+  console.log(`[hyperdrive] initializeAllDrives: Successfully initialized ${initialized.length}/${records.length} drives`)
   return initialized
 }
 

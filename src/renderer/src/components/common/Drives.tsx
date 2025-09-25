@@ -159,7 +159,15 @@ const DrivesList = memo(function DrivesList() {
                 <p className="text-xl mb-2">No drives found</p>
                 <p className="text-sm">Try searching with different keywords</p>
               </div>
-            ) : null}
+            ) : (
+              <div className="flex flex-col items-center justify-center h-64 text-white/60">
+                <svg className="w-16 h-16 mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
+                </svg>
+                <p className="text-xl mb-2">No drives yet</p>
+                <p className="text-sm">Create your first drive to get started</p>
+              </div>
+            )}
             
          
           </div>

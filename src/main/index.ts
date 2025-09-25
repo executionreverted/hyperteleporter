@@ -95,6 +95,18 @@ app.whenReady().then(() => {
     console.log('[main] initializeAllDrives completed successfully')
     // Touch swarm to ensure it is created early
     getSwarm()
+    
+    // Notify all renderer windows that drives are ready
+    const windows = BrowserWindow.getAllWindows()
+    console.log(`[main] Sending drives:initialized event to ${windows.length} windows`)
+    for (const win of windows) {
+      try {
+        win.webContents.send('drives:initialized')
+        console.log('[main] Sent drives:initialized to window')
+      } catch (err) {
+        console.error('[main] Failed to send drives:initialized to window:', err)
+      }
+    }
   }).catch((err) => {
     console.error('[main] initializeAllDrives failed', err)
   })
