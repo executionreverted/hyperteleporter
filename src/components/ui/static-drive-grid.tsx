@@ -65,15 +65,43 @@ function StaticDriveGridComponent({
   const timelineRef = useRef<gsap.core.Timeline | null>(null);
   const originalCardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   
-  // Cache viewport dimensions
-  const viewportDimensions = useMemo(() => ({
+  // Reactive viewport dimensions that update on window resize
+  const [viewportDimensions, setViewportDimensions] = useState(() => ({
     centerX: window.innerWidth / 2,
     centerY: window.innerHeight / 2,
     halfCardWidth: CARD_DIMENSIONS.original.width / 2,
     halfCardHeight: CARD_DIMENSIONS.original.height / 2,
     halfExpandedWidth: CARD_DIMENSIONS.expanded.width / 2,
     halfExpandedHeight: CARD_DIMENSIONS.expanded.height / 2
-  }), []);
+  }));
+
+  // Update viewport dimensions on window resize with debouncing
+  useEffect(() => {
+    let timeoutId: NodeJS.Timeout;
+    
+    const handleResize = () => {
+      // Clear previous timeout
+      clearTimeout(timeoutId);
+      
+      // Debounce the resize handler to prevent excessive updates
+      timeoutId = setTimeout(() => {
+        setViewportDimensions({
+          centerX: window.innerWidth / 2,
+          centerY: window.innerHeight / 2,
+          halfCardWidth: CARD_DIMENSIONS.original.width / 2,
+          halfCardHeight: CARD_DIMENSIONS.original.height / 2,
+          halfExpandedWidth: CARD_DIMENSIONS.expanded.width / 2,
+          halfExpandedHeight: CARD_DIMENSIONS.expanded.height / 2
+        });
+      }, 100); // 100ms debounce
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      clearTimeout(timeoutId);
+    };
+  }, []);
 
 
 
