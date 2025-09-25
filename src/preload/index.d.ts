@@ -16,6 +16,7 @@ declare global {
       user: {
         getProfile: () => Promise<any>
         updateProfile: (profile: Record<string, unknown>) => Promise<any>
+        hasUsername: () => Promise<boolean>
       }
       files: {
         list: (folder?: string) => Promise<any[]>

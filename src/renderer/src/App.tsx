@@ -6,14 +6,26 @@ import { DrivePage } from './components/pages/DrivePage'
 import { DrivesProvider } from './contexts/DrivesContext'
 import { HyperdriveProvider, useHyperdrive } from './contexts/HyperdriveContext'
 import { StartupLoader } from './components/StartupLoader'
-import { Route, Routes, Link } from 'react-router-dom'
+import { Route, Routes, Link, Navigate, useLocation } from 'react-router-dom'
 
 function AppContent(): React.JSX.Element {
-  const { isInitializing } = useHyperdrive()
+  const { isInitializing, hasUsername } = useHyperdrive()
+  const location = useLocation()
+
+  console.log('[AppContent] Render - isInitializing:', isInitializing, 'hasUsername:', hasUsername, 'location:', location.pathname)
 
   if (isInitializing) {
+    console.log('[AppContent] Showing StartupLoader')
     return <StartupLoader />
   }
+
+  // Username guard: redirect to Welcome page if no username and not already on Welcome page
+  if (!hasUsername && location.pathname !== '/') {
+    console.log('[AppContent] No username, redirecting to Welcome page')
+    return <Navigate to="/" replace />
+  }
+
+  console.log('[AppContent] Rendering main app routes')
 
   return (
     <DrivesProvider>

@@ -391,8 +391,9 @@ export function DrivePage() {
               variant="green"
               onClick={handleCreate}
               disabled={saving || !name.trim()}
+              loading={saving}
             >
-              {saving ? 'Creating...' : 'Create'}
+              Create
             </MagicButtonWide>
           </ModalFooter>
         </>
@@ -456,6 +457,20 @@ export function DrivePage() {
   };
 
   const handleFileClick = async (node: TreeNode) => {
+    // Handle parent navigation (..) - same logic as handleNodeSelect
+    if (node.name === '..') {
+      const parentPath = treeRoot.split('/').slice(0, -1).join('/') || '/';
+      handleBreadcrumbClick(parentPath);
+      return;
+    }
+    
+    // Handle "..." indicator - set parent as new root
+    if (node.name === '...' && node.id.includes('__more__')) {
+      const parentPath = node.id.replace('/__more__', '');
+      setTreeRoot(parentPath);
+      return;
+    }
+    
     if (node.type === 'folder') {
       // Use the complete file system tree instead of reloading from drive
       const folderNode = findNodeByPath(completeFileSystem, node.id.split('/').filter(Boolean))
@@ -470,6 +485,8 @@ export function DrivePage() {
           setNavigationStack((prev) => [...prev, currentView]);
           setCurrentView(folderNode.children || []);
           setSelectedNode({ ...node, children: folderNode.children });
+          // Update treeRoot to reflect the current folder for uploads
+          setTreeRoot(node.id);
         });
       } else {
         // Fallback: try to load from drive if not found in complete tree
@@ -489,6 +506,8 @@ export function DrivePage() {
             setNavigationStack((prev) => [...prev, currentView]);
             setCurrentView(children);
             setSelectedNode({ ...node, children });
+            // Update treeRoot to reflect the current folder for uploads
+            setTreeRoot(node.id);
           });
         } catch {}
       }
@@ -566,6 +585,8 @@ export function DrivePage() {
     setBreadcrumbPath([]);
     setNavigationStack([]);
     setSelectedNode({ id: 'virtual-root', name: 'Root', type: 'folder', children: fileSystem });
+    // Reset treeRoot to root for uploads
+    setTreeRoot('/');
   };
 
   const handleOpenSettings = () => {
@@ -584,6 +605,12 @@ export function DrivePage() {
     // TODO: Implement navigate up functionality
   };
 
+  // Dedicated function for content panel ".." navigation (same logic as tree view)
+  const handleContentPanelNavigateUp = () => {
+    const parentPath = treeRoot.split('/').slice(0, -1).join('/') || '/';
+    handleBreadcrumbClick(parentPath);
+  };
+
   const handleBack = () => {
     // If currently previewing a file, go back to its parent folder view
     if (selectedNode?.type === 'file' && lastFocusedFolder) {
@@ -592,6 +619,8 @@ export function DrivePage() {
       if (lastFocusedFolder.children) {
         setCurrentView(lastFocusedFolder.children);
       }
+      // Update treeRoot to reflect the parent folder for uploads
+      setTreeRoot(lastFocusedFolder.id);
       // Ensure breadcrumb reflects the parent folder at the end
       setBreadcrumbPath(prev => {
         const next = [...prev];
@@ -821,13 +850,35 @@ export function DrivePage() {
     
     // Find and select the node we're navigating to
     if (path === '/') {
-      // If navigating to root, select the first folder if available
-      const firstFolder = completeFileSystem.find(node => node.type === 'folder');
-      setSelectedNode(firstFolder);
+      // If navigating to root, create a virtual root node with all root-level children
+      const rootChildren = completeFileSystem.filter(node => node.id.startsWith('/') && !node.id.slice(1).includes('/'));
+      setSelectedNode({ 
+        id: 'virtual-root', 
+        name: 'Root', 
+        type: 'folder', 
+        children: rootChildren 
+      });
+      
+      // Also update the navigation state to show root contents
+      setCurrentView(rootChildren);
+      setBreadcrumbPath([]);
+      setNavigationStack([]);
+      setNavigationDirection('forward');
     } else {
       // Find the specific node we're navigating to
       const targetNode = findNodeById(completeFileSystem, path);
-      setSelectedNode(targetNode);
+      if (targetNode) {
+        setSelectedNode(targetNode);
+        
+        // Update navigation state for the specific path
+        if (targetNode.type === 'folder' && targetNode.children) {
+          setCurrentView(targetNode.children);
+          
+          // Build breadcrumb path from the target path
+          const pathSegments = path.split('/').filter(Boolean);
+          setBreadcrumbPath(pathSegments);
+        }
+      }
     }
   };
 
@@ -895,7 +946,8 @@ export function DrivePage() {
       setCurrentView(folderNode.children || []);
       setBreadcrumbPath(folderPath);
       setLastFocusedFolder(folderNode);
-      
+      // Update treeRoot to reflect the folder containing the file for uploads
+      setTreeRoot(folderNode.id);
     }
     // Select the file itself
     setSelectedNode(node);
@@ -1129,25 +1181,7 @@ export function DrivePage() {
         <div className="flex-1 flex flex-col">
           {/* Header */}
           <div className="border-b border-neutral-700 p-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <DelayedTooltip description={canGoBack ? "Go back to previous folder" : "No previous folder to go back to"}>
-                  <MagicButton
-                    onClick={handleBack}
-                    disabled={!canGoBack}
-                    variant="blue"
-                    className="h-10"
-                  >
-                    <div className="flex items-center gap-2">
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="m15 18-6-6 6-6"/>
-                      </svg>
-                      Back
-                    </div>
-                  </MagicButton>
-                </DelayedTooltip>
-              </div>
-              
+            <div className="flex items-center justify-end">
               <div className="flex items-center gap-4">
                 {/* Quick Actions */}
                 <div className="flex items-center gap-2">
@@ -1218,8 +1252,8 @@ export function DrivePage() {
           <ContentPanel 
             selectedNode={selectedNode} 
             onFileClick={handleFileClick}
-            onNavigateUp={handleBack}
-            canNavigateUp={canGoBack}
+            onNavigateUp={handleContentPanelNavigateUp}
+            canNavigateUp={treeRoot !== '/'}
             driveId={params.driveId as string}
             onFileDeleted={reloadCurrentFolder}
             onCreateFolder={handleCreateFolderFromTree}

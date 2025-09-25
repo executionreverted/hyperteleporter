@@ -18,7 +18,12 @@ const api = {
   },
   user: {
     getProfile: async () => ipcRenderer.invoke('user:getProfile'),
-    updateProfile: async (profile: Record<string, unknown>) => ipcRenderer.invoke('user:updateProfile', profile)
+    updateProfile: async (profile: Record<string, unknown>) => ipcRenderer.invoke('user:updateProfile', profile),
+    hasUsername: async () => {
+      const profile = await ipcRenderer.invoke('user:getProfile')
+      const name = (profile as any)?.name
+      return !!(name && typeof name === 'string' && name.trim().length > 0)
+    }
   },
   files: {
     list: async (_folder?: string) => {

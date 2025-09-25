@@ -88,8 +88,11 @@ app.whenReady().then(() => {
   })
 
   // Initialize stored drives on boot
-  initializeAllDrives().catch((err) => {
-    console.error('[hyperdrive] initializeAllDrives failed', err)
+  console.log('[main] Starting initializeAllDrives')
+  initializeAllDrives().then(() => {
+    console.log('[main] initializeAllDrives completed successfully')
+  }).catch((err) => {
+    console.error('[main] initializeAllDrives failed', err)
   })
 
   // IPC test
@@ -97,12 +100,14 @@ app.whenReady().then(() => {
 
   // Expose drives IPC
   ipcMain.handle('drives:list', async () => {
+    console.log('[main] drives:list called')
     const drives = listActiveDrives().map((d) => ({
       id: d.record.id,
       name: d.record.name,
       publicKeyHex: d.record.publicKeyHex,
       createdAt: d.record.createdAt
     }))
+    console.log('[main] drives:list returning:', drives)
     return drives
   })
 
@@ -182,12 +187,17 @@ app.whenReady().then(() => {
 
   // Expose user profile IPC (persisted on disk, separate from Hyperdrive for now)
   ipcMain.handle('user:getProfile', async () => {
-    return await readUserProfile()
+    console.log('[main] user:getProfile called')
+    const profile = await readUserProfile()
+    console.log('[main] user:getProfile returning:', profile)
+    return profile
   })
 
   ipcMain.handle('user:updateProfile', async (_evt, profile: unknown) => {
+    console.log('[main] user:updateProfile called with:', profile)
     const p = (profile && typeof profile === 'object') ? (profile as Record<string, unknown>) : {}
     await writeUserProfile(p)
+    console.log('[main] user:updateProfile completed')
     return true
   })
 

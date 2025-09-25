@@ -30,9 +30,9 @@ export function MagicButton({ children, disabled, loading, onClick, className, v
     const variantGradient = getVariantStyles(variant);
 
     return (
-        <button onClick={onClick} disabled={disabled} className={cn("relative inline-flex h-12 overflow-hidden rounded-full p-[1px] focus:outline-none", className)}>
-            <span className={cn("absolute inset-[-1000%] animate-[spin_2s_linear_infinite]", variantGradient, disabled && "opacity-50")} />
-            <span className={cn("inline-flex h-full w-full cursor-pointer items-center justify-center rounded-full bg-slate-950 px-3 py-1 text-sm font-medium text-white backdrop-blur-3xl", disabled && "opacity-50")}> 
+        <button onClick={onClick} disabled={disabled} className={cn("relative inline-flex h-12 overflow-hidden rounded-full p-[1px] focus:outline-none", disabled && "cursor-not-allowed", className)}>
+            <span className={cn("absolute inset-[-1000%]", disabled ? "bg-gray-500" : variantGradient, disabled ? "" : "animate-[spin_2s_linear_infinite]", disabled && "opacity-60")} />
+            <span className={cn("inline-flex h-full w-full items-center justify-center rounded-full bg-slate-950 px-3 py-1 text-sm font-medium text-white backdrop-blur-3xl transition-opacity duration-300 ease-in-out", disabled && "opacity-60 cursor-not-allowed")}> 
                 {loading ? <LoaderOne /> : children}
             </span>
         </button>

@@ -13,13 +13,26 @@ export function Welcome() {
 
     const needsProfile = useMemo(() => {
         const name = (profile as any)?.name;
-        return !name || typeof name !== "string" || name.trim().length === 0;
+        const result = !name || typeof name !== "string" || name.trim().length === 0;
+        console.log('[Welcome] needsProfile calculation - profile:', profile, 'name:', name, 'needsProfile:', result);
+        return result;
     }, [profile]);
+
+    console.log('[Welcome] Render - loaded:', loaded, 'profile:', profile, 'needsProfile:', needsProfile, 'username state:', username);
 
     useEffect(() => {
         const name = (profile as any)?.name;
         if (name && typeof name === "string") setUsername(name);
     }, [profile]);
+
+    // Auto-redirect if user already has a profile and data is loaded
+    useEffect(() => {
+        console.log('[Welcome] Auto-redirect effect - loaded:', loaded, 'needsProfile:', needsProfile);
+        if (loaded && !needsProfile) {
+            console.log('[Welcome] Auto-redirecting to /drives');
+            navigate('/drives');
+        }
+    }, [loaded, needsProfile, navigate]);
 
     async function handleContinue() {
         if (!needsProfile) {
@@ -41,14 +54,14 @@ export function Welcome() {
             <div className="absolute inset-0 w-full h-full">
                 <Prism
                     animationType="rotate"
-                    timeScale={0.5}
+                    timeScale={0.2}
                     height={2}
                     baseWidth={6}
                     scale={2.5}
                     hueShift={0}
-                    colorFrequency={2.7}
+                    colorFrequency={1.7}
                     noise={0.5}
-                    glow={1}
+                    glow={0.2}
                     suspendWhenOffscreen={true}
                 />
             </div>
@@ -75,8 +88,9 @@ export function Welcome() {
                                 className="mx-auto"
                                 onClick={handleContinue}
                                 disabled={saving || !username.trim()}
+                                loading={saving}
                             >
-                                {saving ? 'Saving...' : 'Continue'}
+                                Continue
                             </MagicButton>
                         </div>
                         <p className="text-xs text-white/60 mt-3">We’ll use this in your profile. You can change it later.</p>
