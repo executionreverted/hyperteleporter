@@ -372,8 +372,8 @@ const DriveGridItem = React.memo(({
     className="relative"
     style={{
       width: '280px', // Square cards
-      height: '280px', // Square cards
-      minHeight: '280px'
+      height: '296px', // Square cards
+      minHeight: '296px'
     }}
   >
     {/* Fixed-size wrapper that maintains grid position */}
