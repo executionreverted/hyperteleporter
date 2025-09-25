@@ -25,14 +25,7 @@ export function Welcome() {
         if (name && typeof name === "string") setUsername(name);
     }, [profile]);
 
-    // Auto-redirect if user already has a profile and data is loaded
-    useEffect(() => {
-        console.log('[Welcome] Auto-redirect effect - loaded:', loaded, 'needsProfile:', needsProfile);
-        if (loaded && !needsProfile) {
-            console.log('[Welcome] Auto-redirecting to /drives');
-            navigate('/drives');
-        }
-    }, [loaded, needsProfile, navigate]);
+    // Note: Auto-redirect is now handled in App.tsx to prevent flickering
 
     async function handleContinue() {
         if (!needsProfile) {

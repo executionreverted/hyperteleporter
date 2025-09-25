@@ -10,14 +10,26 @@ import { StartupLoader } from './components/StartupLoader'
 import { Route, Routes, Link, Navigate, useLocation } from 'react-router-dom'
 
 function AppContent(): React.JSX.Element {
-  const { isInitializing, hasUsername } = useHyperdrive()
+  const { isInitializing, hasUsername, loaded } = useHyperdrive()
   const location = useLocation()
 
-  console.log('[AppContent] Render - isInitializing:', isInitializing, 'hasUsername:', hasUsername, 'location:', location.pathname)
+  console.log('[AppContent] Render - isInitializing:', isInitializing, 'hasUsername:', hasUsername, 'loaded:', loaded, 'location:', location.pathname)
 
   if (isInitializing) {
     console.log('[AppContent] Showing StartupLoader')
     return <StartupLoader />
+  }
+
+  // Wait for profile to be loaded before making routing decisions
+  if (!loaded) {
+    console.log('[AppContent] Profile not loaded yet, showing StartupLoader')
+    return <StartupLoader />
+  }
+
+  // If we have a username, redirect to drives (bypass welcome)
+  if (hasUsername && location.pathname === '/') {
+    console.log('[AppContent] Has username and on welcome page, redirecting to drives')
+    return <Navigate to="/drives" replace />
   }
 
   // Username guard: redirect to Welcome page if no username and not already on Welcome page
