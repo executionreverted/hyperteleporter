@@ -2,7 +2,8 @@ import { app, shell, BrowserWindow, ipcMain, screen } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
-import { initializeAllDrives, closeAllDrives, createDrive, listActiveDrives, listDrive, createFolder, uploadFiles, getFileBuffer, deleteFile, getDriveStorageInfo, joinDrive, stopAllDriveWatchers } from './services/hyperdriveManager'
+import { initializeAllDrives, closeAllDrives, createDrive, listActiveDrives, listDrive, createFolder, uploadFiles, getFileBuffer, deleteFile, getDriveStorageInfo, joinDrive, stopAllDriveWatchers, getFolderStats, downloadFolderToDownloads, downloadFileToDownloads, checkDriveSyncStatus, getDriveSyncStatus } from './services/hyperdriveManager'
+import { addDownload, readDownloads, removeDownload } from './services/downloads'
 import { destroySwarm, getSwarm } from './services/swarm'
 import { readUserProfile, writeUserProfile } from './services/userProfile'
 
@@ -35,18 +36,18 @@ function createWindow(): void {
       const csp = headers[cspKey][0]
       if (csp) {
         if (!/img-src[^;]*blob:/.test(csp)) {
-          headers[cspKey][0] = headers[cspKey][0].replace(/img-src([^;]*)/, (m, g1) => `img-src${g1} blob:`)
+          headers[cspKey][0] = headers[cspKey][0].replace(/img-src([^;]*)/, (_, g1) => `img-src${g1} blob:`)
         }
         if (!/media-src[^;]*blob:/.test(headers[cspKey][0])) {
           if (/media-src[^;]*/.test(headers[cspKey][0])) {
-            headers[cspKey][0] = headers[cspKey][0].replace(/media-src([^;]*)/, (m, g1) => `media-src${g1} blob:`)
+            headers[cspKey][0] = headers[cspKey][0].replace(/media-src([^;]*)/, (_, g1) => `media-src${g1} blob:`)
           } else {
             headers[cspKey][0] += '; media-src \"self\" blob:'
           }
         }
         if (!/media-src[^;]*data:/.test(headers[cspKey][0])) {
           if (/media-src[^;]*/.test(headers[cspKey][0])) {
-            headers[cspKey][0] = headers[cspKey][0].replace(/media-src([^;]*)/, (m, g1) => `media-src${g1} data:`)
+            headers[cspKey][0] = headers[cspKey][0].replace(/media-src([^;]*)/, (_, g1) => `media-src${g1} data:`)
           } else {
             headers[cspKey][0] += '; media-src \"self\" data:'
           }
@@ -200,6 +201,129 @@ app.whenReady().then(() => {
     const info = await getDriveStorageInfo(driveId)
     console.log(`[ipc] drives:getStorageInfo ${driveId}: blobsLength=${info.blobsLength}, version=${info.version}`)
     return info
+  })
+
+  ipcMain.handle('drives:getFolderStats', async (_evt, { driveId, folder }: { driveId: string, folder: string }) => {
+    console.log(`[ipc] drives:getFolderStats request: driveId=${driveId}, folder=${folder}`)
+    const stats = await getFolderStats(driveId, folder)
+    console.log(`[ipc] drives:getFolderStats ${driveId} ${folder}:`, stats)
+    return stats
+  })
+
+  ipcMain.handle('drives:downloadFile', async (_evt, { driveId, filePath, fileName, driveName }: { driveId: string, filePath: string, fileName: string, driveName: string }) => {
+    console.log(`[ipc] drives:downloadFile request: driveId=${driveId}, filePath=${filePath}, fileName=${fileName}, driveName=${driveName}`)
+    try {
+      const result = await downloadFileToDownloads(driveId, filePath, fileName, driveName)
+      const downloadRecord = {
+        id: Date.now().toString(),
+        driveId,
+        folderPath: filePath,
+        folderName: fileName,
+        downloadPath: result.downloadPath,
+        fileCount: 1,
+        downloadedAt: new Date().toISOString(),
+        status: 'completed' as const
+      }
+      await addDownload(downloadRecord)
+      console.log(`[ipc] drives:downloadFile ${driveId} ${filePath}: downloaded to ${result.downloadPath}`)
+      return { success: true, downloadPath: result.downloadPath }
+    } catch (error) {
+      console.error(`[ipc] drives:downloadFile failed:`, error)
+      return { success: false, error: String(error) }
+    }
+  })
+
+  ipcMain.handle('drives:downloadFolder', async (_evt, { driveId, folder, folderName, driveName }: { driveId: string, folder: string, folderName: string, driveName: string }) => {
+    console.log(`[ipc] drives:downloadFolder request: driveId=${driveId}, folder=${folder}, folderName=${folderName}, driveName=${driveName}`)
+    try {
+      const result = await downloadFolderToDownloads(driveId, folder, folderName, driveName)
+      const downloadRecord = {
+        id: Date.now().toString(),
+        driveId,
+        folderPath: folder,
+        folderName,
+        downloadPath: result.downloadPath,
+        fileCount: result.fileCount,
+        downloadedAt: new Date().toISOString(),
+        status: 'completed' as const
+      }
+      await addDownload(downloadRecord)
+      console.log(`[ipc] drives:downloadFolder ${driveId} ${folder}: downloaded ${result.fileCount} files to ${result.downloadPath}`)
+      return { success: true, downloadPath: result.downloadPath, fileCount: result.fileCount }
+    } catch (error) {
+      console.error(`[ipc] drives:downloadFolder failed:`, error)
+      return { success: false, error: String(error) }
+    }
+  })
+
+  ipcMain.handle('downloads:list', async () => {
+    console.log('[ipc] downloads:list called')
+    const downloads = await readDownloads()
+    return downloads
+  })
+
+  ipcMain.handle('downloads:remove', async (_evt, { id }: { id: string }) => {
+    console.log(`[ipc] downloads:remove called for id=${id}`)
+    await removeDownload(id)
+    return true
+  })
+
+  ipcMain.handle('downloads:openFolder', async (_evt, { path }: { path: string }) => {
+    console.log(`[ipc] downloads:openFolder called for path=${path}`)
+    try {
+      const { stat } = await import('fs/promises')
+      const { dirname } = await import('path')
+      try {
+        const s = await stat(path)
+        if (s.isDirectory()) {
+          // Open the directory itself
+          const result = await shell.openPath(path)
+          if (result) {
+            // shell.openPath returns an empty string on success, error message otherwise
+            console.warn(`[ipc] downloads:openFolder openPath returned warning: ${result}`)
+          }
+          return { success: true }
+        }
+        // It's a file: reveal it in folder
+        shell.showItemInFolder(path)
+        return { success: true }
+      } catch (statErr) {
+        console.warn(`[ipc] downloads:openFolder stat failed, falling back:`, statErr)
+        // Fallback: try to reveal parent folder
+        try {
+          shell.showItemInFolder(path)
+          return { success: true }
+        } catch (revealErr) {
+          console.warn(`[ipc] downloads:openFolder reveal failed, trying to open dirname`, revealErr)
+          const parent = dirname(path)
+          const result = await shell.openPath(parent)
+          if (result) console.warn(`[ipc] downloads:openFolder openPath dirname returned: ${result}`)
+          return { success: true }
+        }
+      }
+    } catch (error) {
+      console.error(`[ipc] downloads:openFolder failed:`, error)
+      return { success: false, error: String(error) }
+    }
+  })
+
+  // Drive sync status IPC handlers
+  ipcMain.handle('drives:checkSyncStatus', async (_evt, { driveId }: { driveId: string }) => {
+    console.log(`[ipc] drives:checkSyncStatus called for driveId=${driveId}`)
+    try {
+      const status = await checkDriveSyncStatus(driveId)
+      console.log(`[ipc] drives:checkSyncStatus ${driveId}:`, status)
+      return status
+    } catch (error) {
+      console.error(`[ipc] drives:checkSyncStatus failed:`, error)
+      return { isSyncing: false, version: 0, peers: 0, isFindingPeers: false }
+    }
+  })
+
+  ipcMain.handle('drives:getSyncStatus', async (_evt, { driveId }: { driveId: string }) => {
+    console.log(`[ipc] drives:getSyncStatus called for driveId=${driveId}`)
+    const isSyncing = getDriveSyncStatus(driveId)
+    return { isSyncing }
   })
 
   // Expose user profile IPC (persisted on disk, separate from Hyperdrive for now)

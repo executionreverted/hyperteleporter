@@ -5,6 +5,7 @@ import { DrivesList } from './components/common/Drives'
 import { DrivePage } from './components/pages/DrivePage'
 import { DrivesProvider } from './contexts/DrivesContext'
 import { HyperdriveProvider, useHyperdrive } from './contexts/HyperdriveContext'
+import { ToasterProvider } from './contexts/ToasterContext'
 import { StartupLoader } from './components/StartupLoader'
 import { Route, Routes, Link, Navigate, useLocation } from 'react-router-dom'
 
@@ -29,14 +30,16 @@ function AppContent(): React.JSX.Element {
 
   return (
     <DrivesProvider>
-      <Routes>
-        <Route path="/" element={<Welcome />} />
-        <Route path="/drives" element={<DrivesList />} />
-        <Route path="/drive/:driveId" element={<DrivePage />} />
-        <Route path="/about" element={<div className="p-4 text-white">About page</div>} />
-        <Route path="/versions" element={<Versions />} />
-        <Route path="*" element={<div className="p-4 text-white">Not found</div>} />
-      </Routes>
+      <ToasterProvider>
+        <Routes>
+          <Route path="/" element={<Welcome />} />
+          <Route path="/drives" element={<DrivesList />} />
+          <Route path="/drive/:driveId" element={<DrivePage />} />
+          <Route path="/about" element={<div className="p-4 text-white">About page</div>} />
+          <Route path="/versions" element={<Versions />} />
+          <Route path="*" element={<div className="p-4 text-white">Not found</div>} />
+        </Routes>
+      </ToasterProvider>
     </DrivesProvider>
   )
 }

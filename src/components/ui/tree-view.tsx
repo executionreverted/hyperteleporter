@@ -55,6 +55,10 @@ interface TreeViewProps {
   onCreateFolder?: (parentPath: string) => void;
   onRefresh?: () => void;
   onDelete?: (node: TreeNode) => void;
+  onDownloadFolder?: (node: TreeNode) => void;
+  onDownloadFile?: (node: TreeNode) => void;
+  canWrite?: boolean;
+  isSyncing?: boolean;
 }
 
 interface TreeNodeProps {
@@ -69,6 +73,10 @@ interface TreeNodeProps {
   onCreateFolder?: (parentPath: string) => void;
   onRefresh?: () => void;
   onDelete?: (node: TreeNode) => void;
+  onDownloadFolder?: (node: TreeNode) => void;
+  onDownloadFile?: (node: TreeNode) => void;
+  canWrite?: boolean;
+  isSyncing?: boolean;
 }
 
 const FolderIcon = ({ isOpen }: { isOpen: boolean }) => (
@@ -123,7 +131,7 @@ const FileIcon = ({ type }: { type: string }) => {
   return getFileIcon();
 };
 
-const TreeNodeComponent = ({ node, level, onNodeSelect, onNodeToggle, selectedNodeId, expandedNodes, onContextMenu, onNavigateToFolder, onCreateFolder, onRefresh, onDelete }: TreeNodeProps) => {
+const TreeNodeComponent = ({ node, level, onNodeSelect, onNodeToggle, selectedNodeId, expandedNodes, onContextMenu, onNavigateToFolder, onCreateFolder, onRefresh, onDelete, onDownloadFolder, onDownloadFile, canWrite = true, isSyncing = false }: TreeNodeProps) => {
   const hasChildren = node.children && node.children.length > 0;
   const isSelected = selectedNodeId === node.id;
   const isExpanded = expandedNodes?.has(node.id) || false;
@@ -137,13 +145,22 @@ const TreeNodeComponent = ({ node, level, onNodeSelect, onNodeToggle, selectedNo
     }
   };
 
-  const handleClick = () => {
+  const handleClick = (e: React.MouseEvent) => {
     // Use a small delay to differentiate single vs double click
     if (clickTimeoutRef.current) {
       window.clearTimeout(clickTimeoutRef.current);
     }
+    const targetEl = e.currentTarget as HTMLDivElement;
     // @ts-ignore - window.setTimeout returns a number in browsers
     clickTimeoutRef.current = window.setTimeout(() => {
+      // Dispatch a global preview request so ContentPanel can open its modal
+      try {
+        const rect = targetEl.getBoundingClientRect();
+        const detail = { rect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height }, node };
+        window.dispatchEvent(new CustomEvent('open-preview', { detail }));
+        clickTimeoutRef.current = null;
+        return;
+      } catch {}
       onNodeSelect?.(node);
       // No auto-expansion - user controls everything
       clickTimeoutRef.current = null;
@@ -165,74 +182,56 @@ const TreeNodeComponent = ({ node, level, onNodeSelect, onNodeToggle, selectedNo
     e.preventDefault();
     e.stopPropagation();
     
-    const actions: ContextMenuAction[] = [
-      {
-        id: 'rename',
-        label: 'Rename',
-        icon: <IconEdit size={16} />,
-        onClick: () => console.log('Rename', node.name),
-      },
-      {
-        id: 'copy',
-        label: 'Copy',
-        icon: <IconCopy size={16} />,
-        onClick: () => console.log('Copy', node.name),
-      },
-      {
-        id: 'cut',
-        label: 'Cut',
-        icon: <IconCut size={16} />,
-        onClick: () => console.log('Cut', node.name),
-      },
-      {
-        id: 'download',
-        label: 'Download',
-        icon: <IconDownload size={16} />,
-        onClick: () => console.log('Download', node.name),
-        disabled: node.type === 'folder',
-      },
-      {
-        id: 'share',
-        label: 'Share',
-        icon: <IconShare size={16} />,
-        onClick: () => console.log('Share', node.name),
-      },
-      {
-        id: 'separator1',
-        label: '',
-        icon: <div className="h-px bg-white/20" />,
-        onClick: () => {},
-        disabled: true,
-      },
-      {
+    const actions: ContextMenuAction[] = [];
+
+          // File-specific actions (always enabled)
+          if (node.type === 'file') {
+            actions.push({
+              id: 'download',
+              label: 'Download',
+              icon: <IconDownload size={16} />,
+              onClick: () => onDownloadFile?.(node),
+            });
+          }
+
+          // Folder-specific actions (always enabled)
+          if (node.type === 'folder') {
+            actions.push({
+              id: 'download-all',
+              label: 'Download All',
+              icon: <IconDownload size={16} />,
+              onClick: () => onDownloadFolder?.(node),
+            });
+          }
+
+    // Common actions
+    actions.push({
+      id: 'share',
+      label: 'Share',
+      icon: <IconShare size={16} />,
+      onClick: () => console.log('Share', node.name),
+    });
+
+    // Write actions (only when allowed and target is folder)
+    if (canWrite && node.type === 'folder') {
+      actions.push({
         id: 'new-folder',
         label: 'New Folder',
         icon: <IconFolderPlus size={16} />,
         onClick: () => onCreateFolder?.(node.id),
-        disabled: node.type === 'file',
-      },
-      {
-        id: 'new-file',
-        label: 'New File',
-        icon: <IconFilePlus size={16} />,
-        onClick: () => console.log('New File in', node.name),
-        disabled: node.type === 'file',
-      },
-      {
-        id: 'separator2',
-        label: '',
-        icon: <div className="h-px bg-white/20" />,
-        onClick: () => {},
-        disabled: true,
-      },
-      {
+      });
+    }
+
+    // Delete (only when allowed)
+    if (canWrite) {
+      actions.push({
         id: 'delete',
         label: 'Delete',
         icon: <IconTrash size={16} />,
         onClick: () => onDelete?.(node),
         destructive: true,
-      },
-    ];
+      });
+    }
 
     onContextMenu?.(node, actions, e);
   };
@@ -247,7 +246,7 @@ const TreeNodeComponent = ({ node, level, onNodeSelect, onNodeToggle, selectedNo
           "group"
         )}
         style={{ paddingLeft: `${level * 16 + 8}px` }}
-        onClick={handleClick}
+        onClick={(e) => handleClick(e)}
         onDoubleClick={handleDoubleClick}
         onContextMenu={handleContextMenu}
         whileHover={{ x: 2 }}
@@ -317,6 +316,10 @@ const TreeNodeComponent = ({ node, level, onNodeSelect, onNodeToggle, selectedNo
                 onCreateFolder={onCreateFolder}
                 onRefresh={onRefresh}
                 onDelete={onDelete}
+                onDownloadFolder={onDownloadFolder}
+                onDownloadFile={onDownloadFile}
+                canWrite={canWrite}
+                isSyncing={isSyncing}
               />
             ))}
           </motion.div>
@@ -389,7 +392,11 @@ export function TreeView({
   className,
   onCreateFolder,
   onRefresh,
-  onDelete
+  onDelete,
+  onDownloadFolder,
+  onDownloadFile,
+  canWrite = true,
+  isSyncing = false
 }: TreeViewProps) {
   const { isOpen, position, actions, openContextMenu, closeContextMenu } = useContextMenu()
 
@@ -403,7 +410,7 @@ export function TreeView({
     e.stopPropagation()
     
     const containerActions: ContextMenuAction[] = [
-      { id: 'create-folder', label: 'Create Folder', icon: <IconFolderPlus size={16} />, onClick: () => onCreateFolder?.('/') },
+      ...(canWrite ? [{ id: 'create-folder', label: 'Create Folder', icon: <IconFolderPlus size={16} />, onClick: () => onCreateFolder?.('/') }] : []),
       { id: 'refresh', label: 'Refresh', icon: <IconArrowUp size={16} />, onClick: () => onRefresh?.() },
     ]
     
@@ -460,22 +467,26 @@ export function TreeView({
         >
           {/* Parent navigation removed - handled in tree data */}
           
-          {data.map((node) => (
-            <TreeNodeComponent
-              key={node.id}
-              node={node}
-              level={0}
-              onNodeSelect={onNodeSelect}
-              onNodeToggle={onNodeToggle}
-              selectedNodeId={selectedNodeId}
-              expandedNodes={expandedNodes}
-              onContextMenu={onContextMenu}
-              onNavigateToFolder={onNavigateToFolder}
-              onCreateFolder={onCreateFolder}
-              onRefresh={onRefresh}
-              onDelete={onDelete}
-            />
-          ))}
+        {data.map((node) => (
+          <TreeNodeComponent
+            key={node.id}
+            node={node}
+            level={0}
+            onNodeSelect={onNodeSelect}
+            onNodeToggle={onNodeToggle}
+            selectedNodeId={selectedNodeId}
+            expandedNodes={expandedNodes}
+            onContextMenu={onContextMenu}
+            onNavigateToFolder={onNavigateToFolder}
+            onCreateFolder={onCreateFolder}
+            onRefresh={onRefresh}
+            onDelete={onDelete}
+            onDownloadFolder={onDownloadFolder}
+            onDownloadFile={onDownloadFile}
+            canWrite={canWrite}
+            isSyncing={isSyncing}
+          />
+        ))}
         </motion.div>
       </AnimatePresence>
       <ContextMenu isOpen={isOpen} position={position} actions={actions} onClose={closeContextMenu} />

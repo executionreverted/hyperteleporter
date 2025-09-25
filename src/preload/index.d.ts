@@ -13,6 +13,16 @@ declare global {
         uploadFiles: (driveId: string, folderPath: string, files: Array<{ name: string; data: ArrayBuffer }>) => Promise<{ uploaded: number }>
         deleteFile: (driveId: string, path: string) => Promise<boolean>
         getStorageInfo: (driveId: string) => Promise<{ blobsLength: number, version: number }>
+        getFolderStats: (driveId: string, folder: string) => Promise<{ files: number; folders: number; sizeBytes: number }>
+        downloadFile: (driveId: string, filePath: string, fileName: string, driveName: string) => Promise<{ success: boolean; downloadPath?: string; error?: string }>
+        downloadFolder: (driveId: string, folder: string, folderName: string, driveName: string) => Promise<{ success: boolean; downloadPath?: string; fileCount?: number; error?: string }>
+        checkSyncStatus: (driveId: string) => Promise<{ isSyncing: boolean; version: number; peers: number; isFindingPeers: boolean }>
+        getSyncStatus: (driveId: string) => Promise<{ isSyncing: boolean }>
+      }
+      downloads: {
+        list: () => Promise<Array<{ id: string; driveId: string; folderPath: string; folderName: string; downloadPath: string; fileCount: number; downloadedAt: string; status: 'completed' | 'failed' }>>
+        remove: (id: string) => Promise<boolean>
+        openFolder: (path: string) => Promise<{ success: boolean; error?: string }>
       }
       user: {
         getProfile: () => Promise<any>

@@ -10,7 +10,7 @@ import Prism from "../../../../components/ui/prism";
 import { ContextMenu, useContextMenu, ContextMenuAction } from "../../../../components/ui/context-menu";
 import FileSearchModal from "../common/FileSearchModal";
 import { useParams, useNavigate } from "react-router-dom";
-import { IconFolderPlus, IconShare, IconUpload } from "@tabler/icons-react";
+import { IconFolderPlus, IconShare, IconUpload, IconDownload } from "@tabler/icons-react";
 import { IconHome, IconSettings, IconUser } from "@tabler/icons-react";
 import ExpandAllIcon from "../../assets/expand-all.svg";
 import CollapseAllIcon from "../../assets/collapse-all.svg";
@@ -19,11 +19,14 @@ import FolderOpenIcon from "../../assets/folder-open.svg";
 // Removed dummy data usage
 import Shuffle from "../../../../components/ui/Shuffle";
 import { Modal, ModalBody, ModalContent, ModalFooter, ModalTrigger, useModal } from "../../../../components/ui/animated-modal";
+import NewFolderModal from "./drive/NewFolderModal";
+import { DownloadsModal } from "../common/DownloadsModal";
 import { MagicButton } from "../common/MagicButton";
 import MagicButtonWide from "../../../../components/ui/magic-button-wide";
 import { DelayedTooltip } from "../../../../components/ui/delayed-tooltip";
 import { HardDriveIcon } from "../../../../components/ui/hard-drive-icon";
 import { ShareModal } from "../common/ShareModal";
+import { useToaster } from "../../contexts/ToasterContext";
 // @ts-ignore
 const { ipcRenderer } = (window as any)?.electron || {}
 
@@ -46,6 +49,7 @@ const quickActions = [
 ];
 
 export function DrivePage() {
+  const toaster = useToaster();
   const [selectedNode, setSelectedNode] = useState<TreeNode | undefined>();
   const [fileSystem, setFileSystem] = useState<TreeNode[]>(mockFileSystem);
   const [completeFileSystem, setCompleteFileSystem] = useState<TreeNode[]>(mockFileSystem);
@@ -59,6 +63,10 @@ export function DrivePage() {
   const [hideTimeout, setHideTimeout] = useState<NodeJS.Timeout | null>(null);
   const [showNewFolderModal, setShowNewFolderModal] = useState(false);
   const [targetFolderForNewFolder, setTargetFolderForNewFolder] = useState<string>('/');
+  const [showDownloadsModal, setShowDownloadsModal] = useState(false);
+  const [isDriveSyncing, setIsDriveSyncing] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<{ version: number; peers: number; isFindingPeers: boolean } | null>(null);
+  const [isInitialSync, setIsInitialSync] = useState(false);
   
   // Drive information state
   const [currentDrive, setCurrentDrive] = useState<{ id: string; name: string; driveKey: string; type?: 'owned' | 'readonly'; isWritable?: boolean } | null>(null);
@@ -67,6 +75,30 @@ export function DrivePage() {
   const navigate = useNavigate();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const api = useMemo(() => (window as any)?.api ?? null, []);
+  
+  // Sync status checking
+  const checkSyncStatus = async () => {
+    if (!currentDrive?.id) return;
+    
+    try {
+      const status = await api?.drives?.checkSyncStatus?.(currentDrive.id);
+      if (status) {
+        setIsDriveSyncing(status.isSyncing);
+        setSyncStatus({ version: status.version, peers: status.peers, isFindingPeers: status.isFindingPeers });
+        
+        // Only show initial sync for joined drives with no peers
+        const isOwned = currentDrive?.type === 'owned';
+        if (!isOwned && status.peers === 0) {
+          setIsInitialSync(true);
+        } else {
+          setIsInitialSync(false);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to check sync status:', error);
+    }
+  };
+
   // Fallback invokers in case preload did not expose new methods yet
   async function invokeListFolder(driveId: string, folder: string, recursive = false) {
     if (api?.drives?.listFolder) return api.drives.listFolder(driveId, folder, recursive)
@@ -189,6 +221,19 @@ export function DrivePage() {
     loadDriveInfo();
     return () => { mounted = false };
   }, [api, params.driveId]);
+
+  // Set up periodic sync status checking
+  useEffect(() => {
+    if (!currentDrive?.id) return;
+
+    // Check immediately
+    checkSyncStatus();
+
+    // Set up interval to check every 2 seconds
+    const interval = setInterval(checkSyncStatus, 2000);
+
+    return () => clearInterval(interval);
+  }, [currentDrive?.id]);
 
   // Load folder listing for this drive
   useEffect(() => {
@@ -647,12 +692,9 @@ export function DrivePage() {
     // Set the current folder path for the new folder modal
     const currentFolderPath = parentPath === '/' ? '/' : parentPath;
     
-    // Open the new folder modal with the correct parent path
-    setShowNewFolderModal(true);
-    
-    // We need to pass the parent path to the modal somehow
-    // For now, we'll use a state to track the target folder
+    // Set the target folder first, then open the modal
     setTargetFolderForNewFolder(currentFolderPath);
+    setShowNewFolderModal(true);
   };
 
   const handleCreateFolderWithAutoExpand = async () => {
@@ -675,13 +717,16 @@ export function DrivePage() {
         // Reload the current folder to show the newly created folder
         await reloadCurrentFolder();
         
-        
         // Find the updated parent node with the new folder
         const updatedParentNode = findNodeById(updatedCompleteTree, parentNodeId);
         if (updatedParentNode) {
           // Select the parent folder to show its contents with the new folder
           setSelectedNode(updatedParentNode);
         }
+        
+        // Close the modal after successful creation
+        setShowNewFolderModal(false);
+        setTargetFolderForNewFolder('/');
       } catch (error) {
         console.error('Failed to reload complete file system:', error);
         // Fallback: just select the parent node
@@ -689,6 +734,9 @@ export function DrivePage() {
         if (parentNode) {
           setSelectedNode(parentNode);
         }
+        // Close the modal even on error
+        setShowNewFolderModal(false);
+        setTargetFolderForNewFolder('/');
       }
     }
   };
@@ -712,7 +760,39 @@ export function DrivePage() {
   };
 
   const handleNavigateToFolder = async (node: TreeNode) => {
-    // TODO: Implement folder navigation
+    if (node.type !== 'folder') return;
+    // Prefer complete tree data for immediate navigation without refetch
+    const folderNode = findNodeById(completeFileSystem, node.id);
+    if (folderNode && folderNode.children) {
+      startTransition(() => {
+        setNavigationDirection('forward');
+        setNavigationStack((prev) => [...prev, currentView]);
+        setCurrentView(folderNode.children || []);
+        setSelectedNode(folderNode);
+        setTreeRoot(folderNode.id);
+        // Build breadcrumb path from id
+        const pathSegments = folderNode.id.split('/').filter(Boolean);
+        setBreadcrumbPath(pathSegments);
+      });
+      return;
+    }
+    // Fallback: try to load from backend
+    const driveId = params.driveId as string | undefined;
+    if (!driveId) return;
+    try {
+      const folderPath = node.id.startsWith('/') ? node.id : `/${node.id}`;
+      const entries: Array<{ key: string, value: any }> = await invokeListFolder(driveId, folderPath, false);
+      const children = buildNodesForFolder(folderPath, entries);
+      startTransition(() => {
+        setNavigationDirection('forward');
+        setNavigationStack((prev) => [...prev, currentView]);
+        setCurrentView(children);
+        setSelectedNode({ ...node, children });
+        setTreeRoot(folderPath);
+        const pathSegments = folderPath.split('/').filter(Boolean);
+        setBreadcrumbPath(pathSegments);
+      });
+    } catch {}
   };
 
   const handleNavigateUp = () => {
@@ -794,6 +874,62 @@ export function DrivePage() {
     } catch (e) {
       console.error('[DrivePage] delete failed', e)
       alert('An error occurred while deleting the item. Please try again.')
+    }
+  };
+
+  const handleDownloadFile = async (node: TreeNode) => {
+    const driveId = params.driveId as string | undefined
+    if (!driveId || node.type !== 'file' || !currentDrive) return
+    
+    try {
+      console.log('[DrivePage] Downloading file:', node.name)
+      toaster.showInfo('Download Started', `Downloading ${node.name}...`)
+      
+      const result = await api?.drives?.downloadFile?.(driveId, node.id, node.name, currentDrive.name)
+      
+      if (result?.success) {
+        console.log('[DrivePage] Successfully downloaded file:', node.name, 'to', result.downloadPath)
+        toaster.showSuccess('Download Complete', `${node.name} saved to Downloads/Teleporter/${currentDrive.name}/`, {
+          label: 'Open Folder',
+          onClick: () => api?.downloads?.openFolder?.(result.downloadPath)
+        })
+        // Dispatch event to refresh downloads modal
+        window.dispatchEvent(new CustomEvent('download-completed'))
+      } else {
+        console.error('[DrivePage] Download failed:', result?.error)
+        toaster.showError('Download Failed', `Failed to download file: ${result?.error || 'Unknown error'}`)
+      }
+    } catch (e) {
+      console.error('[DrivePage] Download file failed', e)
+      toaster.showError('Download Failed', 'Failed to download file. Please try again.')
+    }
+  };
+
+  const handleDownloadFolder = async (node: TreeNode) => {
+    const driveId = params.driveId as string | undefined
+    if (!driveId || node.type !== 'folder' || !currentDrive) return
+    
+    try {
+      console.log('[DrivePage] Downloading folder:', node.name)
+      toaster.showInfo('Download Started', `Downloading folder ${node.name}...`)
+      
+      const result = await api?.drives?.downloadFolder?.(driveId, node.id, node.name, currentDrive.name)
+      
+      if (result?.success) {
+        console.log('[DrivePage] Successfully downloaded folder:', node.name, 'to', result.downloadPath)
+        toaster.showSuccess('Download Complete', `${result.fileCount} files saved to Downloads/Teleporter/${currentDrive.name}/`, {
+          label: 'Open Folder',
+          onClick: () => api?.downloads?.openFolder?.(result.downloadPath)
+        })
+        // Dispatch event to refresh downloads modal
+        window.dispatchEvent(new CustomEvent('download-completed'))
+      } else {
+        console.error('[DrivePage] Download failed:', result?.error)
+        toaster.showError('Download Failed', `Failed to download folder: ${result?.error || 'Unknown error'}`)
+      }
+    } catch (e) {
+      console.error('[DrivePage] Download folder failed', e)
+      toaster.showError('Download Failed', 'Failed to download folder. Please try again.')
     }
   };
 
@@ -1267,7 +1403,6 @@ export function DrivePage() {
                         ) : (
                           <TreeView
                             data={getCurrentTreeData()}
-                            onNodeSelect={handleNodeSelect}
                             onNodeToggle={handleNodeToggle}
                             selectedNodeId={selectedNode?.id}
                             expandedNodes={expandedNodes}
@@ -1280,6 +1415,10 @@ export function DrivePage() {
                             onCreateFolder={handleCreateFolderFromTree}
                             onRefresh={reloadCurrentFolder}
                             onDelete={handleDeleteNode}
+                            onDownloadFolder={handleDownloadFolder}
+                            onDownloadFile={handleDownloadFile}
+                            canWrite={currentDrive?.isWritable ?? true}
+                            isSyncing={isDriveSyncing}
                           />
                         )}
                       </div>
@@ -1327,6 +1466,48 @@ export function DrivePage() {
                     </svg>
                     <span>Refresh</span>
                   </button>
+                  
+                  {/* Initial Sync Indicator */}
+                  {isInitialSync && (
+                    <div className="flex items-center gap-2 px-4 py-3 text-sm font-medium text-amber-400 bg-amber-500/10 rounded-lg border border-amber-500/20">
+                      <div className="w-3 h-3 bg-amber-400 rounded-full animate-pulse"></div>
+                      <span>Connecting to drive...</span>
+                      <span className="text-xs text-amber-300">
+                        This may take a moment
+                      </span>
+                    </div>
+                  )}
+                  
+                  {/* Regular Sync Status Indicator */}
+                  {isDriveSyncing && !isInitialSync && (
+                    <div className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-blue-400 bg-blue-500/10 rounded-lg">
+                      <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></div>
+                      <span>
+                        {syncStatus?.isFindingPeers ? 'Finding peers...' : 'Syncing...'}
+                      </span>
+                      {syncStatus && (
+                        <span className="text-xs text-blue-300">
+                          v{syncStatus.version} • {syncStatus.peers} peers
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  
+                  {/* Downloads Button */}
+                  <button
+                    onClick={() => setShowDownloadsModal(true)}
+                    disabled={isDriveSyncing}
+                    className={`flex items-center gap-2 px-3 py-2 text-sm font-medium transition-colors rounded-lg ${
+                      isDriveSyncing 
+                        ? 'text-neutral-500 cursor-not-allowed' 
+                        : 'text-neutral-400 hover:bg-black/20 hover:text-white'
+                    }`}
+                    title={isDriveSyncing ? "Downloads disabled while syncing" : "View Downloads"}
+                  >
+                    <IconDownload size={16} />
+                    <span>Downloads</span>
+                  </button>
+                  
                   {/* Share Button */}
                   {currentDrive && (
                     <ShareModal
@@ -1383,17 +1564,28 @@ export function DrivePage() {
           </div>
 
           {/* Content Panel */}
-          <ContentPanel 
-            selectedNode={selectedNode} 
-            onFileClick={handleFileClick}
-            onNavigateUp={handleContentPanelNavigateUp}
-            canNavigateUp={treeRoot !== '/'}
-            driveId={params.driveId as string}
-            onFileDeleted={reloadCurrentFolder}
-            onCreateFolder={handleCreateFolderFromTree}
-            onRefresh={reloadCurrentFolder}
-            canWrite={currentDrive?.isWritable ?? true}
-          />
+          {isInitialSync ? (
+            <div className="flex-1 flex items-center justify-center">
+              <div className="text-center">
+                <div className="w-8 h-8 border-2 border-amber-400 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+                <p className="text-amber-400 text-sm">Connecting to drive...</p>
+                <p className="text-neutral-500 text-xs mt-2">This may take a moment while we sync with peers</p>
+              </div>
+            </div>
+          ) : (
+            <ContentPanel 
+              selectedNode={selectedNode} 
+              onFileClick={handleFileClick}
+              onNavigateUp={handleContentPanelNavigateUp}
+              canNavigateUp={treeRoot !== '/'}
+              driveId={params.driveId as string}
+              onFileDeleted={reloadCurrentFolder}
+              onCreateFolder={handleCreateFolderFromTree}
+              onRefresh={reloadCurrentFolder}
+              canWrite={currentDrive?.isWritable ?? true}
+              currentDrive={currentDrive ? { name: currentDrive.name, id: currentDrive.id } : undefined}
+            />
+          )}
           
           {/* Dropzone */}
           {(currentDrive?.isWritable ?? true) && (
@@ -1425,6 +1617,12 @@ export function DrivePage() {
         position={position}
         actions={contextActions}
         onClose={closeContextMenu}
+      />
+      
+      {/* Downloads Modal */}
+      <DownloadsModal
+        isOpen={showDownloadsModal}
+        onClose={() => setShowDownloadsModal(false)}
       />
     </div>
   );

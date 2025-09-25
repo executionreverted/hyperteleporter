@@ -12,6 +12,7 @@ import FolderOpenIcon from "../../renderer/src/assets/folder-open.svg";
 import { ContextMenu, useContextMenu, type ContextMenuAction } from "./context-menu";
 import GlareHover from "./glare-hover";
 import { AnimatePresence } from "motion/react";
+import { useToaster } from "../../renderer/src/contexts/ToasterContext";
 
 interface ContentPanelProps {
   selectedNode?: TreeNode;
@@ -24,11 +25,12 @@ interface ContentPanelProps {
   onRefresh?: () => void;
   className?: string;
   canWrite?: boolean;
+  currentDrive?: { name: string; id: string };
 }
 
 import { FileIcon } from "./file-icons";
 
-const FilePreview = ({ node }: { node: TreeNode }) => {
+const FilePreview = ({ node, insideModal = false }: { node: TreeNode; insideModal?: boolean }) => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const api: any = (window as any)?.api
   const [imgUrl, setImgUrl] = React.useState<string | null>(null)
@@ -112,8 +114,12 @@ const FilePreview = ({ node }: { node: TreeNode }) => {
   const renderCodePreview = (ext: string) => {
     const language = inferLanguage(ext);
     return (
-      <div className="p-6">
-        <div className="bg-black/10 rounded-lg p-4 max-h-[480px] overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-600 scrollbar-track-neutral-800">
+      <div className={insideModal ? "p-4 h-full" : "p-6"}>
+        <div className={
+          insideModal
+            ? "bg-black/10 rounded-lg p-4 h-full overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-600 scrollbar-track-neutral-800"
+            : "bg-black/10 rounded-lg p-4 max-h-[480px] overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-600 scrollbar-track-neutral-800"
+        }>
           <div className="text-white mb-3">Code Preview:</div>
           {loading && <div className="text-neutral-300">Loading…</div>}
           {error && <div className="text-red-400">{error}</div>}
@@ -472,12 +478,13 @@ const FileMetadata = ({ node }: { node: TreeNode }) => {
   );
 };
 
-const FolderContents = ({ node, onFileClick, onNavigateUp, canNavigateUp, driveId, onFileDeleted, onPreviewAnchor, canWrite = true }: { node: TreeNode; onFileClick?: (node: TreeNode) => void; onNavigateUp?: () => void; canNavigateUp?: boolean; driveId?: string; onFileDeleted?: () => void; onPreviewAnchor?: (rect: DOMRect, node: TreeNode) => void; canWrite?: boolean }) => {
+const FolderContents = ({ node, onFileClick, onNavigateUp, canNavigateUp, driveId, onFileDeleted, onPreviewAnchor, canWrite = true, currentDrive }: { node: TreeNode; onFileClick?: (node: TreeNode) => void; onNavigateUp?: () => void; canNavigateUp?: boolean; driveId?: string; onFileDeleted?: () => void; onPreviewAnchor?: (rect: DOMRect, node: TreeNode) => void; canWrite?: boolean; currentDrive?: { name: string; id: string } }) => {
   const totalItems = node.children ? node.children.length : 0;
   const folderCount = node.children ? node.children.filter(c => c.type === 'folder').length : 0;
   const fileCount = totalItems - folderCount;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const api: any = (window as any)?.api
+  const toaster = useToaster()
   const { isOpen, position, actions, openContextMenu, closeContextMenu } = useContextMenu()
 
   const handleDeleteFile = async (fileNode: TreeNode) => {
@@ -510,24 +517,29 @@ const FolderContents = ({ node, onFileClick, onNavigateUp, canNavigateUp, driveI
   }
 
   const handleDownloadFile = async (fileNode: TreeNode) => {
-    if (fileNode.type !== 'file') return
+    if (fileNode.type !== 'file' || !driveId || !currentDrive) return
+    
     try {
-      const effectiveDriveId = driveId || (window.location.hash.match(/#\/drive\/([^/]+)/)?.[1] ?? null)
-      if (!effectiveDriveId || !api?.files?.getFileUrl) return
-      const path = fileNode.id.startsWith('/') ? fileNode.id : `/${fileNode.id}`
-      const url = await api.files.getFileUrl(effectiveDriveId, path)
-      if (!url) throw new Error('No preview URL')
-      const a = document.createElement('a')
-      a.href = url
-      a.download = fileNode.name
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
-      // Best-effort revoke if blob:
-      if (url.startsWith('blob:')) URL.revokeObjectURL(url)
+      console.log('[FolderContents] Downloading file:', fileNode.name)
+      toaster.showInfo('Download Started', `Downloading ${fileNode.name}...`)
+      
+      const result = await api?.drives?.downloadFile?.(driveId, fileNode.id, fileNode.name, currentDrive.name)
+      
+      if (result?.success) {
+        console.log('[FolderContents] Successfully downloaded file:', fileNode.name, 'to', result.downloadPath)
+        toaster.showSuccess('Download Complete', `${fileNode.name} saved to Downloads/Teleporter/${currentDrive.name}/`, {
+          label: 'Open Folder',
+          onClick: () => api?.downloads?.openFolder?.(result.downloadPath)
+        })
+        // Dispatch event to refresh downloads modal
+        window.dispatchEvent(new CustomEvent('download-completed'))
+      } else {
+        console.error('[FolderContents] Download failed:', result?.error)
+        toaster.showError('Download Failed', `Failed to download file: ${result?.error || 'Unknown error'}`)
+      }
     } catch (e) {
       console.error('[FolderContents] Download error:', e)
-      alert('Failed to download file.')
+      toaster.showError('Download Failed', 'Failed to download file. Please try again.')
     }
   }
 
@@ -706,9 +718,10 @@ const FolderContents = ({ node, onFileClick, onNavigateUp, canNavigateUp, driveI
   );
 };
 
-export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavigateUp, driveId, onFileDeleted, onCreateFolder, onRefresh, className, canWrite = true }: ContentPanelProps) {
+export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavigateUp, driveId, onFileDeleted, onCreateFolder, onRefresh, className, canWrite = true, currentDrive }: ContentPanelProps) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const api: any = (window as any)?.api
+  const toaster = useToaster()
   const { isOpen, position, actions, openContextMenu, closeContextMenu } = useContextMenu()
 
   // Preview modal state MUST be declared before any early returns to preserve hook order
@@ -726,6 +739,30 @@ export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavig
     // Trigger exit animation by closing; keep node until onExited
     setIsPreviewOpen(false)
   }
+
+  // Listen for global preview requests (from tree view single-clicks)
+  React.useEffect(() => {
+    const handler = (e: any) => {
+      try {
+        const { rect, node } = e.detail || {}
+        if (!node) return
+        const domRect = rect ? ({
+          left: rect.left,
+          top: rect.top,
+          width: rect.width,
+          height: rect.height,
+          right: rect.left + rect.width,
+          bottom: rect.top + rect.height,
+          x: rect.left,
+          y: rect.top,
+          toJSON: () => rect,
+        } as unknown as DOMRect) : null
+        openPreviewFromRect(domRect as DOMRect, node)
+      } catch {}
+    }
+    window.addEventListener('open-preview', handler as EventListener)
+    return () => window.removeEventListener('open-preview', handler as EventListener)
+  }, [])
 
   const handleDeleteFile = async () => {
     if (!selectedNode || selectedNode.type !== 'file') return
@@ -759,24 +796,78 @@ export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavig
   }
 
   const handleDownloadFile = async () => {
-    if (!selectedNode || selectedNode.type !== 'file') return
+    if (!selectedNode || selectedNode.type !== 'file' || !driveId || !currentDrive) return
+    
     try {
-      const effectiveDriveId = driveId || (window.location.hash.match(/#\/drive\/([^/]+)/)?.[1] ?? null)
-      if (!effectiveDriveId || !api?.files?.getFileUrl) return
-      const path = selectedNode.id.startsWith('/') ? selectedNode.id : `/${selectedNode.id}`
-      const url = await api.files.getFileUrl(effectiveDriveId, path)
-      if (!url) throw new Error('No preview URL')
-      const a = document.createElement('a')
-      a.href = url
-      a.download = selectedNode.name
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
-      // Best-effort revoke if blob:
-      if (url.startsWith('blob:')) URL.revokeObjectURL(url)
+      console.log('[ContentPanel] Downloading file:', selectedNode.name)
+      toaster.showInfo('Download Started', `Downloading ${selectedNode.name}...`)
+      
+      const result = await api?.drives?.downloadFile?.(driveId, selectedNode.id, selectedNode.name, currentDrive.name)
+      
+      if (result?.success) {
+        console.log('[ContentPanel] Successfully downloaded file:', selectedNode.name, 'to', result.downloadPath)
+        toaster.showSuccess('Download Complete', `${selectedNode.name} saved to Downloads/Teleporter/${currentDrive.name}/`, {
+          label: 'Open Folder',
+          onClick: () => api?.downloads?.openFolder?.(result.downloadPath)
+        })
+        // Dispatch event to refresh downloads modal
+        window.dispatchEvent(new CustomEvent('download-completed'))
+      } else {
+        console.error('[ContentPanel] Download failed:', result?.error)
+        toaster.showError('Download Failed', `Failed to download file: ${result?.error || 'Unknown error'}`)
+      }
     } catch (e) {
       console.error('[ContentPanel] Download error:', e)
-      alert('Failed to download file.')
+      toaster.showError('Download Failed', 'Failed to download file. Please try again.')
+    }
+  }
+
+  // Actions for preview modal operating on previewNode
+  const handleDeletePreviewNode = async () => {
+    if (!previewNode || previewNode.type !== 'file') return
+    const confirmed = window.confirm(`Are you sure you want to delete "${previewNode.name}"?`)
+    if (!confirmed) return
+    try {
+      const effectiveDriveId = driveId || (window.location.hash.match(/#\/drive\/([^/]+)/)?.[1] ?? null)
+      if (!effectiveDriveId || !api?.drives?.deleteFile) return
+      const path = previewNode.id.startsWith('/') ? previewNode.id : `/${previewNode.id}`
+      const success = await api.drives.deleteFile(effectiveDriveId, path)
+      if (success) {
+        onFileDeleted?.()
+        closePreview()
+      } else {
+        alert('Failed to delete file. Please try again.')
+      }
+    } catch (e) {
+      console.error('[ContentPanel] Preview delete error:', e)
+      alert('An error occurred while deleting the file.')
+    }
+  }
+
+  const handleDownloadPreviewNode = async () => {
+    if (!previewNode || previewNode.type !== 'file' || !driveId || !currentDrive) return
+    
+    try {
+      console.log('[ContentPanel] Downloading file from preview:', previewNode.name)
+      toaster.showInfo('Download Started', `Downloading ${previewNode.name}...`)
+      
+      const result = await api?.drives?.downloadFile?.(driveId, previewNode.id, previewNode.name, currentDrive.name)
+      
+      if (result?.success) {
+        console.log('[ContentPanel] Successfully downloaded file:', previewNode.name, 'to', result.downloadPath)
+        toaster.showSuccess('Download Complete', `${previewNode.name} saved to Downloads/Teleporter/${currentDrive.name}/`, {
+          label: 'Open Folder',
+          onClick: () => api?.downloads?.openFolder?.(result.downloadPath)
+        })
+        // Dispatch event to refresh downloads modal
+        window.dispatchEvent(new CustomEvent('download-completed'))
+      } else {
+        console.error('[ContentPanel] Download failed:', result?.error)
+        toaster.showError('Download Failed', `Failed to download file: ${result?.error || 'Unknown error'}`)
+      }
+    } catch (e) {
+      console.error('[ContentPanel] Preview download error:', e)
+      toaster.showError('Download Failed', 'Failed to download file. Please try again.')
     }
   }
 
@@ -898,7 +989,7 @@ export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavig
       
       {selectedNode.type === 'folder' ? (
         <div className="h-full" onContextMenu={onRightClick}>
-          <FolderContents node={selectedNode} onFileClick={onFileClick} onNavigateUp={onNavigateUp} canNavigateUp={canNavigateUp} driveId={driveId} onFileDeleted={onFileDeleted} onPreviewAnchor={openPreviewFromRect} canWrite={canWrite} />
+          <FolderContents node={selectedNode} onFileClick={onFileClick} onNavigateUp={onNavigateUp} canNavigateUp={canNavigateUp} driveId={driveId} onFileDeleted={onFileDeleted} onPreviewAnchor={openPreviewFromRect} canWrite={canWrite} currentDrive={currentDrive} />
         </div>
       ) : (
         <>
@@ -915,11 +1006,56 @@ export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavig
 
       {/* Preview Modal with zoom-from-source animation */}
       {previewNode && (
-        <ZoomPreview open={isPreviewOpen} sourceRect={previewRect} onClose={closePreview} onExited={() => setPreviewNode(null)}>
-          <div className="max-h-[70vh] overflow-y-auto">
-            <FilePreview node={previewNode} />
+        <ZoomPreview 
+          open={isPreviewOpen} 
+          sourceRect={previewRect} 
+          onClose={closePreview} 
+          onExited={() => setPreviewNode(null)}
+          rightActions={
+            <>
+              {previewNode.type === 'file' && (
+                <button 
+                  onClick={handleDownloadPreviewNode} 
+                  className="text-neutral-300 hover:text-white px-2 py-1"
+                  title="Download"
+                >
+                  <IconDownload size={16} />
+                </button>
+              )}
+              {previewNode.type === 'file' && canWrite && (
+                <button 
+                  onClick={handleDeletePreviewNode} 
+                  className="text-red-400 hover:text-red-300 px-2 py-1"
+                  title="Delete"
+                >
+                  <IconTrash size={16} />
+                </button>
+              )}
+            </>
+          }
+        >
+          <div className="h-full overflow-hidden flex flex-col">
+            <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+              {/* Upper half: preview or folder cover */}
+              <div className="basis-1/2 min-h-0 max-h-1/2  overflow-hidden">
+                {previewNode.type === 'file' ? (
+                  <FilePreview node={previewNode} insideModal />
+                ) : (
+                  <div className="h-full w-full flex items-center justify-center">
+                    <img src={FolderIcon} alt="Folder" className="w-12 h-12 opacity-80" />
+                  </div>
+                )}
+              </div>
+              {/* Lower half: metadata/details (scrollable) */}
+              <div className="flex-1 min-h-0 overflow-y-auto">
+                {previewNode.type === 'file' ? (
+                  <FileMetadata node={previewNode} />
+                ) : (
+                  <FolderDetails driveId={driveId} folderId={previewNode.id} />
+                )}
+              </div>
+            </div>
           </div>
-          <FileMetadata node={previewNode} />
         </ZoomPreview>
       )}
 
@@ -928,7 +1064,101 @@ export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavig
   );
 }
 
-function ZoomPreview({ open = true, sourceRect, onClose, onExited, children }: { open?: boolean; sourceRect: DOMRect | null; onClose: () => void; onExited?: () => void; children: React.ReactNode }) {
+function FolderDetails({ driveId, folderId }: { driveId?: string; folderId: string }) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const api: any = (window as any)?.api
+  const [stats, setStats] = React.useState<{ files: number; folders: number; sizeBytes: number; createdAt?: string } | null>(null)
+  const [loading, setLoading] = React.useState(false)
+  const [error, setError] = React.useState<string | null>(null)
+
+  React.useEffect(() => {
+    let mounted = true
+    ;(async () => {
+      try {
+        setLoading(true)
+        setError(null)
+        const effectiveDriveId = driveId || (window.location.hash.match(/#\/drive\/([^/]+)/)?.[1] ?? null)
+        if (!effectiveDriveId || !api?.drives?.listFolder) {
+          setError('Folder info unavailable')
+          return
+        }
+        const folderPath = folderId.startsWith('/') ? folderId : `/${folderId}`
+        let createdAt: string | undefined
+        try {
+          // Try to fetch the folder entry for createdAt (optional)
+          const entries: Array<{ key: string; value: any }> = await api.drives.listFolder(effectiveDriveId, folderPath, false)
+          createdAt = entries.find((e: any) => e.key === folderPath)?.value?.metadata?.createdAt
+        } catch {}
+        const stats = await api.drives.getFolderStats(effectiveDriveId, folderPath)
+        if (!mounted) return
+        setStats({ ...stats, createdAt })
+      } catch (e: any) {
+        if (!mounted) return
+        setError(String(e?.message || e))
+      } finally {
+        if (mounted) setLoading(false)
+      }
+    })()
+    return () => { mounted = false }
+  }, [api, driveId, folderId])
+
+  const formatBytes = (bytes: number): string => {
+    if (bytes === 0) return '0 B'
+    const k = 1024
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
+    const i = Math.floor(Math.log(bytes) / Math.log(k))
+    return `${(bytes / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`
+  }
+
+  return (
+    <div className="p-4 space-y-4">
+      <div className="flex items-center justify-between">
+        <h4 className="text-base md:text-lg font-semibold text-white">Folder Details</h4>
+      </div>
+      {loading && <div className="text-neutral-300">Loading…</div>}
+      {error && <div className="text-red-400">{error}</div>}
+      {stats && (
+        <>
+          {/* Stat cards */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="bg-white/5 rounded-xl p-4 border border-white/10">
+              <div className="text-xs uppercase tracking-wider text-neutral-400 mb-1">Files</div>
+              <div className="text-2xl font-semibold text-white">{stats.files}</div>
+            </div>
+            <div className="bg-white/5 rounded-xl p-4 border border-white/10">
+              <div className="text-xs uppercase tracking-wider text-neutral-400 mb-1">Folders</div>
+              <div className="text-2xl font-semibold text-white">{stats.folders}</div>
+            </div>
+            <div className="bg-white/5 rounded-xl p-4 border border-white/10">
+              <div className="text-xs uppercase tracking-wider text-neutral-400 mb-1">Approx Size</div>
+              <div className="text-2xl font-semibold text-white">{formatBytes(stats.sizeBytes)}</div>
+            </div>
+            <div className="bg-white/5 rounded-xl p-4 border border-white/10">
+              <div className="text-xs uppercase tracking-wider text-neutral-400 mb-1">Created</div>
+              <div className="text-sm font-medium text-neutral-200">{stats.createdAt ? new Date(stats.createdAt).toLocaleString() : '—'}</div>
+            </div>
+          </div>
+
+          {/* Key/value list (optional extended details) */}
+          <div className="bg-white/5 rounded-xl border border-white/10">
+            <div className="divide-y divide-white/10">
+              <div className="grid grid-cols-3 gap-3 p-3 text-sm">
+                <div className="col-span-1 text-neutral-400">Path</div>
+                <div className="col-span-2 text-neutral-200 break-all font-mono opacity-80">{folderId}</div>
+              </div>
+              <div className="grid grid-cols-3 gap-3 p-3 text-sm">
+                <div className="col-span-1 text-neutral-400">Items Total</div>
+                <div className="col-span-2 text-neutral-200">{stats.files + stats.folders}</div>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+function ZoomPreview({ open = true, sourceRect, onClose, onExited, rightActions, children }: { open?: boolean; sourceRect: DOMRect | null; onClose: () => void; onExited?: () => void; rightActions?: React.ReactNode; children: React.ReactNode }) {
   const [mounted, setMounted] = React.useState(false)
   const [viewport, setViewport] = React.useState<{ w: number; h: number }>({ w: window.innerWidth, h: window.innerHeight })
 
@@ -977,8 +1207,12 @@ function ZoomPreview({ open = true, sourceRect, onClose, onExited, children }: {
             className="fixed z-[101] rounded-2xl overflow-hidden border border-white/10 bg-neutral-950 shadow-2xl"
           >
             {/* Header */}
-            <div className="flex items-center justify-end p-2 border-b border-white/10">
-              <button onClick={onClose} className="text-neutral-400 hover:text-white px-2 py-1">✕</button>
+            <div className="flex items-center justify-between p-2 border-b border-white/10">
+              <div className="flex items-center gap-1" />
+              <div className="flex items-center gap-1">
+                {rightActions}
+                <button onClick={onClose} className="text-neutral-400 hover:text-white px-2 py-1" title="Close">✕</button>
+              </div>
             </div>
             {/* Body */}
             <div className="max-h-[80vh] overflow-y-auto">

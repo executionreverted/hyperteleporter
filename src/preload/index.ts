@@ -15,7 +15,17 @@ const api = {
       return ipcRenderer.invoke('drives:uploadFiles', { driveId, folderPath, files: payload })
     },
     deleteFile: async (driveId: string, path: string) => ipcRenderer.invoke('drives:deleteFile', { driveId, path }),
-    getStorageInfo: async (driveId: string) => ipcRenderer.invoke('drives:getStorageInfo', { driveId })
+    getStorageInfo: async (driveId: string) => ipcRenderer.invoke('drives:getStorageInfo', { driveId }),
+    getFolderStats: async (driveId: string, folder: string) => ipcRenderer.invoke('drives:getFolderStats', { driveId, folder }),
+    downloadFile: async (driveId: string, filePath: string, fileName: string, driveName: string) => ipcRenderer.invoke('drives:downloadFile', { driveId, filePath, fileName, driveName }),
+    downloadFolder: async (driveId: string, folder: string, folderName: string, driveName: string) => ipcRenderer.invoke('drives:downloadFolder', { driveId, folder, folderName, driveName }),
+    checkSyncStatus: async (driveId: string) => ipcRenderer.invoke('drives:checkSyncStatus', { driveId }),
+    getSyncStatus: async (driveId: string) => ipcRenderer.invoke('drives:getSyncStatus', { driveId })
+  },
+  downloads: {
+    list: async () => ipcRenderer.invoke('downloads:list'),
+    remove: async (id: string) => ipcRenderer.invoke('downloads:remove', { id }),
+    openFolder: async (path: string) => ipcRenderer.invoke('downloads:openFolder', { path })
   },
   user: {
     getProfile: async () => ipcRenderer.invoke('user:getProfile'),
