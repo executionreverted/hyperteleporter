@@ -11,7 +11,7 @@ import { ContextMenu, useContextMenu, ContextMenuAction } from "../../../../comp
 import FileSearchModal from "../common/FileSearchModal";
 import { useParams, useNavigate } from "react-router-dom";
 import { IconFolderPlus, IconShare, IconUpload } from "@tabler/icons-react";
-import { IconHome, IconSettings, IconUser } from "@tabler/icons-react";
+import { IconHome, IconSettings, IconUser, IconLayoutNavbarCollapse, IconLayoutNavbarExpand } from "@tabler/icons-react";
 // Removed dummy data usage
 import Shuffle from "../../../../components/ui/Shuffle";
 import { Modal, ModalBody, ModalContent, ModalFooter, ModalTrigger, useModal } from "../../../../components/ui/animated-modal";
@@ -405,6 +405,13 @@ export function DrivePage() {
       return;
     }
     
+    // Handle "..." indicator - set parent as new root
+    if (node.name === '...' && node.id.includes('__more__')) {
+      const parentPath = node.id.replace('/__more__', '');
+      setTreeRoot(parentPath);
+      return;
+    }
+    
     // If it's a folder, set it as the new tree root
     if (node.type === 'folder') {
       setTreeRoot(node.id);
@@ -634,10 +641,37 @@ export function DrivePage() {
     collapseAllFolders();
   };
 
+  // Process tree nodes with depth limit and "..." indicator
+  const processTreeNodes = (nodes: TreeNode[], currentDepth: number = 0, maxDepth: number = 8): TreeNode[] => {
+    if (currentDepth >= maxDepth) {
+      return [];
+    }
+    
+    return nodes.map(node => {
+      const processedNode: TreeNode = {
+        ...node,
+        children: node.children ? processTreeNodes(node.children, currentDepth + 1, maxDepth) : []
+      };
+      
+      // If we're at max depth and there are more children, add "..." indicator
+      if (currentDepth === maxDepth - 1 && node.children && node.children.length > 0) {
+        const moreIndicator: TreeNode = {
+          id: `${node.id}/__more__`,
+          name: '...',
+          type: 'folder',
+          children: []
+        };
+        processedNode.children = [moreIndicator];
+      }
+      
+      return processedNode;
+    });
+  };
+
   // Get current tree data based on tree root (without ".." navigation)
   const getCurrentTreeData = (): TreeNode[] => {
     if (treeRoot === '/') {
-      return completeFileSystem;
+      return processTreeNodes(completeFileSystem);
     }
     
     // Find the node at the tree root
@@ -646,7 +680,7 @@ export function DrivePage() {
       return []; // Return empty array for fallback
     }
     
-    return rootNode.children;
+    return processTreeNodes(rootNode.children);
   };
 
   // Check if current folder is actually empty (no real children, only "..")
@@ -712,7 +746,17 @@ export function DrivePage() {
   // Handle breadcrumb navigation
   const handleBreadcrumbClick = (path: string) => {
     setTreeRoot(path);
-    setSelectedNode(undefined); // Clear tree view selection
+    
+    // Find and select the node we're navigating to
+    if (path === '/') {
+      // If navigating to root, select the first folder if available
+      const firstFolder = completeFileSystem.find(node => node.type === 'folder');
+      setSelectedNode(firstFolder);
+    } else {
+      // Find the specific node we're navigating to
+      const targetNode = findNodeById(completeFileSystem, path);
+      setSelectedNode(targetNode);
+    }
   };
 
   // Handle ellipsis hover with delay
@@ -931,18 +975,14 @@ export function DrivePage() {
                           className="p-1.5 rounded hover:bg-black/20 text-neutral-400 hover:text-white transition-colors"
                           title="Expand All"
                         >
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
-                          </svg>
+                          <IconLayoutNavbarExpand size={16} />
                         </button>
                         <button
                           onClick={handleCollapseAll}
                           className="p-1.5 rounded hover:bg-black/20 text-neutral-400 hover:text-white transition-colors"
                           title="Collapse All"
                         >
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/>
-                          </svg>
+                          <IconLayoutNavbarCollapse size={16} />
                         </button>
                       </div>
                     </div>
@@ -953,7 +993,10 @@ export function DrivePage() {
                       {treeRoot !== '/' && (
                         <div className="p-2 border-b border-neutral-700">
                           <button
-                            onClick={() => handleBreadcrumbClick(treeRoot.split('/').slice(0, -1).join('/') || '/')}
+                            onClick={() => {
+                              const parentPath = treeRoot.split('/').slice(0, -1).join('/') || '/';
+                              handleBreadcrumbClick(parentPath);
+                            }}
                             className="flex items-center gap-2 w-full px-3 py-2 text-left text-neutral-400 hover:text-white hover:bg-black/20 rounded transition-colors"
                           >
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
