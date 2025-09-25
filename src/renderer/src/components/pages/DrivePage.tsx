@@ -23,6 +23,7 @@ import { MagicButton } from "../common/MagicButton";
 import MagicButtonWide from "../../../../components/ui/magic-button-wide";
 import { DelayedTooltip } from "../../../../components/ui/delayed-tooltip";
 import { HardDriveIcon } from "../../../../components/ui/hard-drive-icon";
+import { ShareModal } from "../common/ShareModal";
 
 // Start empty; will load from Hyperdrive via IPC
 const mockFileSystem: TreeNode[] = [];
@@ -55,6 +56,10 @@ export function DrivePage() {
   const [hideTimeout, setHideTimeout] = useState<NodeJS.Timeout | null>(null);
   const [showNewFolderModal, setShowNewFolderModal] = useState(false);
   const [targetFolderForNewFolder, setTargetFolderForNewFolder] = useState<string>('/');
+  
+  // Drive information state
+  const [currentDrive, setCurrentDrive] = useState<{ id: string; name: string; driveKey: string } | null>(null);
+  
   const params = useParams();
   const navigate = useNavigate();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -123,6 +128,33 @@ export function DrivePage() {
       }
     };
   }, [hideTimeout]);
+
+  // Load drive information
+  useEffect(() => {
+    let mounted = true;
+    async function loadDriveInfo() {
+      try {
+        const driveId = params.driveId as string | undefined;
+        if (!driveId || !api?.drives?.list) return;
+        
+        const drives = await api.drives.list();
+        if (!mounted) return;
+        
+        const currentDriveInfo = drives.find((d: any) => d.id === driveId);
+        if (currentDriveInfo) {
+          setCurrentDrive({
+            id: currentDriveInfo.id,
+            name: currentDriveInfo.name,
+            driveKey: currentDriveInfo.publicKeyHex
+          });
+        }
+      } catch (error) {
+        console.error('[DrivePage] Failed to load drive info:', error);
+      }
+    }
+    loadDriveInfo();
+    return () => { mounted = false };
+  }, [api, params.driveId]);
 
   // Load folder listing for this drive
   useEffect(() => {
@@ -1213,6 +1245,22 @@ export function DrivePage() {
                     </svg>
                     <span>Refresh</span>
                   </button>
+                  {/* Share Button */}
+                  {currentDrive && (
+                    <ShareModal
+                      driveKey={currentDrive.driveKey}
+                      driveName={currentDrive.name}
+                      triggerButton={
+                        <button
+                          className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-neutral-400 hover:bg-black/20 hover:text-white transition-colors rounded-lg"
+                          title="Share Drive"
+                        >
+                          <IconShare size={16} />
+                          <span>Share</span>
+                        </button>
+                      }
+                    />
+                  )}
                   {(() => {
                     const driveId = params.driveId as string
                     const currentFolderPath = getCurrentFolderPath()
