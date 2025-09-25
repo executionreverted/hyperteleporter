@@ -1597,6 +1597,8 @@ export function DrivePage() {
               onRefresh={reloadCurrentFolder}
               canWrite={currentDrive?.isWritable ?? true}
               currentDrive={currentDrive ? { name: currentDrive.name, id: currentDrive.id } : undefined}
+              syncStatus={syncStatus}
+              isDriveSyncing={isDriveSyncing}
             />
           )}
           
@@ -1637,6 +1639,18 @@ export function DrivePage() {
         isOpen={showDownloadsModal}
         onClose={() => setShowDownloadsModal(false)}
       />
+      
+      {/* Peers Indicator - Bottom Right */}
+      {syncStatus && (
+        <div className="fixed bottom-1 right-4 z-30 border-dashed bg-black/70 backdrop-blur-sm border border-white/10 rounded-lg px-3 flex items-center gap-2 text-sm" style={{ height: '58px' }}>
+          <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+          <span className="text-white font-medium">{syncStatus.peers}</span>
+          <span className="text-neutral-400">peer{syncStatus.peers !== 1 ? 's' : ''}</span>
+          {isDriveSyncing && (
+            <div className="w-1 h-1 bg-blue-400 rounded-full animate-pulse ml-1"></div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -26,6 +26,8 @@ interface ContentPanelProps {
   className?: string;
   canWrite?: boolean;
   currentDrive?: { name: string; id: string };
+  syncStatus?: { version: number; peers: number; isFindingPeers: boolean };
+  isDriveSyncing?: boolean;
 }
 
 import { FileIcon } from "./file-icons";
@@ -718,7 +720,7 @@ const FolderContents = ({ node, onFileClick, onNavigateUp, canNavigateUp, driveI
   );
 };
 
-export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavigateUp, driveId, onFileDeleted, onCreateFolder, onRefresh, className, canWrite = true, currentDrive }: ContentPanelProps) {
+export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavigateUp, driveId, onFileDeleted, onCreateFolder, onRefresh, className, canWrite = true, currentDrive, syncStatus, isDriveSyncing }: ContentPanelProps) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const api: any = (window as any)?.api
   const toaster = useToaster()
