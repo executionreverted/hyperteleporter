@@ -128,8 +128,8 @@ const TreeNodeComponent = ({ node, level, onNodeSelect, onNodeToggle, selectedNo
 
   const handleToggle = (e: React.MouseEvent) => {
     e.stopPropagation();
-    // Allow expanding only up to 3 nested levels (levels 0, 1, and 2 can expand their children)
-    if (hasChildren && level < 3) {
+    // Simple: if it has children, allow expansion
+    if (hasChildren) {
       onNodeToggle?.(node);
     }
   };
@@ -142,10 +142,7 @@ const TreeNodeComponent = ({ node, level, onNodeSelect, onNodeToggle, selectedNo
     // @ts-ignore - window.setTimeout returns a number in browsers
     clickTimeoutRef.current = window.setTimeout(() => {
       onNodeSelect?.(node);
-      // If first focus on a collapsed folder, expand it
-      if (node.type === 'folder' && hasChildren && level < 3 && !isExpanded) {
-        onNodeToggle?.(node);
-      }
+      // No auto-expansion - user controls everything
       clickTimeoutRef.current = null;
     }, 200);
   };
@@ -253,7 +250,7 @@ const TreeNodeComponent = ({ node, level, onNodeSelect, onNodeToggle, selectedNo
         whileHover={{ x: 2 }}
         transition={{ duration: 0.2 }}
       >
-        {hasChildren && level < 3 && (
+        {hasChildren && (
           <button
             onClick={handleToggle}
             className="p-0.5 hover:bg-black/20 rounded transition-colors"
@@ -270,13 +267,19 @@ const TreeNodeComponent = ({ node, level, onNodeSelect, onNodeToggle, selectedNo
         {!hasChildren && <div className="w-4" />}
         
         <div className="flex items-center gap-2 flex-1 min-w-0">
-          {node.type === 'folder' ? (
+          {node.name === '...' && node.id.includes('__more__') ? (
+            <IconChevronRight size={16} className="text-blue-400" />
+          ) : node.type === 'folder' ? (
             <FolderIcon isOpen={isExpanded} />
           ) : (
             <FileIcon type={node.name} />
           )}
           
-          <span className="truncate text-sm text-neutral-300">
+          <span className={`truncate text-sm ${
+            node.name === '...' && node.id.includes('__more__') 
+              ? 'text-blue-400 italic font-medium' 
+              : 'text-neutral-300'
+          }`}>
             {node.name}
           </span>
           
@@ -450,21 +453,7 @@ export function TreeView({
           transition={{ duration: 0.12, ease: "easeOut" }}
           className="space-y-1 p-2"
         >
-          {/* Parent navigation item - always reserve space, show content only when navigable */}
-          {showBreadcrumb && (
-            <div
-              className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors select-none ${
-                breadcrumbPath.length > 0 && onNavigateUp
-                  ? 'hover:bg-black/20 cursor-pointer text-neutral-400 hover:text-white'
-                  : 'text-transparent cursor-default'
-              }`}
-              onClick={breadcrumbPath.length > 0 && onNavigateUp ? onNavigateUp : undefined}
-              title={breadcrumbPath.length > 0 ? "Go to parent folder" : undefined}
-            >
-              <IconArrowUp size={16} />
-              <span className="text-sm font-medium">..</span>
-            </div>
-          )}
+          {/* Parent navigation removed - handled in tree data */}
           
           {data.map((node) => (
             <TreeNodeComponent

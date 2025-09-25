@@ -38,10 +38,17 @@ const quickActions = [
 
 export function DrivePage() {
   const [selectedNode, setSelectedNode] = useState<TreeNode | undefined>();
-  const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
   const [fileSystem, setFileSystem] = useState<TreeNode[]>(mockFileSystem);
+  const [completeFileSystem, setCompleteFileSystem] = useState<TreeNode[]>(mockFileSystem);
   const [lastFocusedFolder, setLastFocusedFolder] = useState<TreeNode | undefined>();
+  
+  // Tree system state
+  const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
+  const [treeRoot, setTreeRoot] = useState<string>('/'); // Current root path for tree
+  const [hoveredEllipsis, setHoveredEllipsis] = useState<boolean>(false);
+  const [hideTimeout, setHideTimeout] = useState<NodeJS.Timeout | null>(null);
   const [showNewFolderModal, setShowNewFolderModal] = useState(false);
+  const [targetFolderForNewFolder, setTargetFolderForNewFolder] = useState<string>('/');
   const params = useParams();
   const navigate = useNavigate();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -93,6 +100,15 @@ export function DrivePage() {
     }
   }, [])
 
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (hideTimeout) {
+        clearTimeout(hideTimeout);
+      }
+    };
+  }, [hideTimeout]);
+
   // Load folder listing for this drive
   useEffect(() => {
     let mounted = true;
@@ -100,6 +116,8 @@ export function DrivePage() {
       try {
         const driveId = params.driveId as string | undefined;
         if (!driveId) return;
+        
+        // Load root folder contents for current view
         const entries: Array<{ key: string, value: any }> = await invokeListFolder(driveId, '/', false);
         console.log('[DrivePage] listFolder / entries=', entries)
         if (!mounted) return;
@@ -112,6 +130,31 @@ export function DrivePage() {
         setNavigationStack([]);
         setBreadcrumbPath([]);
         setLastFocusedFolder(undefined);
+        
+        
+        // Load complete file system for search
+        const allEntries: Array<{ key: string, value: any }> = await invokeListFolder(driveId, '/', true);
+        console.log('[DrivePage] complete file system entries=', allEntries.map(e => e.key))
+        if (!mounted) return;
+        const completeTree = buildCompleteFileSystemTree(allEntries);
+        console.log('[DrivePage] computed complete file system tree', completeTree)
+        console.log('[DrivePage] flattened files for search:', flattenFilesForDebug(completeTree))
+        
+        // Log the complete tree structure for debugging
+        console.log('[DEBUG] Complete tree structure:');
+        const logTree = (nodes: TreeNode[], depth = 0) => {
+          const indent = '  '.repeat(depth);
+          nodes.forEach(node => {
+            console.log(`${indent}${node.name} (${node.id}) - children: ${node.children?.length || 0}`);
+            if (node.children && node.children.length > 0) {
+              logTree(node.children, depth + 1);
+            }
+          });
+        };
+        logTree(completeTree);
+        
+        setCompleteFileSystem(completeTree);
+        
       } catch {}
     }
     loadRoot();
@@ -147,6 +190,94 @@ export function DrivePage() {
     return [...folders, ...files]
   }
 
+  function buildCompleteFileSystemTree(entries: Array<{ key: string, value: any }>): TreeNode[] {
+    const tree: { [key: string]: TreeNode } = {}
+    
+    // First pass: create all nodes (including intermediate folders)
+    for (const entry of entries) {
+      const key = entry.key
+      if (key === '/') continue // skip root
+      
+      const segments = key.split('/').filter(Boolean)
+      if (segments.length === 0) continue
+      
+      const isFile = !!entry.value?.blob || !!entry.value?.linkname
+      
+      // Skip .keep files but still create folder structure
+      if (segments[segments.length - 1] === '.keep') {
+        // Create intermediate folders for .keep files
+        for (let i = 1; i < segments.length; i++) {
+          const folderPath = '/' + segments.slice(0, i).join('/')
+          if (!tree[folderPath]) {
+            tree[folderPath] = {
+              id: folderPath,
+              name: segments[i - 1],
+              type: 'folder',
+              children: []
+            }
+          }
+        }
+        continue
+      }
+      
+      const node: TreeNode = {
+        id: key,
+        name: segments[segments.length - 1],
+        type: isFile ? 'file' : 'folder',
+        children: isFile ? undefined : []
+      }
+      
+      tree[key] = node
+      
+      // Create intermediate folders for nested items
+      for (let i = 1; i < segments.length; i++) {
+        const folderPath = '/' + segments.slice(0, i).join('/')
+        if (!tree[folderPath]) {
+          tree[folderPath] = {
+            id: folderPath,
+            name: segments[i - 1],
+            type: 'folder',
+            children: []
+          }
+        }
+      }
+    }
+    
+    // Second pass: build hierarchy
+    const rootNodes: TreeNode[] = []
+    for (const key in tree) {
+      const node = tree[key]
+      const segments = key.split('/').filter(Boolean)
+      
+      if (segments.length === 1) {
+        // Root level item
+        rootNodes.push(node)
+      } else {
+        // Nested item - find parent
+        const parentPath = '/' + segments.slice(0, -1).join('/')
+        const parent = tree[parentPath]
+        if (parent && parent.type === 'folder' && parent.children) {
+          parent.children.push(node)
+        }
+      }
+    }
+    
+    return rootNodes
+  }
+
+  function flattenFilesForDebug(nodes: TreeNode[], parentPath: string[] = []): string[] {
+    const results: string[] = []
+    for (const node of nodes) {
+      const currentPath = [...parentPath, node.name]
+      if (node.type === "file") {
+        results.push(currentPath.join(" / "))
+      } else if (node.children && node.children.length > 0) {
+        results.push(...flattenFilesForDebug(node.children, currentPath))
+      }
+    }
+    return results
+  }
+
   function getCurrentFolderPath(): string {
     const names = breadcrumbPath.filter((n) => n && n !== 'Root')
     return names.length > 0 ? '/' + names.join('/') : '/'
@@ -158,15 +289,21 @@ export function DrivePage() {
     const currentFolderPath = getCurrentFolderPath()
     const entries: Array<{ key: string, value: any }> = await invokeListFolder(driveId, currentFolderPath, false)
     console.log('[DrivePage] reload entries for', currentFolderPath, entries)
+    
+    // Reload complete file system for search
     try {
       const allEntries: Array<{ key: string, value: any }> = await invokeListFolder(driveId, '/', true)
       console.log('[DrivePage] full drive entries (recursive)=', allEntries.map(e => e.key))
+      const completeTree = buildCompleteFileSystemTree(allEntries)
+      setCompleteFileSystem(completeTree)
     } catch {}
+    
     const children = buildNodesForFolder(currentFolderPath, entries)
     console.log('[DrivePage] computed children for', currentFolderPath, children)
     setFileSystem(children)
     setCurrentView(children)
     setSelectedNode({ id: 'virtual-root', name: currentFolderPath === '/' ? 'Root' : currentFolderPath.split('/').filter(Boolean).slice(-1)[0] || 'Root', type: 'folder', children })
+    
   }
 
   function NewFolderModal({ driveId, currentFolder, onCreated, trigger, isOpen, onClose, onOpen }: { driveId: string, currentFolder: string, onCreated: () => Promise<void>, trigger: React.ReactNode, isOpen: boolean, onClose: () => void, onOpen: () => void }) {
@@ -251,20 +388,6 @@ export function DrivePage() {
   const [breadcrumbPath, setBreadcrumbPath] = useState<string[]>([]);
   const [navigationStack, setNavigationStack] = useState<TreeNode[][]>([]);
   const [navigationDirection, setNavigationDirection] = useState<'forward' | 'backward'>('forward');
-  // Helper: find the path from root to a node id
-  const findPathToNode = (nodes: TreeNode[], targetId: string, path: TreeNode[] = []): TreeNode[] | null => {
-    for (const node of nodes) {
-      const nextPath = [...path, node];
-      if (node.id === targetId) return nextPath;
-      if (node.children) {
-        const found = findPathToNode(node.children, targetId, nextPath);
-        if (found) return found;
-      }
-    }
-    return null;
-  };
-
-  const selectedNodePath = selectedNode?.id ? findPathToNode(fileSystem, selectedNode.id) : null;
   const canGoBack = (selectedNode?.type === 'file' && !!lastFocusedFolder) || navigationStack.length > 0 || breadcrumbPath.length > 0;
   
   // Context menu state
@@ -272,30 +395,59 @@ export function DrivePage() {
   const [contextActions, setContextActions] = useState<ContextMenuAction[]>([]);
 
   const handleNodeSelect = (node: TreeNode) => {
+    console.log('[DEBUG] handleNodeSelect called with node:', node.name, 'type:', node.type);
     setSelectedNode(node);
+    
+    // Handle parent navigation (..)
+    if (node.name === '..') {
+      const parentPath = treeRoot.split('/').slice(0, -1).join('/') || '/';
+      setTreeRoot(parentPath);
+      return;
+    }
+    
+    // If it's a folder, set it as the new tree root
+    if (node.type === 'folder') {
+      setTreeRoot(node.id);
+    }
   };
 
   const handleFileClick = async (node: TreeNode) => {
     if (node.type === 'folder') {
-      const driveId = params.driveId as string | undefined
-      if (!driveId) return
+      // Use the complete file system tree instead of reloading from drive
+      const folderNode = findNodeByPath(completeFileSystem, node.id.split('/').filter(Boolean))
       
-      try {
-        // Load folder contents from IPC first
-        const folderPath = node.id.startsWith('/') ? node.id : `/${node.id}`
-        const entries: Array<{ key: string, value: any }> = await invokeListFolder(driveId, folderPath, false)
-        const children = buildNodesForFolder(folderPath, entries)
+      if (folderNode && folderNode.children) {
+        // Build the correct breadcrumb path from the node's ID
+        const pathSegments = node.id.split('/').filter(Boolean);
         
         // Batch all state updates together to prevent flickering
         startTransition(() => {
           setNavigationDirection('forward');
           setNavigationStack((prev) => [...prev, currentView]);
-          setBreadcrumbPath((prev) => [...prev, node.name]);
-          setCurrentView(children);
-          setExpandedNodes(new Set());
-          setSelectedNode({ ...node, children });
+          setCurrentView(folderNode.children || []);
+          setSelectedNode({ ...node, children: folderNode.children });
         });
-      } catch {}
+      } else {
+        // Fallback: try to load from drive if not found in complete tree
+        const driveId = params.driveId as string | undefined
+        if (!driveId) return
+        
+        try {
+          const folderPath = node.id.startsWith('/') ? node.id : `/${node.id}`
+          const entries: Array<{ key: string, value: any }> = await invokeListFolder(driveId, folderPath, false)
+          const children = buildNodesForFolder(folderPath, entries)
+          
+          // Build the correct breadcrumb path from the node's ID
+          const pathSegments = node.id.split('/').filter(Boolean);
+          
+          startTransition(() => {
+            setNavigationDirection('forward');
+            setNavigationStack((prev) => [...prev, currentView]);
+            setCurrentView(children);
+            setSelectedNode({ ...node, children });
+          });
+        } catch {}
+      }
     } else {
       // Capture the parent folder context when previewing a file
       if (selectedNode?.type === 'folder') {
@@ -310,12 +462,61 @@ export function DrivePage() {
     openContextMenu(event, actions);
   };
 
+  const handleCreateFolderFromTree = (parentPath: string) => {
+    // parentPath is either '/' for root or the folder ID for nested folders
+    const driveId = params.driveId as string;
+    if (!driveId) return;
+    
+    // Set the current folder path for the new folder modal
+    const currentFolderPath = parentPath === '/' ? '/' : parentPath;
+    
+    // Open the new folder modal with the correct parent path
+    setShowNewFolderModal(true);
+    
+    // We need to pass the parent path to the modal somehow
+    // For now, we'll use a state to track the target folder
+    setTargetFolderForNewFolder(currentFolderPath);
+  };
+
+  const handleCreateFolderWithAutoExpand = async () => {
+    // After folder creation, reload the complete file system first to get the updated tree
+    const parentPath = targetFolderForNewFolder;
+    const parentNodeId = parentPath === '/' ? 'virtual-root' : parentPath;
+    
+    const driveId = params.driveId as string;
+    if (driveId) {
+      try {
+        // Reload the complete file system to get the updated tree with the new folder
+        const allEntries: Array<{ key: string, value: any }> = await invokeListFolder(driveId, '/', true);
+        const updatedCompleteTree = buildCompleteFileSystemTree(allEntries);
+        setCompleteFileSystem(updatedCompleteTree);
+        
+        // Reload the current folder to show the newly created folder
+        await reloadCurrentFolder();
+        
+        
+        // Find the updated parent node with the new folder
+        const updatedParentNode = findNodeById(updatedCompleteTree, parentNodeId);
+        if (updatedParentNode) {
+          // Select the parent folder to show its contents with the new folder
+          setSelectedNode(updatedParentNode);
+        }
+      } catch (error) {
+        console.error('Failed to reload complete file system:', error);
+        // Fallback: just select the parent node
+        const parentNode = findNodeById(completeFileSystem, parentNodeId);
+        if (parentNode) {
+          setSelectedNode(parentNode);
+        }
+      }
+    }
+  };
+
   const handleGoHome = () => {
     setNavigationDirection('backward');
     setCurrentView(fileSystem);
     setBreadcrumbPath([]);
     setNavigationStack([]);
-    setExpandedNodes(new Set());
     setSelectedNode({ id: 'virtual-root', name: 'Root', type: 'folder', children: fileSystem });
   };
 
@@ -328,51 +529,11 @@ export function DrivePage() {
   };
 
   const handleNavigateToFolder = async (node: TreeNode) => {
-    setNavigationDirection('forward');
-    const driveId = params.driveId as string | undefined
-    if (!driveId) return
-    try {
-      setNavigationStack(prev => [...prev, currentView])
-      setBreadcrumbPath(prev => [...prev, node.name])
-      const folderPath = node.id.startsWith('/') ? node.id : `/${node.id}`
-      const entries: Array<{ key: string, value: any }> = await invokeListFolder(driveId, folderPath, false)
-      const children = buildNodesForFolder(folderPath, entries)
-      setCurrentView(children)
-      setExpandedNodes(new Set())
-      setSelectedNode({ ...node, children })
-    } catch {}
+    // TODO: Implement folder navigation
   };
 
   const handleNavigateUp = () => {
-    if (navigationStack.length > 0) {
-      setNavigationDirection('backward');
-      // Determine previous view and pop stack
-      const previousView = navigationStack[navigationStack.length - 1];
-      setCurrentView(previousView);
-      setNavigationStack(prev => prev.slice(0, -1));
-      
-      // Update breadcrumb path and set selected node to a virtual parent folder
-      setBreadcrumbPath(prev => {
-        const newPath = prev.slice(0, -1);
-        const parentName = newPath.length > 0 ? newPath[newPath.length - 1] : 'Root';
-        const virtualId = `virtual-${newPath.join('/') || 'root'}`;
-        setSelectedNode({ id: virtualId, name: parentName, type: 'folder', children: previousView });
-        return newPath;
-      });
-      
-      // Clear expanded nodes
-      setExpandedNodes(new Set());
-    } else if (breadcrumbPath.length > 0) {
-      // Fallback: if stack is empty but breadcrumb says we're not at root,
-      // go to root view to keep UX consistent
-      setNavigationDirection('backward');
-      setCurrentView(fileSystem);
-      setBreadcrumbPath([]);
-      setNavigationStack([]);
-      setExpandedNodes(new Set());
-      // At root: show root contents
-      setSelectedNode({ id: 'virtual-root', name: 'Root', type: 'folder', children: fileSystem });
-    }
+    // TODO: Implement navigate up functionality
   };
 
   const handleBack = () => {
@@ -391,35 +552,9 @@ export function DrivePage() {
         }
         return next;
       });
-      // Reset expansion for consistency in the tree view
-      setExpandedNodes(new Set());
       // Clear the last focused folder to avoid repeated overrides
       setLastFocusedFolder(undefined);
       // Do not mutate breadcrumb or navigationStack in this case
-      return;
-    }
-    // If previewing a folder that has a parent but stack/breadcrumb are empty (e.g., selected via tree)
-    if (selectedNode?.type === 'folder' && selectedNodePath) {
-      // If deeper than top-level, go to actual parent in the path
-      if (selectedNodePath.length > 1) {
-        const parent = selectedNodePath[selectedNodePath.length - 2];
-        setNavigationDirection('backward');
-        setSelectedNode(parent);
-        if (parent.children) {
-          setCurrentView(parent.children);
-        }
-        const names = selectedNodePath.slice(0, -1).map(n => n.name);
-        setBreadcrumbPath(names);
-        setExpandedNodes(new Set());
-        return;
-      }
-      // If top-level, go to virtual root
-      setNavigationDirection('backward');
-      setCurrentView(fileSystem);
-      setBreadcrumbPath([]);
-      setNavigationStack([]);
-      setExpandedNodes(new Set());
-      setSelectedNode({ id: 'virtual-root', name: 'Root', type: 'folder', children: fileSystem });
       return;
     }
     // Fallback to normal navigate up behavior
@@ -470,6 +605,133 @@ export function DrivePage() {
     });
   };
 
+  // Expand all folders recursively
+  const expandAllFolders = (nodes: TreeNode[]): Set<string> => {
+    const expanded = new Set<string>();
+    const traverse = (nodeList: TreeNode[]) => {
+      nodeList.forEach(node => {
+        if (node.type === 'folder' && node.children && node.children.length > 0) {
+          expanded.add(node.id);
+          traverse(node.children);
+        }
+      });
+    };
+    traverse(nodes);
+    return expanded;
+  };
+
+  // Collapse all folders
+  const collapseAllFolders = () => {
+    setExpandedNodes(new Set());
+  };
+
+  const handleExpandAll = () => {
+    const allExpanded = expandAllFolders(getCurrentTreeData());
+    setExpandedNodes(allExpanded);
+  };
+
+  const handleCollapseAll = () => {
+    collapseAllFolders();
+  };
+
+  // Get current tree data based on tree root (without ".." navigation)
+  const getCurrentTreeData = (): TreeNode[] => {
+    if (treeRoot === '/') {
+      return completeFileSystem;
+    }
+    
+    // Find the node at the tree root
+    const rootNode = findNodeById(completeFileSystem, treeRoot);
+    if (!rootNode || !rootNode.children) {
+      return []; // Return empty array for fallback
+    }
+    
+    return rootNode.children;
+  };
+
+  // Check if current folder is actually empty (no real children, only "..")
+  const isCurrentFolderEmpty = (): boolean => {
+    if (treeRoot === '/') {
+      return completeFileSystem.length === 0;
+    }
+    
+    const rootNode = findNodeById(completeFileSystem, treeRoot);
+    return !rootNode || !rootNode.children || rootNode.children.length === 0;
+  };
+
+  // Truncate text helper
+  const truncateText = (text: string, maxLength: number = 12): string => {
+    if (text.length <= maxLength) return text;
+    return text.substring(0, maxLength - 3) + '...';
+  };
+
+  // Get smart breadcrumb path for current tree root
+  const getBreadcrumbPath = (): Array<{ name: string; path: string; isEllipsis?: boolean; isHome?: boolean; hiddenParents?: Array<{ name: string; path: string }> }> => {
+    if (treeRoot === '/') {
+      return [];
+    }
+    
+    const pathParts = treeRoot.split('/').filter(Boolean);
+    const breadcrumb: Array<{ name: string; path: string; isEllipsis?: boolean; isHome?: boolean; hiddenParents?: Array<{ name: string; path: string }> }> = [
+      { name: '', path: '/', isHome: true }
+    ];
+    
+    // If path is short (3 or fewer parts), show all
+    if (pathParts.length <= 3) {
+      let currentPath = '';
+      for (const part of pathParts) {
+        currentPath += `/${part}`;
+        breadcrumb.push({ name: truncateText(part), path: currentPath });
+      }
+      return breadcrumb;
+    }
+    
+    // For long paths, show: Home > ... > parent > current
+    const currentPath = treeRoot;
+    const parentPath = treeRoot.split('/').slice(0, -1).join('/') || '/';
+    const parentName = pathParts[pathParts.length - 2];
+    const currentName = pathParts[pathParts.length - 1];
+    
+    // Collect hidden parent folders for tooltip
+    const hiddenParents: Array<{ name: string; path: string }> = [];
+    let currentHiddenPath = '';
+    for (let i = 0; i < pathParts.length - 2; i++) {
+      currentHiddenPath += `/${pathParts[i]}`;
+      hiddenParents.push({ name: pathParts[i], path: currentHiddenPath });
+    }
+    
+    breadcrumb.push(
+      { name: '...', path: '', isEllipsis: true, hiddenParents },
+      { name: truncateText(parentName), path: parentPath },
+      { name: truncateText(currentName), path: currentPath }
+    );
+    
+    return breadcrumb;
+  };
+
+  // Handle breadcrumb navigation
+  const handleBreadcrumbClick = (path: string) => {
+    setTreeRoot(path);
+    setSelectedNode(undefined); // Clear tree view selection
+  };
+
+  // Handle ellipsis hover with delay
+  const handleEllipsisMouseEnter = () => {
+    if (hideTimeout) {
+      clearTimeout(hideTimeout);
+      setHideTimeout(null);
+    }
+    setHoveredEllipsis(true);
+  };
+
+  const handleEllipsisMouseLeave = () => {
+    const timeout = setTimeout(() => {
+      setHoveredEllipsis(false);
+    }, 150); // 150ms delay
+    setHideTimeout(timeout);
+  };
+
+
   const handleQuickAction = (action: typeof quickActions[0]) => {
     console.log("Quick action:", action.label);
     // Handle quick actions
@@ -487,18 +749,37 @@ export function DrivePage() {
     return found;
   };
 
+  // Helper: find a node by its ID in the complete file system tree
+  const findNodeById = (nodes: TreeNode[], targetId: string): TreeNode | null => {
+    for (const node of nodes) {
+      if (node.id === targetId) return node;
+      if (node.children) {
+        const found = findNodeById(node.children, targetId);
+        if (found) return found;
+      }
+    }
+    return null;
+  };
+
+
+
+
+
+
+
   const handleSearchSelect = (node: TreeNode, pathNames: string[]) => {
     // pathNames includes the file name; folders are pathNames.slice(0,-1)
     const folderPath = pathNames.slice(0, -1);
-    const folderNode = folderPath.length > 0 ? findNodeByPath(fileSystem, folderPath) : { id: 'virtual-root', name: 'Root', type: 'folder' as const, children: fileSystem } as TreeNode;
+    const folderNode = folderPath.length > 0 ? findNodeByPath(completeFileSystem, folderPath) : { id: 'virtual-root', name: 'Root', type: 'folder' as const, children: completeFileSystem } as TreeNode;
 
     // Set view to the folder containing the file
     if (folderNode && folderNode.type === 'folder') {
+      // Preserve current navigation state for back button functionality
+      setNavigationStack(prev => [...prev, currentView]);
       setCurrentView(folderNode.children || []);
       setBreadcrumbPath(folderPath);
-      setNavigationStack([]);
-      setExpandedNodes(new Set());
       setLastFocusedFolder(folderNode);
+      
     }
     // Select the file itself
     setSelectedNode(node);
@@ -565,20 +846,156 @@ export function DrivePage() {
                       <IconUser size={18} />
                     </button>
                   </div>
-                  <div className="flex-1 min-h-0">
-                    <TreeView
-                      data={currentView}
-                      onNodeSelect={handleNodeSelect}
-                      onNodeToggle={handleNodeToggle}
-                      selectedNodeId={selectedNode?.id}
-                      expandedNodes={expandedNodes}
-                      onContextMenu={handleContextMenu}
-                      onNavigateUp={handleNavigateUp}
-                      onNavigateToFolder={handleNavigateToFolder}
-                      showBreadcrumb={true}
-                      breadcrumbPath={breadcrumbPath}
-                      navigationDirection={navigationDirection}
-                    />
+                  <div className="flex-1 min-h-0 flex flex-col">
+                    {/* Breadcrumb */}
+                    {getBreadcrumbPath().length > 0 && (
+                      <div className="p-1.5 border-b border-neutral-700">
+                        <nav className="flex items-center space-x-0.5 text-xs">
+                          {getBreadcrumbPath().map((item, index) => (
+                          <div key={item.path || `ellipsis-${index}`} className="flex items-center">
+                            {index > 0 && (
+                              <svg className="w-2.5 h-2.5 mx-0.5 text-neutral-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                              </svg>
+                            )}
+                            {item.isEllipsis ? (
+                              <div 
+                                className="relative"
+                                onMouseEnter={handleEllipsisMouseEnter}
+                                onMouseLeave={handleEllipsisMouseLeave}
+                              >
+                                <span className="px-2 py-1 text-neutral-500 cursor-help">
+                                  {item.name}
+                                </span>
+                                {item.hiddenParents && item.hiddenParents.length > 0 && hoveredEllipsis && (
+                                  <div 
+                                    className="absolute top-full left-0 mt-2 z-50"
+                                    onMouseEnter={handleEllipsisMouseEnter}
+                                    onMouseLeave={handleEllipsisMouseLeave}
+                                  >
+                                    <div className="bg-black/70 shadow-lg p-2 min-w-40 max-w-48">
+                                      <div className="text-xs text-neutral-300 mb-2 font-medium">Navigate to:</div>
+                                      <div className="space-y-1">
+                                        {item.hiddenParents.map((parent, idx) => (
+                                          <button
+                                            key={parent.path}
+                                            onClick={() => {
+                                              handleBreadcrumbClick(parent.path);
+                                              setHoveredEllipsis(false);
+                                            }}
+                                            className="block w-full text-left px-3 py-2 text-xs text-neutral-400 hover:text-white hover:bg-black/50 transition-colors"
+                                            title={`Navigate to ${parent.name}`}
+                                          >
+                                            <div className="flex items-center gap-2">
+                                              <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2H5a2 2 0 00-2-2z" />
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5a2 2 0 012-2h4a2 2 0 012 2v2H8V5z" />
+                                              </svg>
+                                              <span className="truncate">{parent.name}</span>
+                                            </div>
+                                          </button>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => handleBreadcrumbClick(item.path)}
+                                className={`px-2 py-1 rounded hover:bg-black/20 transition-colors flex items-center gap-1 max-w-20 truncate ${
+                                  item.path === treeRoot ? 'bg-blue-500/20 text-blue-400 font-medium' : 'text-neutral-400 hover:text-white'
+                                }`}
+                                title={item.path === '/' ? 'Drive Root' : item.path.split('/').pop()}
+                              >
+                                {item.isHome ? (
+                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                                  </svg>
+                                ) : (
+                                  item.name
+                                )}
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                        </nav>
+                      </div>
+                    )}
+
+                    {/* Tree Controls */}
+                    <div className="flex items-center justify-between p-2 border-b border-neutral-700">
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={handleExpandAll}
+                          className="p-1.5 rounded hover:bg-black/20 text-neutral-400 hover:text-white transition-colors"
+                          title="Expand All"
+                        >
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+                          </svg>
+                        </button>
+                        <button
+                          onClick={handleCollapseAll}
+                          className="p-1.5 rounded hover:bg-black/20 text-neutral-400 hover:text-white transition-colors"
+                          title="Collapse All"
+                        >
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/>
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Tree View */}
+                    <div className="flex-1 min-h-0 flex flex-col">
+                      {/* Show ".." navigation if not at root */}
+                      {treeRoot !== '/' && (
+                        <div className="p-2 border-b border-neutral-700">
+                          <button
+                            onClick={() => handleBreadcrumbClick(treeRoot.split('/').slice(0, -1).join('/') || '/')}
+                            className="flex items-center gap-2 w-full px-3 py-2 text-left text-neutral-400 hover:text-white hover:bg-black/20 rounded transition-colors"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                            </svg>
+                            <span className="text-sm">..</span>
+                          </button>
+                        </div>
+                      )}
+                      
+                      {/* Show content or empty state */}
+                      <div className="flex-1 min-h-0">
+                        {isCurrentFolderEmpty() ? (
+                          <div className="flex flex-col items-center justify-center h-full text-neutral-500 p-4">
+                            <svg className="w-12 h-12 mb-3 text-neutral-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2H5a2 2 0 00-2-2z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 5a2 2 0 012-2h4a2 2 0 012 2v2H8V5z" />
+                            </svg>
+                            <div className="text-sm font-medium mb-1">This folder is empty</div>
+                            <div className="text-xs text-neutral-600 text-center">
+                              {treeRoot === '/' ? 'Create folders or upload files to get started' : 'No files or folders in this directory'}
+                            </div>
+                          </div>
+                        ) : (
+                          <TreeView
+                            data={getCurrentTreeData()}
+                            onNodeSelect={handleNodeSelect}
+                            onNodeToggle={handleNodeToggle}
+                            selectedNodeId={selectedNode?.id}
+                            expandedNodes={expandedNodes}
+                            onContextMenu={handleContextMenu}
+                            onNavigateUp={handleNavigateUp}
+                            onNavigateToFolder={handleNavigateToFolder}
+                            showBreadcrumb={false}
+                            breadcrumbPath={[]}
+                            navigationDirection={navigationDirection}
+                            onCreateFolder={handleCreateFolderFromTree}
+                            onRefresh={reloadCurrentFolder}
+                          />
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -625,7 +1042,7 @@ export function DrivePage() {
                 <div className="flex items-center gap-2">
                   {/* Search Button (left of New Folder) */}
                   <FileSearchModal
-                    fileSystem={fileSystem}
+                    fileSystem={completeFileSystem}
                     onSelect={handleSearchSelect}
                     triggerButton={
                       <button
@@ -657,11 +1074,17 @@ export function DrivePage() {
                     return (
                       <NewFolderModal
                         driveId={driveId}
-                        currentFolder={currentFolderPath}
-                        onCreated={reloadCurrentFolder}
+                        currentFolder={targetFolderForNewFolder}
+                        onCreated={handleCreateFolderWithAutoExpand}
                         isOpen={showNewFolderModal}
-                        onClose={() => setShowNewFolderModal(false)}
-                        onOpen={() => setShowNewFolderModal(true)}
+                        onClose={() => {
+                          setShowNewFolderModal(false);
+                          setTargetFolderForNewFolder('/'); // Reset to root
+                        }}
+                        onOpen={() => {
+                          setShowNewFolderModal(true);
+                          setTargetFolderForNewFolder(getCurrentFolderPath()); // Set to current folder
+                        }}
                         trigger={
                           <>
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -688,9 +1111,7 @@ export function DrivePage() {
             canNavigateUp={canGoBack}
             driveId={params.driveId as string}
             onFileDeleted={reloadCurrentFolder}
-            onCreateFolder={(parentPath) => {
-              setShowNewFolderModal(true);
-            }}
+            onCreateFolder={handleCreateFolderFromTree}
             onRefresh={reloadCurrentFolder}
           />
           

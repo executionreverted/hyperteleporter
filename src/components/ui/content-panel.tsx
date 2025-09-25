@@ -719,7 +719,9 @@ export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavig
       actions.push(
         { id: 'create-folder', label: 'Create Folder', icon: <IconFolderPlus size={16} />, onClick: () => {
           console.log('[ContentPanel] Create folder clicked, selectedNode.id:', selectedNode.id)
-          onCreateFolder?.(selectedNode.id)
+          // If we're at virtual-root (fresh app state), use actual root '/'
+          const currentFolderPath = selectedNode.id === 'virtual-root' ? '/' : selectedNode.id
+          onCreateFolder?.(currentFolderPath)
         }},
         { id: 'refresh', label: 'Refresh', icon: <IconArrowUp size={16} />, onClick: () => onRefresh?.() },
         { id: 'copy', label: 'Copy path', icon: <IconCopy size={16} />, onClick: handleCopyPath },
@@ -741,7 +743,10 @@ export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavig
     
     const emptyAreaActions: ContextMenuAction[] = [
       { id: 'create-folder', label: 'Create Folder', icon: <IconFolderPlus size={16} />, onClick: () => {
-        onCreateFolder?.('/')
+        // Use the current folder's path instead of hardcoded root
+        // If we're at virtual-root (fresh app state), use actual root '/'
+        const currentFolderPath = selectedNode?.id === 'virtual-root' ? '/' : (selectedNode?.id || '/')
+        onCreateFolder?.(currentFolderPath)
       }},
       { id: 'refresh', label: 'Refresh', icon: <IconArrowUp size={16} />, onClick: () => {
         onRefresh?.()
