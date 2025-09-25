@@ -44,7 +44,7 @@ export default function MagicButtonWide({ children, className, onClick, disabled
   const variantStyles = getVariantStyles(variant);
 
   return (
-    <button className={cn("bg-slate-800 no-underline group cursor-pointer relative shadow-2xl shadow-zinc-900 rounded-full p-px text-xs font-semibold leading-6 text-white inline-block", disabled && "opacity-50 cursor-not-allowed", className)} onClick={onClick} disabled={disabled}>
+    <button className={cn("bg-slate-800 no-underline group cursor-pointer relative shadow-2xl shadow-zinc-900 rounded-full p-px text-xs font-semibold leading-6 text-white inline-block focus:outline-none", disabled && "opacity-50 cursor-not-allowed", className)} onClick={onClick} disabled={disabled}>
         <span className="absolute inset-0 overflow-hidden rounded-full">
           <span className={cn("absolute inset-0 rounded-full opacity-0 transition-opacity duration-500 group-hover:opacity-100", variantStyles.gradient)}></span>
         </span>

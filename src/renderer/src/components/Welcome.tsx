@@ -65,7 +65,7 @@ export function Welcome() {
                     <div className="mt-8 mx-auto max-w-md">
                         <label className="block text-left text-white/90 mb-2">Choose a username</label>
                         <input
-                            className="w-full rounded-md px-4 py-3 bg-white/10 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white/40"
+                            className="w-full rounded-md px-4 py-3 bg-white/10 text-white placeholder-white/50 focus:outline-none"
                             placeholder="e.g. caner"
                             value={username}
                             onChange={(e) => setUsername(e.target.value)}

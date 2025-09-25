@@ -320,17 +320,27 @@ export function DrivePage() {
       const completeTree = buildCompleteFileSystemTree(allEntries)
       setCompleteFileSystem(completeTree)
       
-      // Auto-expand all folders when reloading
-      const allExpanded = expandAllFolders(completeTree);
-      setExpandedNodes(allExpanded);
+      // Don't auto-expand all folders on refresh - preserve current expansion state
+      // const allExpanded = expandAllFolders(completeTree);
+      // setExpandedNodes(allExpanded);
     } catch {}
     
     const children = buildNodesForFolder(currentFolderPath, entries)
     console.log('[DrivePage] computed children for', currentFolderPath, children)
     setFileSystem(children)
-    setCurrentView(children)
-    setSelectedNode({ id: 'virtual-root', name: currentFolderPath === '/' ? 'Root' : currentFolderPath.split('/').filter(Boolean).slice(-1)[0] || 'Root', type: 'folder', children })
     
+    // Only update current view if we're at the root, otherwise preserve navigation state
+    if (currentFolderPath === '/') {
+      setCurrentView(children)
+      setSelectedNode({ id: 'virtual-root', name: 'Root', type: 'folder', children })
+    } else {
+      // Update the current view with refreshed children while preserving navigation
+      setCurrentView(children)
+      // Update the selected node with refreshed children
+      if (selectedNode && selectedNode.type === 'folder') {
+        setSelectedNode({ ...selectedNode, children })
+      }
+    }
   }
 
   function NewFolderModal({ driveId, currentFolder, onCreated, trigger, isOpen, onClose, onOpen }: { driveId: string, currentFolder: string, onCreated: () => Promise<void>, trigger: React.ReactNode, isOpen: boolean, onClose: () => void, onOpen: () => void }) {
@@ -360,7 +370,7 @@ export function DrivePage() {
             <div className="max-w-md mx-auto w-full">
               <label className="block text-left text-white/90 mb-2">Folder name</label>
               <input
-                className="w-full rounded-md px-4 py-3 bg-white/10 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white/40"
+                className="w-full rounded-md px-4 py-3 bg-white/10 text-white placeholder-white/50 focus:outline-none"
                 placeholder="e.g. Documents"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
@@ -764,12 +774,12 @@ export function DrivePage() {
   // Get smart breadcrumb path for current tree root
   const getBreadcrumbPath = (): Array<{ name: string; path: string; isEllipsis?: boolean; isHome?: boolean; hiddenParents?: Array<{ name: string; path: string }> }> => {
     if (treeRoot === '/') {
-      return [];
+      return [{ name: 'Root', path: '/', isHome: true }];
     }
     
     const pathParts = treeRoot.split('/').filter(Boolean);
     const breadcrumb: Array<{ name: string; path: string; isEllipsis?: boolean; isHome?: boolean; hiddenParents?: Array<{ name: string; path: string }> }> = [
-      { name: '', path: '/', isHome: true }
+      { name: 'Root', path: '/', isHome: true }
     ];
     
     // If path is short (3 or fewer parts), show all
@@ -957,10 +967,9 @@ export function DrivePage() {
                   </div>
                   <div className="flex-1 min-h-0 flex flex-col">
                     {/* Breadcrumb */}
-                    {getBreadcrumbPath().length > 0 && (
-                      <div className="p-1.5 border-b border-neutral-700">
-                        <nav className="flex items-center space-x-0.5 text-xs">
-                          {getBreadcrumbPath().map((item, index) => (
+                    <div className="p-1.5 border-b border-neutral-700">
+                      <nav className="flex items-center space-x-0.5 text-xs">
+                        {getBreadcrumbPath().map((item, index) => (
                           <div key={item.path || `ellipsis-${index}`} className="flex items-center">
                             {index > 0 && (
                               <svg className="w-2.5 h-2.5 mx-0.5 text-neutral-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -973,7 +982,7 @@ export function DrivePage() {
                                 onMouseEnter={handleEllipsisMouseEnter}
                                 onMouseLeave={handleEllipsisMouseLeave}
                               >
-                                <span className="px-2 py-1 text-neutral-500 cursor-help">
+                                <span className="px-2 py-0.5 text-neutral-500 cursor-help">
                                   {item.name}
                                 </span>
                                 {item.hiddenParents && item.hiddenParents.length > 0 && hoveredEllipsis && (
@@ -1012,13 +1021,16 @@ export function DrivePage() {
                             ) : (
                               <button
                                 onClick={() => handleBreadcrumbClick(item.path)}
-                                className={`px-2 py-1 rounded hover:bg-black/20 transition-colors flex items-center gap-1 max-w-20 truncate ${
+                                className={`px-2 py-0.5 rounded hover:bg-black/20 transition-colors flex items-center gap-1 max-w-20 truncate ${
                                   item.path === treeRoot ? 'bg-blue-500/20 text-blue-400 font-medium' : 'text-neutral-400 hover:text-white'
                                 }`}
                                 title={item.path === '/' ? 'Drive Root' : item.path.split('/').pop()}
                               >
                                 {item.isHome ? (
-                                  <HardDriveIcon size={12} />
+                                  <div className="flex items-center gap-1">
+                                    <HardDriveIcon size={12} />
+                                    <span>{item.name}</span>
+                                  </div>
                                 ) : (
                                   item.name
                                 )}
@@ -1028,7 +1040,6 @@ export function DrivePage() {
                         ))}
                         </nav>
                       </div>
-                    )}
 
                     {/* Tree Controls */}
                     <div className="flex items-center justify-between p-2 border-b border-neutral-700">

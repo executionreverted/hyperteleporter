@@ -84,7 +84,7 @@ export function DriveSearchInput({
             // Autocomplete removed; focusing does not open any dropdown
             className={cn(
               "w-full h-12 px-4 pr-12 text-sm bg-black/20 border border-white/20 rounded-full",
-              "text-white placeholder:text-white/60 focus:outline-none focus:ring-2 focus:ring-blue-500/50",
+              "text-white placeholder:text-white/60 focus:outline-none",
               "backdrop-blur-sm transition-all duration-300"
             )}
             placeholder={placeholders[currentPlaceholder]}

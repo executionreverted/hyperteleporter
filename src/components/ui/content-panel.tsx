@@ -17,11 +17,18 @@ import {
   IconEye,
   IconCopy,
   IconFolderPlus,
-  IconArrowUp
+  IconArrowUp,
+  IconFileText,
+  IconFileCode,
+  IconFileMusic,
+  IconFileZip,
+  IconFileSpreadsheet,
+  IconPresentation
 } from "@tabler/icons-react";
 import FolderIcon from "../../renderer/src/assets/folder.svg";
 import FolderOpenIcon from "../../renderer/src/assets/folder-open.svg";
 import { ContextMenu, useContextMenu, type ContextMenuAction } from "./context-menu";
+import GlareHover from "./glare-hover";
 
 interface ContentPanelProps {
   selectedNode?: TreeNode;
@@ -34,6 +41,124 @@ interface ContentPanelProps {
   onRefresh?: () => void;
   className?: string;
 }
+
+const FileIcon = ({ node }: { node: TreeNode }) => {
+  const getFileType = () => {
+    const extension = node.name.split('.').pop()?.toLowerCase();
+    return extension || 'unknown';
+  };
+
+  const fileType = getFileType();
+
+  const getIconForFileType = () => {
+    switch (fileType) {
+      // Images
+      case 'jpg':
+      case 'jpeg':
+      case 'png':
+      case 'gif':
+      case 'webp':
+      case 'svg':
+      case 'bmp':
+      case 'ico':
+        return <IconPhoto size={32} className="text-blue-400" />;
+      
+      // Videos
+      case 'mp4':
+      case 'webm':
+      case 'mov':
+      case 'avi':
+      case 'mkv':
+      case 'flv':
+        return <IconVideo size={32} className="text-purple-400" />;
+      
+      // Audio
+      case 'mp3':
+      case 'wav':
+      case 'flac':
+      case 'aac':
+      case 'ogg':
+        return <IconFileMusic size={32} className="text-green-400" />;
+      
+      // Documents
+      case 'pdf':
+        return <IconFileTypePdf size={32} className="text-red-400" />;
+      
+      case 'doc':
+      case 'docx':
+        return <IconFileText size={32} className="text-blue-500" />;
+      
+      case 'xls':
+      case 'xlsx':
+      case 'csv':
+        return <IconFileSpreadsheet size={32} className="text-green-500" />;
+      
+      case 'ppt':
+      case 'pptx':
+        return <IconPresentation size={32} className="text-orange-400" />;
+      
+      // Code files
+      case 'js':
+      case 'jsx':
+      case 'ts':
+      case 'tsx':
+      case 'html':
+      case 'css':
+      case 'scss':
+      case 'sass':
+      case 'less':
+      case 'py':
+      case 'java':
+      case 'cpp':
+      case 'c':
+      case 'cs':
+      case 'php':
+      case 'rb':
+      case 'go':
+      case 'rs':
+      case 'swift':
+      case 'kt':
+      case 'sh':
+      case 'bash':
+      case 'zsh':
+      case 'fish':
+      case 'ps1':
+      case 'bat':
+      case 'cmd':
+        return <IconFileCode size={32} className="text-yellow-400" />;
+      
+      // Archives
+      case 'zip':
+      case 'rar':
+      case '7z':
+      case 'tar':
+      case 'gz':
+      case 'bz2':
+        return <IconFileZip size={32} className="text-orange-500" />;
+      
+      // Text files
+      case 'txt':
+      case 'md':
+      case 'rtf':
+        return <IconFileText size={32} className="text-gray-400" />;
+      
+      // JSON and config files
+      case 'json':
+      case 'xml':
+      case 'yml':
+      case 'yaml':
+      case 'ini':
+      case 'cfg':
+      case 'conf':
+        return <IconFileCode size={32} className="text-indigo-400" />;
+      
+      default:
+        return <IconFile size={32} className="text-neutral-400" />;
+    }
+  };
+
+  return getIconForFileType();
+};
 
 const FilePreview = ({ node }: { node: TreeNode }) => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -597,39 +722,71 @@ const FolderContents = ({ node, onFileClick, onNavigateUp, canNavigateUp, driveI
         </div>
         
         {(canNavigateUp || (node.children && node.children.length > 0)) ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
             {canNavigateUp && (
               <div
                 key="pseudo-up"
-                className="bg-black/10 rounded-lg p-4 hover:shadow-md transition-shadow cursor-pointer hover:bg-black/20"
+                className="flex flex-col items-center p-4 cursor-pointer group"
                 onClick={() => onNavigateUp?.()}
               >
-                <div className="flex items-center gap-3 mb-2">
-                  <img src={FolderIcon} alt="Folder" className="w-5 h-5" />
-                  <span className="font-medium text-white truncate">..</span>
-                </div>
-                <p className="text-sm text-neutral-400">Go to parent folder</p>
+                <GlareHover
+                  width="80px"
+                  height="80px"
+                  background="rgba(0, 0, 0, 0.2)"
+                  borderRadius="12px"
+                  borderColor="transparent"
+                  glareColor="#ffffff"
+                  glareOpacity={0.3}
+                  glareAngle={-30}
+                  glareSize={300}
+                  transitionDuration={800}
+                  playOnce={false}
+                  className="mb-3"
+                >
+                  <div className="w-full h-full flex items-center justify-center">
+                    <img src={FolderIcon} alt="Folder" className="w-8 h-8" />
+                  </div>
+                </GlareHover>
+                <span className="text-sm text-white text-center truncate w-full px-1">..</span>
+                <span className="text-xs text-neutral-400 text-center mt-1">Parent</span>
               </div>
             )}
             {node.children?.map((child) => (
               <div
                 key={child.id}
-                className="bg-black/10 rounded-lg p-4 hover:shadow-md transition-shadow cursor-pointer hover:bg-black/20"
+                className="flex flex-col items-center p-4 cursor-pointer group"
                 onClick={() => onFileClick?.(child)}
                 onContextMenu={(e) => onChildRightClick(e, child)}
               >
-                <div className="flex items-center gap-3 mb-2">
-                  {child.type === 'folder' ? (
-                    <img src={FolderIcon} alt="Folder" className="w-5 h-5" />
-                  ) : (
-                    <IconFile size={20} className="text-neutral-400" />
-                  )}
-                  <span className="font-medium text-white truncate">
-                    {child.name}
-                  </span>
-                </div>
+                <GlareHover
+                  width="80px"
+                  height="80px"
+                  background="rgba(0, 0, 0, 0.2)"
+                  borderRadius="12px"
+                  borderColor="transparent"
+                  glareColor="#ffffff"
+                  glareOpacity={0.3}
+                  glareAngle={-30}
+                  glareSize={300}
+                  transitionDuration={800}
+                  playOnce={false}
+                  className="mb-3"
+                >
+                  <div className="w-full h-full flex items-center justify-center">
+                    {child.type === 'folder' ? (
+                      <img src={FolderIcon} alt="Folder" className="w-8 h-8" />
+                    ) : (
+                      <FileIcon node={child} />
+                    )}
+                  </div>
+                </GlareHover>
+                <span className="text-sm text-white text-center truncate w-full px-1">
+                  {child.name}
+                </span>
                 {child.size && (
-                  <p className="text-sm text-neutral-400">{child.size}</p>
+                  <span className="text-xs text-neutral-400 text-center mt-1">
+                    {child.size}
+                  </span>
                 )}
               </div>
             ))}

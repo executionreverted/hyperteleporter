@@ -117,7 +117,7 @@ function SearchContent({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search files by name..."
-            className="w-full h-11 px-4 text-sm bg-black/30 border border-white/15 rounded-md text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+            className="w-full h-11 px-4 text-sm bg-black/30 border border-white/15 rounded-md text-white placeholder:text-white/50 focus:outline-none"
           />
         </div>
         <div className="mt-5 h-80 overflow-y-auto rounded-md border border-white/10 scrollbar-thin scrollbar-thumb-neutral-600 scrollbar-track-neutral-800">
