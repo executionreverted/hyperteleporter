@@ -97,17 +97,6 @@ export const DriveHeader: React.FC<DriveHeaderProps> = ({
               <span>Refresh</span>
             </button>
             
-            {/* Initial Sync Indicator */}
-            {isInitialSync && (
-              <div className="flex items-center gap-2 px-4 py-3 text-sm font-medium text-amber-400 bg-amber-500/10 rounded-lg border border-amber-500/20">
-                <div className="w-3 h-3 bg-amber-400 rounded-full animate-pulse"></div>
-                <span>Connecting to drive...</span>
-                <span className="text-xs text-amber-300">
-                  This may take a moment
-                </span>
-              </div>
-            )}
-            
             {/* Regular Sync Status Indicator */}
             {isDriveSyncing && !isInitialSync && (
               <div className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-blue-400 bg-blue-500/10 rounded-lg">
@@ -126,13 +115,8 @@ export const DriveHeader: React.FC<DriveHeaderProps> = ({
             {/* Downloads Button */}
             <button
               onClick={onShowDownloads}
-              disabled={isDriveSyncing}
-              className={`flex items-center gap-2 px-3 py-2 text-sm font-medium transition-colors rounded-lg ${
-                isDriveSyncing 
-                  ? 'text-neutral-500 cursor-not-allowed' 
-                  : 'text-neutral-400 hover:bg-black/20 hover:text-white'
-              }`}
-              title={isDriveSyncing ? "Downloads disabled while syncing" : "View Downloads"}
+              className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-neutral-400 hover:bg-black/20 hover:text-white transition-colors rounded-lg"
+              title="View Downloads"
             >
               <IconDownload size={16} />
               <span>Downloads</span>

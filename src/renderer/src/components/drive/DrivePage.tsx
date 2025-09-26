@@ -338,15 +338,7 @@ export const DrivePage: React.FC = () => {
           />
 
           {/* Content Panel */}
-          {state.isInitialSync ? (
-            <div className="flex-1 flex items-center justify-center">
-              <div className="text-center">
-                <div className="w-8 h-8 border-2 border-amber-400 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-                <p className="text-amber-400 text-sm">Connecting to drive...</p>
-                <p className="text-neutral-500 text-xs mt-2">This may take a moment while we sync with peers</p>
-              </div>
-            </div>
-          ) : (
+          <div className="flex-1 flex flex-col">
             <ContentPanel 
               selectedNode={state.selectedNode} 
               onFileClick={handleFileClick}
@@ -368,7 +360,16 @@ export const DrivePage: React.FC = () => {
               syncStatus={state.syncStatus}
               isDriveSyncing={state.isDriveSyncing}
             />
-          )}
+            
+            {/* Bottom Connecting Indicator */}
+            {state.isInitialSync && (
+              <div className="flex items-center justify-center gap-2 px-4 py-3 bg-amber-500/10 border-t border-amber-500/20">
+                <div className="w-3 h-3 border-2 border-amber-400 border-t-transparent rounded-full animate-spin"></div>
+                <span className="text-amber-400 text-sm font-medium">Connecting to drive...</span>
+                <span className="text-neutral-500 text-xs">Browsing previously synced data</span>
+              </div>
+            )}
+          </div>
           
           {/* Dropzone */}
           {canWrite && (
@@ -420,7 +421,7 @@ export const DrivePage: React.FC = () => {
       />
       
       {/* Peers Indicator - Bottom Right */}
-      {state.syncStatus && (
+      {state.syncStatus && !state.isInitialSync && (
         <div className="fixed bottom-1 right-4 z-30 border-dashed bg-black/70 backdrop-blur-sm border border-white/10 rounded-lg px-3 flex items-center gap-2 text-sm" style={{ height: '58px' }}>
           <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
           <span className="text-white font-medium">{state.syncStatus.peers}</span>
