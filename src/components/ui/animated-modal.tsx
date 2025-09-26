@@ -11,6 +11,7 @@ import React, {
   isValidElement,
   cloneElement,
 } from "react";
+import { useEscapeKey } from "../../renderer/src/hooks/useEscapeKey";
 
 interface ModalContextType {
   open: boolean;
@@ -99,6 +100,12 @@ export const ModalBody = ({
   const modalRef = useRef(null);
   const { setOpen } = useModal();
   useOutsideClick(modalRef, () => setOpen(false));
+  
+  // Add ESC key functionality
+  useEscapeKey({
+    onEscape: () => setOpen(false),
+    isEnabled: open
+  });
 
   return (
     <AnimatePresence>

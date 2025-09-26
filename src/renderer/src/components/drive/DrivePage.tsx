@@ -1,4 +1,4 @@
-import React, { useEffect, useCallback } from 'react'
+import React, { useEffect, useCallback, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { cn } from '../../../lib/utils'
 import { ContentPanel } from '../../../../components/ui/content-panel'
@@ -23,6 +23,11 @@ import { useGlobalSearch } from '../../hooks/useGlobalSearch'
 export const DrivePage: React.FC = () => {
   const params = useParams()
   const navigate = useNavigate()
+  
+  // Preview modal state
+  const [previewRect, setPreviewRect] = useState<DOMRect | null>(null)
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false)
+  const [previewNode, setPreviewNode] = useState<TreeNode | null>(null)
   
   const {
     state,
@@ -96,25 +101,6 @@ export const DrivePage: React.FC = () => {
     }
   })
 
-  const {
-    handleNodeSelect,
-    handleFileClick,
-    handleBreadcrumbClick,
-    handleNavigateToFolder,
-    handleBack,
-    handleSearchSelect
-  } = useNavigation({
-    completeFileSystem: state.completeFileSystem,
-    currentView: state.currentView,
-    navigationStack: state.navigationStack,
-    treeRoot: state.treeRoot,
-    selectedNode: state.selectedNode,
-    lastFocusedFolder: state.lastFocusedFolder,
-    onUpdateState: updateState,
-    onSetTreeRoot: setTreeRoot,
-    onSetSelectedNode: setSelectedNode,
-    driveId: params.driveId as string
-  })
 
   // Keep stable ref for current folder path
   useEffect(() => {
@@ -198,13 +184,61 @@ export const DrivePage: React.FC = () => {
     // TODO: Implement navigate up functionality
   }, [])
 
+
+  const handlePreviewAnchor = useCallback((rect: DOMRect, node: TreeNode) => {
+    // Create a fake rect for the preview modal
+    const fakeRect = {
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+      height: rect.height,
+      right: rect.right,
+      bottom: rect.bottom,
+      x: rect.x,
+      y: rect.y,
+      toJSON: () => rect,
+    } as DOMRect
+
+    // Directly manage preview state instead of dispatching event
+    setPreviewRect(fakeRect)
+    setPreviewNode(node)
+    setIsPreviewOpen(true)
+  }, [])
+
+  const closePreview = useCallback(() => {
+    setIsPreviewOpen(false)
+  }, [])
+
+  const {
+    handleNodeSelect,
+    handleFileClick,
+    handleBreadcrumbClick,
+    handleNavigateToFolder,
+    handleBack,
+    handleSearchSelect
+  } = useNavigation({
+    completeFileSystem: state.completeFileSystem,
+    currentView: state.currentView,
+    navigationStack: state.navigationStack,
+    treeRoot: state.treeRoot,
+    selectedNode: state.selectedNode,
+    lastFocusedFolder: state.lastFocusedFolder,
+    onUpdateState: updateState,
+    onSetTreeRoot: setTreeRoot,
+    onSetSelectedNode: setSelectedNode,
+    onPreviewAnchor: handlePreviewAnchor,
+    driveId: params.driveId as string
+  })
+
   const handleContentPanelNavigateUp = useCallback(() => {
     const parentPath = state.treeRoot.split('/').slice(0, -1).join('/') || '/'
     handleBreadcrumbClick(parentPath)
   }, [state.treeRoot, handleBreadcrumbClick])
 
   const handleContextMenu = useCallback((node: TreeNode, actions: any[], event: React.MouseEvent) => {
-    // TODO: Implement context menu
+    // The TreeView component handles the context menu internally
+    // This is just a placeholder to satisfy the prop requirement
+    // The actual context menu logic is in the TreeView component
   }, [])
 
   const handleEllipsisMouseEnter = useCallback(() => {
@@ -262,6 +296,7 @@ export const DrivePage: React.FC = () => {
           onContextMenu={handleContextMenu}
           onNavigateUp={handleNavigateUp}
           onNavigateToFolder={handleNavigateToFolder}
+          onPreviewAnchor={handlePreviewAnchor}
           onCreateFolder={handleCreateFolderFromTree}
           onRefresh={reloadCurrentFolder}
           onDelete={handleDeleteNode}
@@ -310,6 +345,13 @@ export const DrivePage: React.FC = () => {
               onFileDeleted={reloadCurrentFolder}
               onCreateFolder={handleCreateFolderFromTree}
               onRefresh={reloadCurrentFolder}
+              onDownloadFile={handleDownloadFile}
+              onDownloadFolder={handleDownloadFolder}
+              onPreviewAnchor={handlePreviewAnchor}
+              previewRect={previewRect}
+              isPreviewOpen={isPreviewOpen}
+              previewNode={previewNode}
+              onClosePreview={closePreview}
               canWrite={canWrite}
               currentDrive={state.currentDrive ? { name: state.currentDrive.name, id: state.currentDrive.id } : undefined}
               syncStatus={state.syncStatus}

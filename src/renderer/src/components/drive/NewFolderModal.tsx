@@ -1,6 +1,7 @@
 import React, { useState, useCallback } from 'react'
 import { ModalContent, ModalFooter } from '../../../../components/ui/animated-modal'
 import MagicButtonWide from '../../../../components/ui/magic-button-wide'
+import { useEscapeKey } from '../../hooks/useEscapeKey'
 
 interface NewFolderModalProps {
   driveId: string
@@ -109,6 +110,12 @@ export const NewFolderModal: React.FC<NewFolderModalProps> = ({
   onClose,
   onCreated,
 }) => {
+  // Add ESC key functionality
+  useEscapeKey({
+    onEscape: onClose,
+    isEnabled: isOpen
+  })
+
   if (!isOpen) return null
 
   return (

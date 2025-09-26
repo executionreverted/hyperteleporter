@@ -49,6 +49,7 @@ interface TreeViewProps {
   onContextMenu?: (node: TreeNode, actions: ContextMenuAction[], event: React.MouseEvent) => void;
   onNavigateUp?: () => void;
   onNavigateToFolder?: (node: TreeNode) => void;
+  onPreviewAnchor?: (rect: DOMRect, node: TreeNode) => void;
   showBreadcrumb?: boolean;
   breadcrumbPath?: string[];
   navigationDirection?: 'forward' | 'backward';
@@ -72,6 +73,7 @@ interface TreeNodeProps {
   expandedNodes?: Set<string>;
   onContextMenu?: (node: TreeNode, actions: ContextMenuAction[], event: React.MouseEvent) => void;
   onNavigateToFolder?: (node: TreeNode) => void;
+  onPreviewAnchor?: (rect: DOMRect, node: TreeNode) => void;
   onCreateFolder?: (parentPath: string) => void;
   onRefresh?: () => void;
   onDelete?: (node: TreeNode) => void;
@@ -134,7 +136,7 @@ const FileIcon = ({ type }: { type: string }) => {
   return getFileIcon();
 };
 
-const TreeNodeComponent = ({ node, level, onNodeSelect, onNodeToggle, selectedNodeId, expandedNodes, onContextMenu, onNavigateToFolder, onCreateFolder, onRefresh, onDelete, onDownloadFolder, onDownloadFile, canWrite = true, isSyncing = false, driveId }: TreeNodeProps) => {
+const TreeNodeComponent = ({ node, level, onNodeSelect, onNodeToggle, selectedNodeId, expandedNodes, onContextMenu, onNavigateToFolder, onPreviewAnchor, onCreateFolder, onRefresh, onDelete, onDownloadFolder, onDownloadFile, canWrite = true, isSyncing = false, driveId, openContextMenu }: TreeNodeProps & { openContextMenu: (event: React.MouseEvent, actions: ContextMenuAction[]) => void }) => {
   const hasChildren = node.children && node.children.length > 0;
   const isSelected = selectedNodeId === node.id;
   const isExpanded = expandedNodes?.has(node.id) || false;
@@ -156,11 +158,15 @@ const TreeNodeComponent = ({ node, level, onNodeSelect, onNodeToggle, selectedNo
     const targetEl = e.currentTarget as HTMLDivElement;
     // @ts-ignore - window.setTimeout returns a number in browsers
     clickTimeoutRef.current = window.setTimeout(() => {
-      // Dispatch a global preview request so ContentPanel can open its modal
+      // Use onPreviewAnchor if provided, otherwise dispatch custom event
       try {
         const rect = targetEl.getBoundingClientRect();
-        const detail = { rect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height }, node };
-        window.dispatchEvent(new CustomEvent('open-preview', { detail }));
+        if (onPreviewAnchor) {
+          onPreviewAnchor(rect, node);
+        } else {
+          const detail = { rect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height }, node };
+          window.dispatchEvent(new CustomEvent('open-preview', { detail }));
+        }
         clickTimeoutRef.current = null;
         return;
       } catch {}
@@ -236,7 +242,7 @@ const TreeNodeComponent = ({ node, level, onNodeSelect, onNodeToggle, selectedNo
       });
     }
 
-    onContextMenu?.(node, actions, e);
+    openContextMenu(e, actions);
   };
 
   return (
@@ -320,6 +326,7 @@ const TreeNodeComponent = ({ node, level, onNodeSelect, onNodeToggle, selectedNo
                 level={level + 1}
                 onNodeSelect={onNodeSelect}
                 onNodeToggle={onNodeToggle}
+                onPreviewAnchor={onPreviewAnchor}
                 selectedNodeId={selectedNodeId}
                 expandedNodes={expandedNodes}
                 onContextMenu={onContextMenu}
@@ -332,6 +339,7 @@ const TreeNodeComponent = ({ node, level, onNodeSelect, onNodeToggle, selectedNo
                 canWrite={canWrite}
                 isSyncing={isSyncing}
                 driveId={driveId}
+                openContextMenu={openContextMenu}
               />
             ))}
           </motion.div>
@@ -398,6 +406,7 @@ export function TreeView({
   onContextMenu, 
   onNavigateUp,
   onNavigateToFolder,
+  onPreviewAnchor,
   showBreadcrumb = false,
   breadcrumbPath = [],
   navigationDirection = 'forward',
@@ -487,6 +496,7 @@ export function TreeView({
             level={0}
             onNodeSelect={onNodeSelect}
             onNodeToggle={onNodeToggle}
+            onPreviewAnchor={onPreviewAnchor}
             selectedNodeId={selectedNodeId}
             expandedNodes={expandedNodes}
             onContextMenu={onContextMenu}
@@ -499,6 +509,7 @@ export function TreeView({
             canWrite={canWrite}
             isSyncing={isSyncing}
             driveId={driveId}
+            openContextMenu={openContextMenu}
           />
         ))}
         </motion.div>

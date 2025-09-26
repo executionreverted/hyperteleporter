@@ -6,7 +6,7 @@ import { motion } from "motion/react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { MagicButton } from "../../renderer/src/components/common/MagicButton";
-import { IconDownload, IconShare, IconTrash, IconEye, IconCopy, IconFolderPlus, IconArrowUp, IconFileTypePdf } from "@tabler/icons-react";
+import { IconDownload, IconShare, IconTrash, IconEye, IconCopy, IconFolderPlus, IconArrowUp, IconFileTypePdf, IconLoader2 } from "@tabler/icons-react";
 import FolderIcon from "../../renderer/src/assets/folder.svg";
 import FolderOpenIcon from "../../renderer/src/assets/folder-open.svg";
 import { ContextMenu, useContextMenu, type ContextMenuAction } from "./context-menu";
@@ -24,6 +24,14 @@ interface ContentPanelProps {
   onFileDeleted?: () => void;
   onCreateFolder?: (parentPath: string) => void;
   onRefresh?: () => void;
+  onDownloadFile?: (node: TreeNode) => void;
+  onDownloadFolder?: (node: TreeNode) => void;
+  onPreviewAnchor?: (rect: DOMRect, node: TreeNode) => void;
+  // External preview state (when onPreviewAnchor is provided)
+  previewRect?: DOMRect | null;
+  isPreviewOpen?: boolean;
+  previewNode?: TreeNode | null;
+  onClosePreview?: () => void;
   className?: string;
   canWrite?: boolean;
   currentDrive?: { name: string; id: string };
@@ -120,8 +128,8 @@ const FilePreview = ({ node, insideModal = false }: { node: TreeNode; insideModa
       <div className={insideModal ? "p-4 h-full" : "p-6"}>
         <div className={
           insideModal
-            ? "bg-black/10 rounded-lg p-4 h-full overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-600 scrollbar-track-neutral-800"
-            : "bg-black/10 rounded-lg p-4 max-h-[480px] overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-600 scrollbar-track-neutral-800"
+            ? "bg-black/10 rounded-lg p-4 max-h-[60vh] overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-600 scrollbar-track-neutral-800 hover:scrollbar-thumb-neutral-500"
+            : "bg-black/10 rounded-lg p-4 max-h-[480px] overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-600 scrollbar-track-neutral-800 hover:scrollbar-thumb-neutral-500"
         }>
           <div className="text-white mb-3">Code Preview:</div>
           {loading && <div className="text-neutral-300">Loading…</div>}
@@ -146,7 +154,7 @@ const FilePreview = ({ node, insideModal = false }: { node: TreeNode; insideModa
       case 'txt':
       case 'md':
         return (
-          <MarkdownPreview node={node} />
+          <MarkdownPreview node={node} insideModal={insideModal} />
         );
 
       case 'json':
@@ -170,8 +178,8 @@ const FilePreview = ({ node, insideModal = false }: { node: TreeNode; insideModa
       case 'gif':
       case 'webp':
         return (
-          <div className="p-6">
-            <div className="bg-gray-100 dark:bg-black/10 rounded-lg p-4 max-h-[480px] overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-600 scrollbar-track-neutral-800">
+          <div className={insideModal ? "p-4" : "p-6"}>
+            <div className={`bg-gray-100 dark:bg-black/10 rounded-lg p-4 ${insideModal ? 'max-h-[60vh]' : 'max-h-[480px]'} overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-600 scrollbar-track-neutral-800 hover:scrollbar-thumb-neutral-500`}>
               <div className="text-white mb-4">Image Preview:</div>
               <div className="bg-white dark:bg-neutral-700 rounded-lg p-4 flex items-center justify-center max-h-[400px] min-h-[200px]">
                 {loadingImg && (
@@ -197,8 +205,8 @@ const FilePreview = ({ node, insideModal = false }: { node: TreeNode; insideModa
 
       case 'pdf':
         return (
-          <div className="p-6">
-            <div className="bg-gray-100 dark:bg-black/10 rounded-lg p-4 max-h-[480px] overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-600 scrollbar-track-neutral-800">
+          <div className={insideModal ? "p-4" : "p-6"}>
+            <div className={`bg-gray-100 dark:bg-black/10 rounded-lg p-4 ${insideModal ? 'max-h-[60vh]' : 'max-h-[480px]'} overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-600 scrollbar-track-neutral-800 hover:scrollbar-thumb-neutral-500`}>
               <div className="text-white mb-4">PDF Preview:</div>
               <div className="bg-white dark:bg-neutral-700 rounded-lg p-8 flex items-center justify-center max-h-[400px]">
                 <div className="text-center">
@@ -220,7 +228,7 @@ const FilePreview = ({ node, insideModal = false }: { node: TreeNode; insideModa
         );
 
       default:
-        return <TextPreview node={node} />;
+        return <TextPreview node={node} insideModal={insideModal} />;
     }
   };
 
@@ -258,7 +266,7 @@ const FilePreview = ({ node, insideModal = false }: { node: TreeNode; insideModa
   );
 };
 
-function MarkdownPreview({ node }: { node: TreeNode }) {
+function MarkdownPreview({ node, insideModal = false }: { node: TreeNode; insideModal?: boolean }) {
   const [content, setContent] = React.useState<string | null>(null)
   const [loading, setLoading] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
@@ -289,13 +297,13 @@ function MarkdownPreview({ node }: { node: TreeNode }) {
     load()
   }, [node.id])
 
-  if (loading) return <div className="p-6 text-neutral-300">Loading…</div>
-  if (error) return <div className="p-6 text-red-400">{error}</div>
+  if (loading) return <div className={insideModal ? "p-4" : "p-6"}><div className="text-neutral-300">Loading…</div></div>
+  if (error) return <div className={insideModal ? "p-4" : "p-6"}><div className="text-red-400">{error}</div></div>
   if (!content) return null
 
   return (
-    <div className="p-6">
-      <div className="bg-black/10 rounded-lg p-4 max-h-[480px] overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-600 scrollbar-track-neutral-800">
+    <div className={insideModal ? "p-4" : "p-6"}>
+      <div className={`bg-black/10 rounded-lg p-4 ${insideModal ? 'max-h-[60vh]' : 'max-h-[480px]'} overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-600 scrollbar-track-neutral-800 hover:scrollbar-thumb-neutral-500`}>
         <div className="text-white mb-3">Markdown Preview:</div>
         <SyntaxHighlighter
           language={'markdown'}
@@ -310,7 +318,7 @@ function MarkdownPreview({ node }: { node: TreeNode }) {
   )
 }
 
-function TextPreview({ node }: { node: TreeNode }) {
+function TextPreview({ node, insideModal = false }: { node: TreeNode; insideModal?: boolean }) {
   const [content, setContent] = React.useState<string | null>(null)
   const [loading, setLoading] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
@@ -341,13 +349,13 @@ function TextPreview({ node }: { node: TreeNode }) {
     load()
   }, [node.id])
 
-  if (loading) return <div className="p-6 text-neutral-300">Loading…</div>
-  if (error) return <div className="p-6 text-red-400">{error}</div>
+  if (loading) return <div className={insideModal ? "p-4" : "p-6"}><div className="text-neutral-300">Loading…</div></div>
+  if (error) return <div className={insideModal ? "p-4" : "p-6"}><div className="text-red-400">{error}</div></div>
   if (!content) return null
 
   return (
-    <div className="p-6">
-      <div className="bg-black/10 rounded-lg p-4 max-h-[480px] overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-600 scrollbar-track-neutral-800">
+    <div className={insideModal ? "p-4" : "p-6"}>
+      <div className={`bg-black/10 rounded-lg p-4 ${insideModal ? 'max-h-[60vh]' : 'max-h-[480px]'} overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-600 scrollbar-track-neutral-800 hover:scrollbar-thumb-neutral-500`}>
         <div className="text-white mb-3">Text Preview:</div>
         <SyntaxHighlighter
           language={'text'}
@@ -479,7 +487,7 @@ const FileMetadata = ({ node }: { node: TreeNode }) => {
   );
 };
 
-const FolderContents = ({ node, onFileClick, onNavigateUp, canNavigateUp, driveId, onFileDeleted, onPreviewAnchor, canWrite = true, currentDrive }: { node: TreeNode; onFileClick?: (node: TreeNode) => void; onNavigateUp?: () => void; canNavigateUp?: boolean; driveId?: string; onFileDeleted?: () => void; onPreviewAnchor?: (rect: DOMRect, node: TreeNode) => void; canWrite?: boolean; currentDrive?: { name: string; id: string } }) => {
+const FolderContents = ({ node, onFileClick, onNavigateUp, canNavigateUp, driveId, onFileDeleted, onPreviewAnchor, onDownloadFile, onDownloadFolder, canWrite = true, currentDrive }: { node: TreeNode; onFileClick?: (node: TreeNode) => void; onNavigateUp?: () => void; canNavigateUp?: boolean; driveId?: string; onFileDeleted?: () => void; onPreviewAnchor?: (rect: DOMRect, node: TreeNode) => void; onDownloadFile?: (node: TreeNode) => void; onDownloadFolder?: (node: TreeNode) => void; canWrite?: boolean; currentDrive?: { name: string; id: string } }) => {
   const totalItems = node.children ? node.children.length : 0;
   const folderCount = node.children ? node.children.filter(c => c.type === 'folder').length : 0;
   const fileCount = totalItems - folderCount;
@@ -560,13 +568,14 @@ const FolderContents = ({ node, onFileClick, onNavigateUp, canNavigateUp, driveI
     if (childNode.type === 'file') {
       actions.push(
         { id: 'open', label: 'Open', icon: <IconEye size={16} />, onClick: () => onFileClick?.(childNode) },
-        { id: 'download', label: 'Download', icon: <IconDownload size={16} />, onClick: () => handleDownloadFile(childNode) },
+        { id: 'download', label: 'Download', icon: <IconDownload size={16} />, onClick: () => onDownloadFile?.(childNode) },
         { id: 'copy', label: 'Copy path', icon: <IconCopy size={16} />, onClick: () => handleCopyPath(childNode) },
       )
       if (canWrite) actions.push({ id: 'delete', label: 'Delete', icon: <IconTrash size={16} />, onClick: () => handleDeleteFile(childNode), destructive: true })
     } else {
       actions.push(
         { id: 'open', label: 'Open', icon: <IconEye size={16} />, onClick: () => onFileClick?.(childNode) },
+        { id: 'download-all', label: 'Download All', icon: <IconDownload size={16} />, onClick: () => onDownloadFolder?.(childNode) },
         { id: 'copy', label: 'Copy path', icon: <IconCopy size={16} />, onClick: () => handleCopyPath(childNode) },
       )
       if (canWrite) actions.push({ id: 'delete', label: 'Delete', icon: <IconTrash size={16} />, onClick: () => handleDeleteFile(childNode), destructive: true })
@@ -733,7 +742,7 @@ const FolderContents = ({ node, onFileClick, onNavigateUp, canNavigateUp, driveI
   );
 };
 
-export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavigateUp, driveId, onFileDeleted, onCreateFolder, onRefresh, className, canWrite = true, currentDrive, syncStatus, isDriveSyncing }: ContentPanelProps) {
+export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavigateUp, driveId, onFileDeleted, onCreateFolder, onRefresh, onDownloadFile, onDownloadFolder, onPreviewAnchor, previewRect, isPreviewOpen, previewNode, onClosePreview, className, canWrite = true, currentDrive, syncStatus, isDriveSyncing }: ContentPanelProps) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const api: any = (window as any)?.api
   const toaster = useToaster()
@@ -741,23 +750,57 @@ export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavig
   const { confirm, ConfirmDialog } = useConfirm()
 
   // Preview modal state MUST be declared before any early returns to preserve hook order
-  const [previewRect, setPreviewRect] = React.useState<DOMRect | null>(null)
-  const [isPreviewOpen, setIsPreviewOpen] = React.useState(false)
-  const [previewNode, setPreviewNode] = React.useState<TreeNode | null>(null)
+  // Use external state if provided, otherwise use internal state
+  const [internalPreviewRect, setInternalPreviewRect] = React.useState<DOMRect | null>(null)
+  const [internalIsPreviewOpen, setInternalIsPreviewOpen] = React.useState(false)
+  const [internalPreviewNode, setInternalPreviewNode] = React.useState<TreeNode | null>(null)
+  
+  // Use external state if provided, otherwise use internal state
+  const currentPreviewRect = previewRect !== undefined ? previewRect : internalPreviewRect
+  const currentIsPreviewOpen = isPreviewOpen !== undefined ? isPreviewOpen : internalIsPreviewOpen
+  const currentPreviewNode = previewNode !== undefined ? previewNode : internalPreviewNode
+  const currentClosePreview = onClosePreview || (() => setInternalIsPreviewOpen(false))
+  
+  // Loading state for preview content
+  const [isPreviewLoading, setIsPreviewLoading] = React.useState(false)
+
+  // Handle preview loading state
+  React.useEffect(() => {
+    if (currentIsPreviewOpen && currentPreviewNode) {
+      setIsPreviewLoading(true)
+      const timer = setTimeout(() => {
+        setIsPreviewLoading(false)
+      }, 250) // 250ms delay before showing content
+      
+      return () => clearTimeout(timer)
+    } else {
+      setIsPreviewLoading(false)
+    }
+  }, [currentIsPreviewOpen, currentPreviewNode])
 
   const openPreviewFromRect = (rect: DOMRect, node?: TreeNode) => {
-    setPreviewRect(rect)
-    if (node) setPreviewNode(node)
-    setIsPreviewOpen(true)
+    if (onPreviewAnchor) {
+      // When external handler is provided, just call it and let it handle the modal
+      onPreviewAnchor(rect, node!)
+    } else {
+      // When no external handler, manage internal state
+      setInternalPreviewRect(rect)
+      if (node) setInternalPreviewNode(node)
+      setInternalIsPreviewOpen(true)
+    }
   }
 
   const closePreview = () => {
     // Trigger exit animation by closing; keep node until onExited
-    setIsPreviewOpen(false)
+    currentClosePreview()
   }
 
+
   // Listen for global preview requests (from tree view single-clicks)
+  // Only listen when no external onPreviewAnchor is provided to avoid circular dependency
   React.useEffect(() => {
+    if (onPreviewAnchor) return // Don't listen when external handler is provided
+    
     const handler = (e: any) => {
       try {
         const { rect, node } = e.detail || {}
@@ -778,7 +821,7 @@ export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavig
     }
     window.addEventListener('open-preview', handler as EventListener)
     return () => window.removeEventListener('open-preview', handler as EventListener)
-  }, [])
+  }, [onPreviewAnchor])
 
   const handleDeleteFile = async () => {
     if (!selectedNode) return
@@ -844,13 +887,13 @@ export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavig
 
   // Actions for preview modal operating on previewNode
   const handleDeletePreviewNode = async () => {
-    if (!previewNode || previewNode.type !== 'file') return
-    const confirmed = window.confirm(`Are you sure you want to delete "${previewNode.name}"?`)
+    if (!currentPreviewNode || currentPreviewNode.type !== 'file') return
+    const confirmed = window.confirm(`Are you sure you want to delete "${currentPreviewNode.name}"?`)
     if (!confirmed) return
     try {
       const effectiveDriveId = driveId || (window.location.hash.match(/#\/drive\/([^/]+)/)?.[1] ?? null)
       if (!effectiveDriveId || !api?.drives?.deleteFile) return
-      const path = previewNode.id.startsWith('/') ? previewNode.id : `/${previewNode.id}`
+      const path = currentPreviewNode.id.startsWith('/') ? currentPreviewNode.id : `/${currentPreviewNode.id}`
       const success = await api.drives.deleteFile(effectiveDriveId, path)
       if (success) {
         onFileDeleted?.()
@@ -865,15 +908,15 @@ export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavig
   }
 
   const handleDownloadPreviewNode = async () => {
-    if (!previewNode || previewNode.type !== 'file' || !driveId || !currentDrive) return
+    if (!currentPreviewNode || currentPreviewNode.type !== 'file' || !driveId || !currentDrive) return
     
     try {
-      toaster.showInfo('Download Started', `Downloading ${previewNode.name}...`)
+      toaster.showInfo('Download Started', `Downloading ${currentPreviewNode.name}...`)
       
-      const result = await api?.drives?.downloadFile?.(driveId, previewNode.id, previewNode.name, currentDrive.name)
+      const result = await api?.drives?.downloadFile?.(driveId, currentPreviewNode.id, currentPreviewNode.name, currentDrive.name)
       
       if (result?.success) {
-        toaster.showSuccess('Download Complete', `${previewNode.name} saved to Downloads/HyperTeleporter/${currentDrive.name}/`, {
+        toaster.showSuccess('Download Complete', `${currentPreviewNode.name} saved to Downloads/HyperTeleporter/${currentDrive.name}/`, {
           label: 'Open Folder',
           onClick: () => api?.downloads?.openFolder?.(result.downloadPath)
         })
@@ -915,6 +958,7 @@ export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavig
         }})
       }
       actions.push(
+        { id: 'download-all', label: 'Download All', icon: <IconDownload size={16} />, onClick: () => onDownloadFolder?.(selectedNode) },
         { id: 'refresh', label: 'Refresh', icon: <IconArrowUp size={16} />, onClick: () => onRefresh?.() },
         { id: 'copy', label: 'Copy path', icon: <IconCopy size={16} />, onClick: handleCopyPath },
       )
@@ -967,66 +1011,38 @@ export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavig
 
   return (
     <div className={cn("h-full overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-600 scrollbar-track-neutral-800 bg-black/5", className)}>
-      {/* Actions Header - only for files */}
-      {selectedNode.type === 'file' && (
-        <div className="sticky top-0 z-10 bg-black/5 backdrop-blur-sm border-b border-neutral-700/30 p-4">
-          <div className="flex justify-between items-center">
-            <div>
-              <MagicButton className="text-sm flex items-center gap-2" onClick={() => onNavigateUp?.()}>
-                <IconArrowUp size={16} />
-                Back
-              </MagicButton>
-            </div>
-            <div className="flex gap-2">
-              <MagicButton className="text-sm flex items-center gap-2">
-                <IconDownload size={16} />
-                Download
-              </MagicButton>
-              <MagicButton className="text-sm flex items-center gap-2">
-                <IconShare size={16} />
-                Share
-              </MagicButton>
-              {canWrite && (
-                <MagicButton 
-                  className="text-sm flex items-center gap-2"
-                  onClick={handleDeleteFile}
-                >
-                  <IconTrash size={16} />
-                  Delete
-                </MagicButton>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
       
       {selectedNode.type === 'folder' ? (
         <div className="h-full" onContextMenu={onRightClick}>
-          <FolderContents node={selectedNode} onFileClick={onFileClick} onNavigateUp={onNavigateUp} canNavigateUp={canNavigateUp} driveId={driveId} onFileDeleted={onFileDeleted} onPreviewAnchor={openPreviewFromRect} canWrite={canWrite} currentDrive={currentDrive} />
+          <FolderContents node={selectedNode} onFileClick={onFileClick} onNavigateUp={onNavigateUp} canNavigateUp={canNavigateUp} driveId={driveId} onFileDeleted={onFileDeleted} onPreviewAnchor={openPreviewFromRect} onDownloadFile={onDownloadFile} onDownloadFolder={onDownloadFolder} canWrite={canWrite} currentDrive={currentDrive} />
         </div>
       ) : (
-        <>
-          {!isPreviewOpen && (
-            <div onContextMenu={onRightClick}>
-              <div className="max-h-[480px] overflow-y-auto">
-                <FilePreview node={selectedNode} />
-              </div>
-              <FileMetadata node={selectedNode} />
+        // For files, show empty state or parent folder - no file content view
+        <div className="h-full flex items-center justify-center text-neutral-500" onContextMenu={onRightClick}>
+          <div className="text-center">
+            <div className="w-16 h-16 mx-auto mb-4 rounded-lg bg-neutral-800/50 flex items-center justify-center">
+              <FileIcon node={selectedNode} />
             </div>
-          )}
-        </>
+            <p className="text-lg font-medium text-white mb-2">{selectedNode.name}</p>
+            <p className="text-sm text-neutral-500">File selected - Preview modal will open automatically</p>
+          </div>
+        </div>
       )}
 
       {/* Preview Modal with zoom-from-source animation */}
-      {previewNode && (
+      {currentPreviewNode && (
         <ZoomPreview 
-          open={isPreviewOpen} 
-          sourceRect={previewRect} 
+          open={currentIsPreviewOpen} 
+          sourceRect={currentPreviewRect} 
           onClose={closePreview} 
-          onExited={() => setPreviewNode(null)}
+          onExited={() => {
+            if (!onPreviewAnchor) {
+              setInternalPreviewNode(null)
+            }
+          }}
           rightActions={
             <>
-              {previewNode.type === 'file' && (
+              {currentPreviewNode.type === 'file' && (
                 <button 
                   onClick={handleDownloadPreviewNode} 
                   className="text-neutral-300 hover:text-white px-2 py-1"
@@ -1035,7 +1051,7 @@ export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavig
                   <IconDownload size={16} />
                 </button>
               )}
-              {previewNode.type === 'file' && canWrite && (
+              {currentPreviewNode.type === 'file' && canWrite && (
                 <button 
                   onClick={handleDeletePreviewNode} 
                   className="text-red-400 hover:text-red-300 px-2 py-1"
@@ -1048,26 +1064,37 @@ export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavig
           }
         >
           <div className="h-full overflow-hidden flex flex-col">
-            <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
-              {/* Upper half: preview or folder cover */}
-              <div className="basis-1/2 min-h-0 max-h-1/2  overflow-hidden">
-                {previewNode.type === 'file' ? (
-                  <FilePreview node={previewNode} insideModal />
-                ) : (
-                  <div className="h-full w-full flex items-center justify-center">
-                    <img src={FolderIcon} alt="Folder" className="w-12 h-12 opacity-80" />
-                  </div>
-                )}
+            {isPreviewLoading ? (
+              // Loading state - show spinner
+              <div className="flex-1 flex items-center justify-center">
+                <div className="flex flex-col items-center gap-4">
+                  <IconLoader2 className="w-8 h-8 text-neutral-400 animate-spin" />
+                  <p className="text-sm text-neutral-500">Loading preview...</p>
+                </div>
               </div>
-              {/* Lower half: metadata/details (scrollable) */}
-              <div className="flex-1 min-h-0 overflow-y-auto">
-                {previewNode.type === 'file' ? (
-                  <FileMetadata node={previewNode} />
-                ) : (
-                  <FolderDetails driveId={driveId} folderId={previewNode.id} />
-                )}
+            ) : (
+              // Content state - show actual content
+              <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+                {/* Upper half: preview or folder cover */}
+                <div className="basis-1/2 min-h-0 max-h-1/2  overflow-hidden">
+                  {currentPreviewNode.type === 'file' ? (
+                    <FilePreview node={currentPreviewNode} insideModal />
+                  ) : (
+                    <div className="h-full w-full flex items-center justify-center p-8">
+                      <img src={FolderIcon} alt="Folder" className="w-20 h-20 opacity-80" />
+                    </div>
+                  )}
+                </div>
+                {/* Lower half: metadata/details (scrollable) */}
+                <div className="flex-1 min-h-0 overflow-y-auto">
+                  {currentPreviewNode.type === 'file' ? (
+                    <FileMetadata node={currentPreviewNode} />
+                  ) : (
+                    <FolderDetails driveId={driveId} folderId={currentPreviewNode.id} />
+                  )}
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </ZoomPreview>
       )}
@@ -1125,7 +1152,7 @@ function FolderDetails({ driveId, folderId }: { driveId?: string; folderId: stri
   }
 
   return (
-    <div className="p-4 space-y-4">
+    <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <h4 className="text-base md:text-lg font-semibold text-white">Folder Details</h4>
       </div>
@@ -1229,7 +1256,7 @@ function ZoomPreview({ open = true, sourceRect, onClose, onExited, rightActions,
               </div>
             </div>
             {/* Body */}
-            <div className="max-h-[80vh] overflow-y-auto">
+            <div className="max-h-[80vh] overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-600 scrollbar-track-neutral-800 hover:scrollbar-thumb-neutral-500">
               {children}
             </div>
           </motion.div>

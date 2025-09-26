@@ -28,6 +28,7 @@ interface DriveSidebarProps {
   onContextMenu: (node: TreeNode, actions: any[], event: React.MouseEvent) => void
   onNavigateUp: () => void
   onNavigateToFolder: (node: TreeNode) => void
+  onPreviewAnchor?: (rect: DOMRect, node: TreeNode) => void
   onCreateFolder: (parentPath: string) => void
   onRefresh: () => void
   onDelete: (node: TreeNode) => void
@@ -56,6 +57,7 @@ export const DriveSidebar: React.FC<DriveSidebarProps> = ({
   onContextMenu,
   onNavigateUp,
   onNavigateToFolder,
+  onPreviewAnchor,
   onCreateFolder,
   onRefresh,
   onDelete,
@@ -301,6 +303,7 @@ export const DriveSidebar: React.FC<DriveSidebarProps> = ({
                         onContextMenu={onContextMenu}
                         onNavigateUp={onNavigateUp}
                         onNavigateToFolder={onNavigateToFolder}
+                        onPreviewAnchor={onPreviewAnchor}
                         showBreadcrumb={false}
                         breadcrumbPath={[]}
                         navigationDirection="forward"

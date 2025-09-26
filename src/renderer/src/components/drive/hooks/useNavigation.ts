@@ -13,6 +13,7 @@ interface UseNavigationProps {
   onUpdateState: (updates: any) => void
   onSetTreeRoot: (path: string) => void
   onSetSelectedNode: (node: TreeNode | undefined) => void
+  onPreviewAnchor?: (rect: DOMRect, node: TreeNode) => void
   driveId: string | undefined
 }
 
@@ -26,6 +27,7 @@ export function useNavigation({
   onUpdateState,
   onSetTreeRoot,
   onSetSelectedNode,
+  onPreviewAnchor,
   driveId
 }: UseNavigationProps) {
 
@@ -208,24 +210,73 @@ export function useNavigation({
   const handleSearchSelect = useCallback((node: TreeNode, pathNames: string[]) => {
     // pathNames includes the file name; folders are pathNames.slice(0,-1)
     const folderPath = pathNames.slice(0, -1)
-    const folderNode = folderPath.length > 0 
-      ? findNodeByPath(completeFileSystem, folderPath) 
-      : { id: 'virtual-root', name: 'Root', type: 'folder' as const, children: completeFileSystem } as TreeNode
-
-    // Set view to the folder containing the file
-    if (folderNode && folderNode.type === 'folder') {
-      // Preserve current navigation state for back button functionality
-      onUpdateState({
-        navigationStack: [...navigationStack, currentView],
-        currentView: folderNode.children || [],
-        breadcrumbPath: folderPath,
-        lastFocusedFolder: folderNode,
-        treeRoot: folderNode.id
-      })
+    
+    if (folderPath.length > 0) {
+      // File is in a subfolder - find the actual folder
+      const folderNode = findNodeByPath(completeFileSystem, folderPath)
+      
+      if (folderNode && folderNode.type === 'folder') {
+        // Navigate to the subfolder and show folder contents
+        onUpdateState({
+          navigationStack: [...navigationStack, currentView],
+          currentView: folderNode.children || [],
+          breadcrumbPath: folderPath,
+          lastFocusedFolder: folderNode,
+          treeRoot: folderNode.id,
+          selectedNode: undefined // Don't select file - show folder contents instead
+        })
+      } else {
+        // If no folder found, just select the file
+        onSetSelectedNode(node)
+      }
+    } else {
+      // File is in root - check if we're already in root
+      if (treeRoot === '/') {
+        // Already in root - don't navigate, just open preview
+        // No state update needed
+      } else {
+        // Not in root - navigate to actual root
+        const rootFolder = { id: '/', name: 'Root', type: 'folder' as const, children: completeFileSystem } as TreeNode
+        
+        onUpdateState({
+          navigationStack: [...navigationStack, currentView],
+          currentView: completeFileSystem, // Root children
+          breadcrumbPath: [], // Empty breadcrumb for root
+          lastFocusedFolder: rootFolder,
+          treeRoot: '/', // Actual root path
+          selectedNode: undefined // Don't select file - show folder contents instead
+        })
+      }
     }
-    // Select the file itself
-    onSetSelectedNode(node)
-  }, [completeFileSystem, navigationStack, currentView, onUpdateState, onSetSelectedNode])
+
+    // If it's a file, open the preview modal after a short delay to ensure state is updated
+    if (node.type === 'file') {
+      setTimeout(() => {
+        // Create a fake rect for the preview modal (centered on screen)
+        const fakeRect = {
+          left: window.innerWidth / 2 - 100,
+          top: window.innerHeight / 2 - 100,
+          width: 200,
+          height: 200,
+          right: window.innerWidth / 2 + 100,
+          bottom: window.innerHeight / 2 + 100,
+          x: window.innerWidth / 2 - 100,
+          y: window.innerHeight / 2 - 100,
+          toJSON: () => fakeRect,
+        } as DOMRect
+
+        // Use onPreviewAnchor if provided, otherwise dispatch custom event
+        if (onPreviewAnchor) {
+          onPreviewAnchor(fakeRect, node)
+        } else {
+          // Fallback to custom event for backward compatibility
+          window.dispatchEvent(new CustomEvent('open-preview', { 
+            detail: { rect: fakeRect, node } 
+          }))
+        }
+      }, 100) // Small delay to ensure state is updated
+    }
+  }, [completeFileSystem, navigationStack, currentView, onUpdateState, onSetSelectedNode, onPreviewAnchor])
 
   return {
     handleNodeSelect,

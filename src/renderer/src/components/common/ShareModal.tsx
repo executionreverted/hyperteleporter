@@ -6,6 +6,7 @@ import MagicButtonWide from "../../../../components/ui/magic-button-wide";
 import { IconCopy, IconCheck, IconShare } from "@tabler/icons-react";
 import QRCode from "react-qr-code";
 import { AnimatePresence, motion } from "motion/react";
+import { useEscapeKey } from "../../hooks/useEscapeKey";
 
 interface ShareModalProps {
   driveKey: string;
@@ -23,6 +24,12 @@ export function ShareModal({ driveKey, driveName, triggerButton, className, isOp
   // Use external isOpen if provided, otherwise use internal state
   const isOpen = externalIsOpen !== undefined ? externalIsOpen : internalIsOpen;
   const setIsOpen = onClose || setInternalIsOpen;
+
+  // Add ESC key functionality
+  useEscapeKey({
+    onEscape: () => setIsOpen(false),
+    isEnabled: isOpen
+  });
 
   const handleCopyKey = async () => {
     try {
