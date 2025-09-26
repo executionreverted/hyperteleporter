@@ -8,9 +8,10 @@ import { StaticDriveGrid } from "../../../../components/ui/static-drive-grid";
 import { Drive } from "../../contexts/DrivesContext";
 import Prism from "../../../../components/ui/prism";
 import { DriveSearchInput } from "../../../../components/ui/drive-search-input";
-import { memo, useMemo, useState } from "react";
+import { memo, useMemo, useState, useRef } from "react";
 import GradualBlur from "../../../../components/ui/GradualBlur";
 import { ShareModal } from "./ShareModal";
+import { useGlobalSearch } from "../../hooks/useGlobalSearch";
 // Optimized Prism background component
 const PrismBackground = memo(() => (
   <div className="absolute inset-0 w-full h-full">
@@ -39,6 +40,12 @@ const DrivesList = memo(function DrivesList() {
   const [filteredDrives, setFilteredDrives] = useState<Drive[]>(drives);
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [selectedDrive, setSelectedDrive] = useState<Drive | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Global search functionality
+  useGlobalSearch({
+    searchInputRef
+  });
 
   const handleBrowseDrive = useMemo(() => (drive: Drive) => {
     const path = drive.link && drive.link.trim().length > 0 ? drive.link : `/drive/${drive.id}`;
@@ -124,6 +131,7 @@ const DrivesList = memo(function DrivesList() {
               <h2 className="text-2xl font-bold text-white flex-shrink-0">Your Drives</h2>
               <div className="flex-1 max-w-2xl flex items-center">
                 <DriveSearchInput
+                  ref={searchInputRef}
                   drives={drives}
                   onSearch={handleSearch}
                   onSelectDrive={handleSelectDrive}

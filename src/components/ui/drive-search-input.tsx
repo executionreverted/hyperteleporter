@@ -1,22 +1,23 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, forwardRef } from "react";
 import { cn } from "../../renderer/lib/utils";
 import { Drive } from "../../renderer/src/contexts/DrivesContext";
 
-export function DriveSearchInput({
-  drives,
-  onSearch,
-  onSelectDrive,
-  placeholder = "Search your drives...",
-}: {
+export const DriveSearchInput = forwardRef<HTMLInputElement, {
   drives: Drive[];
   onSearch: (query: string) => void;
   onSelectDrive?: (drive: Drive) => void;
   placeholder?: string;
-}) {
+}>(function DriveSearchInput({
+  drives,
+  onSearch,
+  onSelectDrive,
+  placeholder = "Search your drives...",
+}, ref) {
   const [currentPlaceholder, setCurrentPlaceholder] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
+  const internalRef = useRef<HTMLInputElement>(null);
   // Autocomplete disabled — filtering is handled by parent list
 
   // Generate dynamic placeholders based on available drives
@@ -29,8 +30,17 @@ export function DriveSearchInput({
   ];
 
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
   // No results dropdown anymore
+
+  // Combine internal ref with forwarded ref
+  const combinedRef = (node: HTMLInputElement | null) => {
+    internalRef.current = node;
+    if (typeof ref === 'function') {
+      ref(node);
+    } else if (ref) {
+      ref.current = node;
+    }
+  };
 
   const startAnimation = () => {
     intervalRef.current = setInterval(() => {
@@ -77,7 +87,7 @@ export function DriveSearchInput({
       <form className="relative">
         <div className="relative">
           <input
-            ref={inputRef}
+            ref={combinedRef}
             type="text"
             value={searchQuery}
             onChange={handleChange}
@@ -110,4 +120,4 @@ export function DriveSearchInput({
       </form>
     </div>
   );
-}
+});

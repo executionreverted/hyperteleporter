@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain, screen } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, screen, globalShortcut } from 'electron' 
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 const icon = join(__dirname, '../../build/icon.png')
@@ -72,6 +72,55 @@ function createWindow(): void {
     mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+  }
+}
+
+// Register global shortcuts
+function registerGlobalShortcuts(): void {
+  // Register Ctrl+R (or Cmd+R on macOS) for app reload
+  const ret = globalShortcut.register('CommandOrControl+R', () => {
+    const mainWindow = BrowserWindow.getAllWindows()[0]
+    if (mainWindow) {
+      console.log('Global shortcut triggered: Reloading app...')
+      mainWindow.reload()
+    }
+  })
+
+  // Register Ctrl+Shift+R (or Cmd+Shift+R on macOS) for hard reload (ignoring cache)
+  const hardReloadRet = globalShortcut.register('CommandOrControl+Shift+R', () => {
+    const mainWindow = BrowserWindow.getAllWindows()[0]
+    if (mainWindow) {
+      console.log('Global shortcut triggered: Hard reloading app (ignoring cache)...')
+      mainWindow.webContents.reloadIgnoringCache()
+    }
+  })
+
+  if (!ret) {
+    console.log('Failed to register global shortcut CommandOrControl+R')
+  } else {
+    console.log('Global shortcut CommandOrControl+R registered successfully')
+  }
+
+  if (!hardReloadRet) {
+    console.log('Failed to register global shortcut CommandOrControl+Shift+R')
+  } else {
+    console.log('Global shortcut CommandOrControl+Shift+R registered successfully')
+  }
+
+  // Register Ctrl+F (or Cmd+F on macOS) for search functionality
+  const searchRet = globalShortcut.register('CommandOrControl+F', () => {
+    const mainWindow = BrowserWindow.getAllWindows()[0]
+    if (mainWindow) {
+      console.log('Global shortcut triggered: Opening search...')
+      // Send IPC message to renderer to handle search
+      mainWindow.webContents.send('global-search-triggered')
+    }
+  })
+
+  if (!searchRet) {
+    console.log('Failed to register global shortcut CommandOrControl+F')
+  } else {
+    console.log('Global shortcut CommandOrControl+F registered successfully')
   }
 }
 
@@ -356,6 +405,9 @@ app.whenReady().then(() => {
 
   createWindow()
 
+  // Register global shortcuts
+  registerGlobalShortcuts()
+
   app.on('activate', function () {
     // On macOS it's common to re-create a window in the app when the
     // dock icon is clicked and there are no other windows open.
@@ -367,6 +419,9 @@ app.whenReady().then(() => {
 // for applications and their menu bar to stay active until the user quits
 // explicitly with Cmd + Q.
 app.on('window-all-closed', () => {
+  // Unregister global shortcuts when all windows are closed
+  globalShortcut.unregisterAll()
+  
   if (process.platform !== 'darwin') {
     app.quit()
   }
@@ -376,6 +431,9 @@ app.on('window-all-closed', () => {
 // code. You can also put them in separate files and require them here.
 
 app.on('before-quit', () => {
+  // Unregister all global shortcuts
+  globalShortcut.unregisterAll()
+  
   // Best-effort close of corestores
   closeAllDrives().catch(() => {})
   stopAllDriveWatchers().catch(() => {})

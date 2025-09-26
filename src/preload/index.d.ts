@@ -34,6 +34,8 @@ declare global {
         getFileUrl: (driveId: string, path: string) => Promise<string | null>
         getFileText: (driveId: string, path: string) => Promise<string | null>
       }
+      // Global shortcuts
+      onGlobalSearchTriggered: (callback: () => void) => () => void
     }
   }
 }

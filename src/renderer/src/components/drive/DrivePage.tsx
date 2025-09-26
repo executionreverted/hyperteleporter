@@ -18,6 +18,7 @@ import { NewFolderModal } from './NewFolderModal'
 import { TreeNode } from './types'
 import { DriveApiService } from './services/driveApiService'
 import { buildCompleteFileSystemTree, findNodeById, expandAllFolders } from './utils/fileSystemUtils'
+import { useGlobalSearch } from '../../hooks/useGlobalSearch'
 
 export const DrivePage: React.FC = () => {
   const params = useParams()
@@ -66,6 +67,17 @@ export const DrivePage: React.FC = () => {
   useEventListeners({
     driveId: params.driveId as string,
     onReload: reloadCurrentFolder
+  })
+
+  // Global search functionality - trigger search button click
+  useGlobalSearch({
+    onSearchTriggered: () => {
+      // Find and click the search button
+      const searchButton = document.querySelector('[title="Search Files"]') as HTMLButtonElement
+      if (searchButton) {
+        searchButton.click()
+      }
+    }
   })
 
   const { 

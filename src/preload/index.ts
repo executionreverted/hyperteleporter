@@ -85,6 +85,11 @@ const api = {
         return null
       }
     }
+  },
+  // Global shortcuts
+  onGlobalSearchTriggered: (callback: () => void) => {
+    ipcRenderer.on('global-search-triggered', callback)
+    return () => ipcRenderer.removeListener('global-search-triggered', callback)
   }
 }
 
