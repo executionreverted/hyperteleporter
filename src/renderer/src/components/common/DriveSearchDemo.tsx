@@ -9,12 +9,10 @@ export function DriveSearchDemo() {
   const navigate = useNavigate();
 
   const handleSearch = (query: string) => {
-    console.log("Searching for:", query);
     // You can implement additional search logic here
   };
 
   const handleSelectDrive = (drive: any) => {
-    console.log("Selected drive:", drive);
     // Navigate to the selected drive
     navigate(drive.link);
   };

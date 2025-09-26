@@ -14,11 +14,8 @@ export function Welcome() {
     const needsProfile = useMemo(() => {
         const name = (profile as any)?.name;
         const result = !name || typeof name !== "string" || name.trim().length === 0;
-        console.log('[Welcome] needsProfile calculation - profile:', profile, 'name:', name, 'needsProfile:', result);
         return result;
     }, [profile]);
-
-    console.log('[Welcome] Render - loaded:', loaded, 'profile:', profile, 'needsProfile:', needsProfile, 'username state:', username);
 
     useEffect(() => {
         const name = (profile as any)?.name;

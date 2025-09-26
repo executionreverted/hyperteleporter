@@ -35,13 +35,10 @@ export function StartupLoader() {
       }
 
       const handleDrivesInitialized = () => {
-        console.log('[StartupLoader] Received drives:initialized event');
         if (mounted) {
           setCurrentStep(3); // Ensure we're on the last step
-          console.log('[StartupLoader] Setting loading to false in 500ms');
           setTimeout(() => {
             if (mounted) {
-              console.log('[StartupLoader] Setting loading to false now');
               setLoading(false);
             }
           }, 500); // Brief delay to show completion
@@ -53,7 +50,6 @@ export function StartupLoader() {
       
       // Fallback timeout in case event doesn't fire
       const fallbackTimeout = setTimeout(() => {
-        console.log('[StartupLoader] Fallback timeout - drives may not be ready');
         if (mounted) {
           setCurrentStep(3);
           setLoading(false);

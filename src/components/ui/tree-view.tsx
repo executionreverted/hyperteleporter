@@ -212,7 +212,7 @@ const TreeNodeComponent = ({ node, level, onNodeSelect, onNodeToggle, selectedNo
       id: 'share',
       label: 'Share',
       icon: <IconShare size={16} />,
-      onClick: () => console.log('Share', node.name),
+      onClick: () => {/* TODO: Implement share functionality */},
     });
 
     // Write actions (only when allowed and target is folder)

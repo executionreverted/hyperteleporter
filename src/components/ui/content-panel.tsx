@@ -381,10 +381,8 @@ function MediaPreview({ node, type }: { node: TreeNode; type: 'audio' | 'video' 
           return
         }
         const path = node.id.startsWith('/') ? node.id : `/${node.id}`
-        console.log(`[MediaPreview] Loading ${type} file: ${node.name} (${path})`)
         const blobUrl = await api.files.getFileUrl(driveId, path)
         if (!blobUrl) throw new Error('Empty')
-        console.log(`[MediaPreview] Created blob URL for ${node.name}: ${blobUrl}`)
         setUrl(blobUrl)
       } catch (e: any) {
         console.error(`[MediaPreview] Error loading ${node.name}:`, e)
@@ -408,18 +406,18 @@ function MediaPreview({ node, type }: { node: TreeNode; type: 'audio' | 'video' 
             src={url} 
             controls 
             className="max-h-[420px] w-full rounded-md"
-            onError={(e) => console.error(`[MediaPreview] Video error for ${node.name}:`, e)}
-            onLoadStart={() => console.log(`[MediaPreview] Video load started for ${node.name}`)}
+            onError={(e) => {/* Video error */}}
+            onLoadStart={() => {/* Video load started */}}
           />
         ) : (
           <audio 
             src={url} 
             controls 
             className="w-full"
-            onError={(e) => console.error(`[MediaPreview] Audio error for ${node.name}:`, e)}
-            onLoadStart={() => console.log(`[MediaPreview] Audio load started for ${node.name}`)}
-            onCanPlay={() => console.log(`[MediaPreview] Audio can play for ${node.name}`)}
-            onCanPlayThrough={() => console.log(`[MediaPreview] Audio can play through for ${node.name}`)}
+            onError={(e) => {/* Audio error */}}
+            onLoadStart={() => {/* Audio load started */}}
+            onCanPlay={() => {/* Audio can play */}}
+            onCanPlayThrough={() => {/* Audio can play through */}}
           />
         )}
       </div>
@@ -511,7 +509,6 @@ const FolderContents = ({ node, onFileClick, onNavigateUp, canNavigateUp, driveI
           const success = await api.drives.deleteFile(effectiveDriveId, path)
           
           if (success) {
-            console.log(`[FolderContents] Successfully deleted ${fileNode.name}`)
             toaster.showSuccess('Item Deleted', `${fileNode.name} has been deleted successfully`)
             onFileDeleted?.()
           } else {
@@ -530,13 +527,11 @@ const FolderContents = ({ node, onFileClick, onNavigateUp, canNavigateUp, driveI
     if (fileNode.type !== 'file' || !driveId || !currentDrive) return
     
     try {
-      console.log('[FolderContents] Downloading file:', fileNode.name)
       toaster.showInfo('Download Started', `Downloading ${fileNode.name}...`)
       
       const result = await api?.drives?.downloadFile?.(driveId, fileNode.id, fileNode.name, currentDrive.name)
       
       if (result?.success) {
-        console.log('[FolderContents] Successfully downloaded file:', fileNode.name, 'to', result.downloadPath)
         toaster.showSuccess('Download Complete', `${fileNode.name} saved to Downloads/HyperTeleporter/${currentDrive.name}/`, {
           label: 'Open Folder',
           onClick: () => api?.downloads?.openFolder?.(result.downloadPath)
@@ -798,7 +793,6 @@ export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavig
         try {
           const effectiveDriveId = driveId || (window.location.hash.match(/#\/drive\/([^/]+)/)?.[1] ?? null)
           const hasApi = !!api?.drives?.deleteFile
-          console.log('[ContentPanel] Delete debug:', { effectiveDriveId, hasApi, selectedNode })
           if (!effectiveDriveId || !hasApi) {
             console.error('Delete failed: no driveId or API')
             toaster.showError('Delete Failed', 'No drive ID or API available')
@@ -809,7 +803,6 @@ export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavig
           const success = await api.drives.deleteFile(effectiveDriveId, path)
           
           if (success) {
-            console.log(`[ContentPanel] Successfully deleted ${selectedNode.name}`)
             toaster.showSuccess('Item Deleted', `${selectedNode.name} has been deleted successfully`)
             onFileDeleted?.()
           } else {
@@ -828,13 +821,11 @@ export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavig
     if (!selectedNode || selectedNode.type !== 'file' || !driveId || !currentDrive) return
     
     try {
-      console.log('[ContentPanel] Downloading file:', selectedNode.name)
       toaster.showInfo('Download Started', `Downloading ${selectedNode.name}...`)
       
       const result = await api?.drives?.downloadFile?.(driveId, selectedNode.id, selectedNode.name, currentDrive.name)
       
       if (result?.success) {
-        console.log('[ContentPanel] Successfully downloaded file:', selectedNode.name, 'to', result.downloadPath)
         toaster.showSuccess('Download Complete', `${selectedNode.name} saved to Downloads/HyperTeleporter/${currentDrive.name}/`, {
           label: 'Open Folder',
           onClick: () => api?.downloads?.openFolder?.(result.downloadPath)
@@ -877,13 +868,11 @@ export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavig
     if (!previewNode || previewNode.type !== 'file' || !driveId || !currentDrive) return
     
     try {
-      console.log('[ContentPanel] Downloading file from preview:', previewNode.name)
       toaster.showInfo('Download Started', `Downloading ${previewNode.name}...`)
       
       const result = await api?.drives?.downloadFile?.(driveId, previewNode.id, previewNode.name, currentDrive.name)
       
       if (result?.success) {
-        console.log('[ContentPanel] Successfully downloaded file:', previewNode.name, 'to', result.downloadPath)
         toaster.showSuccess('Download Complete', `${previewNode.name} saved to Downloads/HyperTeleporter/${currentDrive.name}/`, {
           label: 'Open Folder',
           onClick: () => api?.downloads?.openFolder?.(result.downloadPath)
@@ -910,10 +899,8 @@ export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavig
 
   const buildContextActions = React.useCallback((): ContextMenuAction[] => {
     if (!selectedNode) return []
-    console.log('[ContentPanel] buildContextActions - selectedNode:', selectedNode)
     const actions: ContextMenuAction[] = []
     if (selectedNode.type === 'file') {
-      console.log('[ContentPanel] Adding file actions for:', selectedNode.name)
       actions.push(
         { id: 'open', label: 'Open', icon: <IconEye size={16} />, onClick: () => {} },
         { id: 'download', label: 'Download', icon: <IconDownload size={16} />, onClick: handleDownloadFile },
@@ -921,10 +908,8 @@ export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavig
       )
       if (canWrite) actions.push({ id: 'delete', label: 'Delete', icon: <IconTrash size={16} />, onClick: handleDeleteFile, destructive: true })
     } else {
-      console.log('[ContentPanel] Adding folder actions for:', selectedNode.name)
       if (canWrite) {
         actions.push({ id: 'create-folder', label: 'Create Folder', icon: <IconFolderPlus size={16} />, onClick: () => {
-          console.log('[ContentPanel] Create folder clicked, selectedNode.id:', selectedNode.id)
           const currentFolderPath = selectedNode.id === 'virtual-root' ? '/' : selectedNode.id
           onCreateFolder?.(currentFolderPath)
         }})
@@ -934,7 +919,6 @@ export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavig
         { id: 'copy', label: 'Copy path', icon: <IconCopy size={16} />, onClick: handleCopyPath },
       )
     }
-    console.log('[ContentPanel] Built actions:', actions)
     return actions
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedNode, canWrite])

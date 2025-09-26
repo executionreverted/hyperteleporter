@@ -58,8 +58,6 @@ export function HyperdriveProvider({ children }: { children: ReactNode }) {
   const [isInitializing, setIsInitializing] = useState(true)
   const [hasUsername, setHasUsername] = useState(false)
 
-  console.log('[HyperdriveProvider] Component initialized - isInitializing:', isInitializing, 'hasUsername:', hasUsername, 'loaded:', loaded)
-
   // Get API dynamically to ensure it's available when preload is ready
   const getApi = useCallback(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -67,21 +65,13 @@ export function HyperdriveProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const refreshProfile = useCallback(async () => {
-    console.log('[HyperdriveContext] refreshProfile called')
     try {
       const api = getApi()
-      console.log('[HyperdriveContext] refreshProfile - api available:', !!api)
       if (api?.user?.getProfile && api?.user?.hasUsername) {
-        console.log('[HyperdriveContext] refreshProfile - calling getProfile()')
         const p = await api.user.getProfile()
-        console.log('[HyperdriveContext] refreshProfile - profile received:', p)
         const hasUser = await api.user.hasUsername()
-        console.log('[HyperdriveContext] refreshProfile - hasUsername result:', hasUser)
         setProfile(p)
         setHasUsername(hasUser)
-        console.log('[HyperdriveContext] refreshProfile - state updated')
-      } else {
-        console.log('[HyperdriveContext] refreshProfile - API methods not available')
       }
     } catch (err) {
       console.error('[HyperdriveContext] refreshProfile failed:', err)
@@ -101,18 +91,11 @@ export function HyperdriveProvider({ children }: { children: ReactNode }) {
   }, [getApi])
 
   const refreshDrives = useCallback(async () => {
-    console.log('[HyperdriveContext] refreshDrives called')
     try {
       const api = getApi()
-      console.log('[HyperdriveContext] refreshDrives - api available:', !!api)
       if (api?.drives?.list) {
-        console.log('[HyperdriveContext] refreshDrives - calling drives.list()')
         const list = await api.drives.list()
-        console.log('[HyperdriveContext] refreshDrives - drives received:', list)
         setDrives(list)
-        console.log('[HyperdriveContext] refreshDrives - drives state updated')
-      } else {
-        console.log('[HyperdriveContext] refreshDrives - API methods not available')
       }
     } catch (err) {
       console.error('[HyperdriveContext] refreshDrives failed:', err)
@@ -120,9 +103,7 @@ export function HyperdriveProvider({ children }: { children: ReactNode }) {
   }, [getApi])
 
   const refreshAll = useCallback(async () => {
-    console.log('[HyperdriveContext] refreshAll called - starting to load all data')
     await Promise.allSettled([refreshDrives(), refreshProfile(), refreshFiles()])
-    console.log('[HyperdriveContext] refreshAll completed')
   }, [refreshDrives, refreshFiles, refreshProfile])
 
   const updateProfileFn = useCallback(async (next: Profile) => {
@@ -155,25 +136,15 @@ export function HyperdriveProvider({ children }: { children: ReactNode }) {
   }, [getApi, refreshDrives])
 
   useEffect(() => {
-    console.log('[HyperdriveContext] useEffect triggered - starting initialization')
-    
     // Load profile immediately to set hasUsername state for routing
     const loadProfileImmediately = async () => {
-      console.log('[HyperdriveContext] loadProfileImmediately called')
       try {
         const api = getApi()
-        console.log('[HyperdriveContext] loadProfileImmediately - api available:', !!api)
         if (api?.user?.getProfile && api?.user?.hasUsername) {
-          console.log('[HyperdriveContext] loadProfileImmediately - calling getProfile()')
           const p = await api.user.getProfile()
-          console.log('[HyperdriveContext] loadProfileImmediately - profile received:', p)
           const hasUser = await api.user.hasUsername()
-          console.log('[HyperdriveContext] loadProfileImmediately - hasUsername result:', hasUser)
           setProfile(p)
           setHasUsername(hasUser)
-          console.log('[HyperdriveContext] loadProfileImmediately - state updated with profile:', p, 'hasUsername:', hasUser)
-        } else {
-          console.log('[HyperdriveContext] loadProfileImmediately - API methods not available')
         }
       } catch (err) {
         console.error('[HyperdriveContext] loadProfileImmediately failed:', err)
@@ -181,26 +152,21 @@ export function HyperdriveProvider({ children }: { children: ReactNode }) {
     }
 
     // Load profile immediately, then load everything else with startup delay
-    console.log('[HyperdriveContext] Starting immediate profile load')
     loadProfileImmediately()
     
     // Retry profile loading after a short delay in case API wasn't ready
     const retryTimer = setTimeout(() => {
-      console.log('[HyperdriveContext] Retrying profile load after 100ms')
       loadProfileImmediately()
     }, 100)
     
     const initTimer = setTimeout(() => {
-      console.log('[HyperdriveContext] Starting delayed refreshAll after 3200ms')
       refreshAll().finally(() => {
-        console.log('[HyperdriveContext] refreshAll completed, setting loaded=true, isInitializing=false')
         setLoaded(true)
         setIsInitializing(false)
       })
     }, 3200) // Match startup loader duration
 
     return () => {
-      console.log('[HyperdriveContext] useEffect cleanup - clearing timers')
       clearTimeout(initTimer)
       clearTimeout(retryTimer)
     }

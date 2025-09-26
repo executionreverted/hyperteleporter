@@ -77,11 +77,9 @@ export const ImagePreviewIcon = React.memo(({
         const api: any = (window as any)?.api;
         if (!api?.files?.getFileUrl) {
           setError(true);
-          console.log(`[ImagePreviewIcon] No files.getFileUrl API found`);
           return;
         }
 
-        console.log(`[ImagePreviewIcon] Loading image preview for ${node.name}`);
         const url = await api.files.getFileUrl(driveId, node.id);
         if (url) {
           // Cache the URL
