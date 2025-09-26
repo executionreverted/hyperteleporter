@@ -130,7 +130,7 @@ const DrivesList = memo(function DrivesList() {
                 />
               </div>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 ml-3">
               <JoinDrive triggerButton={<MagicButton>Join A Drive</MagicButton>} />
               <CreateDriveModal 
                 triggerButton={<MagicButton>Create A Drive</MagicButton>} 
