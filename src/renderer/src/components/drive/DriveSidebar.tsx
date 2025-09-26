@@ -9,6 +9,8 @@ import Shuffle from '../../../../components/ui/Shuffle'
 import { TreeNode, DriveInfo, SyncStatus, BreadcrumbItem } from './types'
 import { getBreadcrumbPath } from './utils/breadcrumbUtils'
 import { processTreeNodes } from './utils/fileSystemUtils'
+import ExpandAllIcon from '../../assets/expand-all.svg'
+import CollapseAllIcon from '../../assets/collapse-all.svg'
 
 interface DriveSidebarProps {
   treeRoot: string
@@ -35,6 +37,8 @@ interface DriveSidebarProps {
   onDownloadFolder: (node: TreeNode) => void
   onDownloadFile: (node: TreeNode) => void
   onBreadcrumbClick: (path: string) => void
+  onExpandAll: () => void
+  onCollapseAll: () => void
   onEllipsisMouseEnter: () => void
   onEllipsisMouseLeave: () => void
 }
@@ -64,6 +68,8 @@ export const DriveSidebar: React.FC<DriveSidebarProps> = ({
   onDownloadFolder,
   onDownloadFile,
   onBreadcrumbClick,
+  onExpandAll,
+  onCollapseAll,
   onEllipsisMouseEnter,
   onEllipsisMouseLeave,
 }) => {
@@ -234,26 +240,18 @@ export const DriveSidebar: React.FC<DriveSidebarProps> = ({
                   <div className="flex items-center gap-2">
                     <DelayedTooltip description="Expand all folders in the current view">
                       <button
-                        onClick={() => {
-                          // TODO: Implement expand all
-                        }}
+                        onClick={onExpandAll}
                         className="p-1.5 rounded hover:bg-black/20 text-neutral-400 hover:text-white transition-colors"
                       >
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
-                        </svg>
+                        <img src={ExpandAllIcon} alt="Expand all" className="w-4 h-4" />
                       </button>
                     </DelayedTooltip>
                     <DelayedTooltip description="Collapse all folders in the current view">
                       <button
-                        onClick={() => {
-                          // TODO: Implement collapse all
-                        }}
+                        onClick={onCollapseAll}
                         className="p-1.5 rounded hover:bg-black/20 text-neutral-400 hover:text-white transition-colors"
                       >
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
-                        </svg>
+                        <img src={CollapseAllIcon} alt="Collapse all" className="w-4 h-4" />
                       </button>
                     </DelayedTooltip>
                   </div>

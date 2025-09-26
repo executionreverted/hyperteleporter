@@ -268,6 +268,15 @@ export const DrivePage: React.FC = () => {
     navigate('/drives')
   }, [navigate])
 
+  const handleExpandAll = useCallback(() => {
+    const allExpanded = expandAllFolders(state.completeFileSystem)
+    setExpandedNodes(allExpanded)
+  }, [state.completeFileSystem, setExpandedNodes])
+
+  const handleCollapseAll = useCallback(() => {
+    setExpandedNodes(new Set())
+  }, [setExpandedNodes])
+
   const canWrite = state.currentDrive?.isWritable ?? true
 
   return (
@@ -303,6 +312,8 @@ export const DrivePage: React.FC = () => {
           onDownloadFolder={handleDownloadFolder}
           onDownloadFile={handleDownloadFile}
           onBreadcrumbClick={handleBreadcrumbClick}
+          onExpandAll={handleExpandAll}
+          onCollapseAll={handleCollapseAll}
           onEllipsisMouseEnter={handleEllipsisMouseEnter}
           onEllipsisMouseLeave={handleEllipsisMouseLeave}
         />
