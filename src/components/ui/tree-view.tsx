@@ -27,6 +27,7 @@ import {
 import FolderSvg from "../../renderer/src/assets/folder.svg";
 import FolderOpenSvg from "../../renderer/src/assets/folder-open.svg";
 import { ContextMenuAction, useContextMenu, ContextMenu } from "./context-menu";
+import { ImagePreviewIcon } from './file-icons';
 
 export interface TreeNode {
   id: string;
@@ -59,6 +60,7 @@ interface TreeViewProps {
   onDownloadFile?: (node: TreeNode) => void;
   canWrite?: boolean;
   isSyncing?: boolean;
+  driveId?: string;
 }
 
 interface TreeNodeProps {
@@ -77,6 +79,7 @@ interface TreeNodeProps {
   onDownloadFile?: (node: TreeNode) => void;
   canWrite?: boolean;
   isSyncing?: boolean;
+  driveId?: string;
 }
 
 const FolderIcon = ({ isOpen }: { isOpen: boolean }) => (
@@ -131,7 +134,7 @@ const FileIcon = ({ type }: { type: string }) => {
   return getFileIcon();
 };
 
-const TreeNodeComponent = ({ node, level, onNodeSelect, onNodeToggle, selectedNodeId, expandedNodes, onContextMenu, onNavigateToFolder, onCreateFolder, onRefresh, onDelete, onDownloadFolder, onDownloadFile, canWrite = true, isSyncing = false }: TreeNodeProps) => {
+const TreeNodeComponent = ({ node, level, onNodeSelect, onNodeToggle, selectedNodeId, expandedNodes, onContextMenu, onNavigateToFolder, onCreateFolder, onRefresh, onDelete, onDownloadFolder, onDownloadFile, canWrite = true, isSyncing = false, driveId }: TreeNodeProps) => {
   const hasChildren = node.children && node.children.length > 0;
   const isSelected = selectedNodeId === node.id;
   const isExpanded = expandedNodes?.has(node.id) || false;
@@ -273,9 +276,17 @@ const TreeNodeComponent = ({ node, level, onNodeSelect, onNodeToggle, selectedNo
             <IconChevronRight size={16} className="text-blue-400" />
           ) : node.type === 'folder' ? (
             <FolderIcon isOpen={isExpanded} />
-          ) : (
-            <FileIcon type={node.name} />
-          )}
+          ) : (() => {
+            // Check if it's an image file by extension
+            const extension = node.name.split('.').pop()?.toLowerCase();
+            const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico'].includes(extension || '');
+            
+            return isImage ? (
+              <ImagePreviewIcon node={node} driveId={driveId} size="xs" />
+            ) : (
+              <FileIcon type={node.name} />
+            );
+          })()}
           
           <span className={`truncate text-sm ${
             node.name === '...' && node.id.includes('__more__') 
@@ -320,6 +331,7 @@ const TreeNodeComponent = ({ node, level, onNodeSelect, onNodeToggle, selectedNo
                 onDownloadFile={onDownloadFile}
                 canWrite={canWrite}
                 isSyncing={isSyncing}
+                driveId={driveId}
               />
             ))}
           </motion.div>
@@ -396,7 +408,8 @@ export function TreeView({
   onDownloadFolder,
   onDownloadFile,
   canWrite = true,
-  isSyncing = false
+  isSyncing = false,
+  driveId
 }: TreeViewProps) {
   const { isOpen, position, actions, openContextMenu, closeContextMenu } = useContextMenu()
 
@@ -485,6 +498,7 @@ export function TreeView({
             onDownloadFile={onDownloadFile}
             canWrite={canWrite}
             isSyncing={isSyncing}
+            driveId={driveId}
           />
         ))}
         </motion.div>

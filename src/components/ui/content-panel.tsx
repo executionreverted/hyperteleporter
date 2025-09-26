@@ -31,7 +31,7 @@ interface ContentPanelProps {
   isDriveSyncing?: boolean;
 }
 
-import { FileIcon } from "./file-icons";
+import { FileIcon, ImagePreviewIcon } from "./file-icons";
 
 const FilePreview = ({ node, insideModal = false }: { node: TreeNode; insideModal?: boolean }) => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -699,9 +699,17 @@ const FolderContents = ({ node, onFileClick, onNavigateUp, canNavigateUp, driveI
                   <div className="w-full h-full flex items-center justify-center">
                     {child.type === 'folder' ? (
                       <img src={FolderIcon} alt="Folder" className="w-8 h-8" />
-                    ) : (
-                      <FileIcon node={child} />
-                    )}
+                    ) : (() => {
+                      // Check if it's an image file by extension
+                      const extension = child.name.split('.').pop()?.toLowerCase();
+                      const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico'].includes(extension || '');
+                      
+                      return isImage ? (
+                        <ImagePreviewIcon node={child} driveId={driveId} size="folder" />
+                      ) : (
+                        <FileIcon node={child} />
+                      );
+                    })()}
                   </div>
                 </GlareHover>
                 <span className="text-sm text-white text-center truncate w-full px-1">

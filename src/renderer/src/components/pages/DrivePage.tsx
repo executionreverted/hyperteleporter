@@ -1432,6 +1432,7 @@ export function DrivePage() {
                             onDownloadFile={handleDownloadFile}
                             canWrite={currentDrive?.isWritable ?? true}
                             isSyncing={isDriveSyncing}
+                            driveId={currentDrive?.id}
                           />
                         )}
                       </div>
