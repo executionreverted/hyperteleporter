@@ -13,6 +13,7 @@ import { ContextMenu, useContextMenu, type ContextMenuAction } from "./context-m
 import GlareHover from "./glare-hover";
 import { AnimatePresence } from "motion/react";
 import { useToaster } from "../../renderer/src/contexts/ToasterContext";
+import { useConfirm } from "./confirm-modal";
 
 interface ContentPanelProps {
   selectedNode?: TreeNode;
@@ -488,34 +489,41 @@ const FolderContents = ({ node, onFileClick, onNavigateUp, canNavigateUp, driveI
   const api: any = (window as any)?.api
   const toaster = useToaster()
   const { isOpen, position, actions, openContextMenu, closeContextMenu } = useContextMenu()
+  const { confirm, ConfirmDialog } = useConfirm()
 
   const handleDeleteFile = async (fileNode: TreeNode) => {
-    const confirmed = window.confirm(
-      `Are you sure you want to delete "${fileNode.name}"?${fileNode.type === 'folder' ? ' This will delete all contents inside the folder.' : ''}`
-    )
-    if (!confirmed) return
+    confirm({
+      title: 'Delete Item',
+      message: `Are you sure you want to delete "${fileNode.name}"?${fileNode.type === 'folder' ? ' This will delete all contents inside the folder.' : ''}`,
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+      confirmButtonClass: 'bg-red-500 hover:bg-red-600 text-white',
+      onConfirm: async () => {
+        try {
+          const effectiveDriveId = driveId || (window.location.hash.match(/#\/drive\/([^/]+)/)?.[1] ?? null)
+          if (!effectiveDriveId || !api?.drives?.deleteFile) {
+            console.error('Delete failed: no driveId or API')
+            toaster.showError('Delete Failed', 'No drive ID or API available')
+            return
+          }
 
-    try {
-      const effectiveDriveId = driveId || (window.location.hash.match(/#\/drive\/([^/]+)/)?.[1] ?? null)
-      if (!effectiveDriveId || !api?.drives?.deleteFile) {
-        console.error('Delete failed: no driveId or API')
-        return
+          const path = fileNode.id.startsWith('/') ? fileNode.id : `/${fileNode.id}`
+          const success = await api.drives.deleteFile(effectiveDriveId, path)
+          
+          if (success) {
+            console.log(`[FolderContents] Successfully deleted ${fileNode.name}`)
+            toaster.showSuccess('Item Deleted', `${fileNode.name} has been deleted successfully`)
+            onFileDeleted?.()
+          } else {
+            console.error(`[FolderContents] Failed to delete ${fileNode.name}`)
+            toaster.showError('Delete Failed', 'Failed to delete item. Please try again.')
+          }
+        } catch (error) {
+          console.error('[FolderContents] Delete error:', error)
+          toaster.showError('Delete Error', 'An error occurred while deleting the item.')
+        }
       }
-
-      const path = fileNode.id.startsWith('/') ? fileNode.id : `/${fileNode.id}`
-      const success = await api.drives.deleteFile(effectiveDriveId, path)
-      
-      if (success) {
-        console.log(`[FolderContents] Successfully deleted ${fileNode.name}`)
-        onFileDeleted?.()
-      } else {
-        console.error(`[FolderContents] Failed to delete ${fileNode.name}`)
-        alert('Failed to delete item. Please try again.')
-      }
-    } catch (error) {
-      console.error('[FolderContents] Delete error:', error)
-      alert('An error occurred while deleting the item.')
-    }
+    })
   }
 
   const handleDownloadFile = async (fileNode: TreeNode) => {
@@ -717,6 +725,7 @@ const FolderContents = ({ node, onFileClick, onNavigateUp, canNavigateUp, driveI
         )}
       </div>
       <ContextMenu isOpen={isOpen} position={position} actions={actions} onClose={closeContextMenu} />
+      <ConfirmDialog />
     </motion.div>
   );
 };
@@ -726,6 +735,7 @@ export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavig
   const api: any = (window as any)?.api
   const toaster = useToaster()
   const { isOpen, position, actions, openContextMenu, closeContextMenu } = useContextMenu()
+  const { confirm, ConfirmDialog } = useConfirm()
 
   // Preview modal state MUST be declared before any early returns to preserve hook order
   const [previewRect, setPreviewRect] = React.useState<DOMRect | null>(null)
@@ -770,34 +780,40 @@ export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavig
   const handleDeleteFile = async () => {
     if (!selectedNode) return
     
-    const confirmed = window.confirm(
-      `Are you sure you want to delete "${selectedNode.name}"?${selectedNode.type === 'folder' ? ' This will delete all contents inside the folder.' : ''}`
-    )
-    if (!confirmed) return
+    confirm({
+      title: 'Delete Item',
+      message: `Are you sure you want to delete "${selectedNode.name}"?${selectedNode.type === 'folder' ? ' This will delete all contents inside the folder.' : ''}`,
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+      confirmButtonClass: 'bg-red-500 hover:bg-red-600 text-white',
+      onConfirm: async () => {
+        try {
+          const effectiveDriveId = driveId || (window.location.hash.match(/#\/drive\/([^/]+)/)?.[1] ?? null)
+          const hasApi = !!api?.drives?.deleteFile
+          console.log('[ContentPanel] Delete debug:', { effectiveDriveId, hasApi, selectedNode })
+          if (!effectiveDriveId || !hasApi) {
+            console.error('Delete failed: no driveId or API')
+            toaster.showError('Delete Failed', 'No drive ID or API available')
+            return
+          }
 
-    try {
-      const effectiveDriveId = driveId || (window.location.hash.match(/#\/drive\/([^/]+)/)?.[1] ?? null)
-      const hasApi = !!api?.drives?.deleteFile
-      console.log('[ContentPanel] Delete debug:', { effectiveDriveId, hasApi, selectedNode })
-      if (!effectiveDriveId || !hasApi) {
-        console.error('Delete failed: no driveId or API')
-        return
+          const path = selectedNode.id.startsWith('/') ? selectedNode.id : `/${selectedNode.id}`
+          const success = await api.drives.deleteFile(effectiveDriveId, path)
+          
+          if (success) {
+            console.log(`[ContentPanel] Successfully deleted ${selectedNode.name}`)
+            toaster.showSuccess('Item Deleted', `${selectedNode.name} has been deleted successfully`)
+            onFileDeleted?.()
+          } else {
+            console.error(`[ContentPanel] Failed to delete ${selectedNode.name}`)
+            toaster.showError('Delete Failed', 'Failed to delete item. Please try again.')
+          }
+        } catch (error) {
+          console.error('[ContentPanel] Delete error:', error)
+          toaster.showError('Delete Error', 'An error occurred while deleting the item.')
+        }
       }
-
-      const path = selectedNode.id.startsWith('/') ? selectedNode.id : `/${selectedNode.id}`
-      const success = await api.drives.deleteFile(effectiveDriveId, path)
-      
-      if (success) {
-        console.log(`[ContentPanel] Successfully deleted ${selectedNode.name}`)
-        onFileDeleted?.()
-      } else {
-        console.error(`[ContentPanel] Failed to delete ${selectedNode.name}`)
-        alert('Failed to delete item. Please try again.')
-      }
-    } catch (error) {
-      console.error('[ContentPanel] Delete error:', error)
-      alert('An error occurred while deleting the item.')
-    }
+    })
   }
 
   const handleDownloadFile = async () => {
@@ -1065,6 +1081,7 @@ export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavig
       )}
 
       <ContextMenu isOpen={isOpen} position={position} actions={actions} onClose={closeContextMenu} />
+      <ConfirmDialog />
     </div>
   );
 }
