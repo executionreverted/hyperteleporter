@@ -332,75 +332,135 @@ export async function getFileBuffer(driveId: string, path: string): Promise<Buff
   }
 }
 
+// Helper function to check if a path is a folder
+async function isFolder(drive: any, path: string): Promise<boolean> {
+  try {
+    // Check if the path exists as a direct entry
+    const exists = await drive.exists(path)
+    if (!exists) {
+      // If path doesn't exist directly, check if it's a folder by looking for contents
+      const prefix = path.endsWith('/') ? path : `${path}/`
+      let hasContents = false
+      for await (const entry of drive.list('/', { recursive: true })) {
+        if (entry.key.startsWith(prefix)) {
+          hasContents = true
+          break
+        }
+      }
+      return hasContents
+    }
+    
+    // If it exists, check if it's a file or folder
+    const entry = await drive.entry(path)
+    const isFile = !!entry?.value?.blob || !!entry?.value?.linkname
+    return !isFile
+  } catch (err) {
+    console.warn(`[hyperdrive] isFolder check failed for ${path}:`, err)
+    return false
+  }
+}
+
+// Helper function to delete all contents of a folder recursively
+async function deleteFolderContents(drive: any, folderPath: string): Promise<void> {
+  const prefix = folderPath.endsWith('/') ? folderPath : `${folderPath}/`
+  const entriesToDelete: string[] = []
+  
+  // Collect all entries under this folder
+  for await (const entry of drive.list('/', { recursive: true })) {
+    if (entry.key.startsWith(prefix)) {
+      entriesToDelete.push(entry.key)
+    }
+  }
+  
+  // Delete all entries (files and subfolders)
+  for (const entryPath of entriesToDelete) {
+    try {
+      await drive.del(entryPath)
+      console.log(`[hyperdrive] deleteFolderContents: deleted ${entryPath}`)
+    } catch (err) {
+      console.warn(`[hyperdrive] deleteFolderContents: failed to delete ${entryPath}:`, err)
+    }
+  }
+}
+
 export async function deleteFile(driveId: string, path: string): Promise<boolean> {
   const drive = activeDrives.get(driveId)?.hyperdrive
   if (!drive) throw new Error('Drive not found')
   const normalized = path.startsWith('/') ? path : `/${path}`
   
   try {
-    // Check if file exists before deletion
-    const existsBefore = await (drive as any).exists(normalized)
-    console.log(`[hyperdrive] deleteFile ${normalized}: exists before=${existsBefore}`)
+    // Check if it's a folder or file
+    const isFolderPath = await isFolder(drive, normalized)
+    console.log(`[hyperdrive] deleteFile ${normalized}: isFolder=${isFolderPath}`)
     
-    if (!existsBefore) {
-      console.log(`[hyperdrive] deleteFile ${normalized}: file does not exist, nothing to delete`)
-      return true
-    }
-    
-    // Read entry BEFORE deletion so we can get the blob reference to clear
-    // @ts-ignore - hyperdrive entry method exists at runtime
-    const entryBefore = await (drive as any).entry(normalized)
-    const blobRef = entryBefore?.value?.blob
-    console.log(`[hyperdrive] deleteFile ${normalized}: entry blob before del=`, blobRef)
-
-    // Capture storage info before for diagnostics
-    let blobsLengthBefore: number | undefined
-    try {
-      // @ts-ignore - getBlobsLength exists at runtime
-      blobsLengthBefore = await (drive as any).getBlobsLength()
-    } catch {}
-
-    // Remove file entry from drive structure
-    // @ts-ignore - hyperdrive del method exists at runtime
-    await (drive as any).del(normalized)
-    console.log(`[hyperdrive] deleteFile ${normalized}: del() completed`)
-    
-    // Free blob storage to reclaim disk space using explicit blob reference if available
-    let cleared: any = null
-    if (blobRef) {
-      try {
-        // @ts-ignore - hyperdrive getBlobs exists at runtime
-        const blobs = await (drive as any).getBlobs()
-        // @ts-ignore - blobs.clear exists at runtime
-        cleared = await blobs.clear(blobRef, { diff: true })
-        console.log(`[hyperdrive] deleteFile ${normalized}: blobs.clear() completed, cleared bytes:`, cleared)
-      } catch (err) {
-        console.warn(`[hyperdrive] deleteFile ${normalized}: blobs.clear failed, falling back to drive.clear`, err)
-        // Fallback to path-based clear
-        // @ts-ignore - hyperdrive clear method exists at runtime
-        cleared = await (drive as any).clear(normalized, { diff: true })
-        console.log(`[hyperdrive] deleteFile ${normalized}: drive.clear() completed, cleared bytes:`, cleared)
-      }
+    if (isFolderPath) {
+      // Handle folder deletion
+      console.log(`[hyperdrive] deleteFile ${normalized}: deleting folder and all contents`)
+      await deleteFolderContents(drive, normalized)
     } else {
-      // No blobRef (e.g., folder or symlink) - attempt path-based clear anyway
-      // @ts-ignore
-      cleared = await (drive as any).clear(normalized, { diff: true })
-      console.log(`[hyperdrive] deleteFile ${normalized}: drive.clear() (no blobRef) completed, cleared bytes:`, cleared)
+      // Handle file deletion (original logic)
+      const existsBefore = await drive.exists(normalized)
+      console.log(`[hyperdrive] deleteFile ${normalized}: exists before=${existsBefore}`)
+      
+      if (!existsBefore) {
+        console.log(`[hyperdrive] deleteFile ${normalized}: file does not exist, nothing to delete`)
+        return true
+      }
+    
+      // Read entry BEFORE deletion so we can get the blob reference to clear
+      const entryBefore = await drive.entry(normalized)
+      const blobRef = entryBefore?.value?.blob
+      console.log(`[hyperdrive] deleteFile ${normalized}: entry blob before del=`, blobRef)
+
+      // Capture storage info before for diagnostics
+      let blobsLengthBefore: number | undefined
+      try {
+        blobsLengthBefore = await drive.getBlobsLength()
+      } catch {}
+
+      // Remove file entry from drive structure
+      await drive.del(normalized)
+      console.log(`[hyperdrive] deleteFile ${normalized}: del() completed`)
+      
+      // Free blob storage to reclaim disk space using explicit blob reference if available
+      let cleared: any = null
+      if (blobRef) {
+        try {
+          const blobs = await drive.getBlobs()
+          cleared = await blobs.clear(blobRef, { diff: true })
+          console.log(`[hyperdrive] deleteFile ${normalized}: blobs.clear() completed, cleared bytes:`, cleared)
+        } catch (err) {
+          console.warn(`[hyperdrive] deleteFile ${normalized}: blobs.clear failed, falling back to drive.clear`, err)
+          // Fallback to path-based clear
+          cleared = await drive.clear(normalized, { diff: true })
+          console.log(`[hyperdrive] deleteFile ${normalized}: drive.clear() completed, cleared bytes:`, cleared)
+        }
+      } else {
+        // No blobRef (e.g., symlink) - attempt path-based clear anyway
+        cleared = await drive.clear(normalized, { diff: true })
+        console.log(`[hyperdrive] deleteFile ${normalized}: drive.clear() (no blobRef) completed, cleared bytes:`, cleared)
+      }
     }
     
-    // Verify file is gone
-    const existsAfter = await (drive as any).exists(normalized)
+    // Verify deletion
+    const existsAfter = await drive.exists(normalized)
     console.log(`[hyperdrive] deleteFile ${normalized}: exists after=${existsAfter}`)
     
-    // Capture storage info after for diagnostics
-    try {
-      // @ts-ignore - getBlobsLength exists at runtime
-      const blobsLengthAfter = await (drive as any).getBlobsLength()
-      console.log(`[hyperdrive] deleteFile ${normalized}: blobsLength before=${blobsLengthBefore} after=${blobsLengthAfter}`)
-    } catch {}
+    // For folders, also check if any contents remain
+    if (isFolderPath) {
+      const prefix = normalized.endsWith('/') ? normalized : `${normalized}/`
+      let hasRemainingContents = false
+      for await (const entry of drive.list('/', { recursive: true })) {
+        if (entry.key.startsWith(prefix)) {
+          hasRemainingContents = true
+          break
+        }
+      }
+      console.log(`[hyperdrive] deleteFile ${normalized}: folder has remaining contents=${hasRemainingContents}`)
+    }
 
-    console.log(`[hyperdrive] deleteFile ${normalized}: deleted and cleared successfully`)
-    try { await (drive as any).update({ wait: false }) } catch {}
+    console.log(`[hyperdrive] deleteFile ${normalized}: deleted successfully`)
+    try { await drive.update({ wait: false }) } catch {}
     broadcastDriveChanged(driveId)
     return true
   } catch (err) {

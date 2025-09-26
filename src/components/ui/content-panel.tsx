@@ -490,9 +490,9 @@ const FolderContents = ({ node, onFileClick, onNavigateUp, canNavigateUp, driveI
   const { isOpen, position, actions, openContextMenu, closeContextMenu } = useContextMenu()
 
   const handleDeleteFile = async (fileNode: TreeNode) => {
-    if (fileNode.type !== 'file') return
-    
-    const confirmed = window.confirm(`Are you sure you want to delete "${fileNode.name}"?`)
+    const confirmed = window.confirm(
+      `Are you sure you want to delete "${fileNode.name}"?${fileNode.type === 'folder' ? ' This will delete all contents inside the folder.' : ''}`
+    )
     if (!confirmed) return
 
     try {
@@ -510,11 +510,11 @@ const FolderContents = ({ node, onFileClick, onNavigateUp, canNavigateUp, driveI
         onFileDeleted?.()
       } else {
         console.error(`[FolderContents] Failed to delete ${fileNode.name}`)
-        alert('Failed to delete file. Please try again.')
+        alert('Failed to delete item. Please try again.')
       }
     } catch (error) {
       console.error('[FolderContents] Delete error:', error)
-      alert('An error occurred while deleting the file.')
+      alert('An error occurred while deleting the item.')
     }
   }
 
@@ -566,6 +566,7 @@ const FolderContents = ({ node, onFileClick, onNavigateUp, canNavigateUp, driveI
         { id: 'open', label: 'Open', icon: <IconEye size={16} />, onClick: () => onFileClick?.(childNode) },
         { id: 'copy', label: 'Copy path', icon: <IconCopy size={16} />, onClick: () => handleCopyPath(childNode) },
       )
+      if (canWrite) actions.push({ id: 'delete', label: 'Delete', icon: <IconTrash size={16} />, onClick: () => handleDeleteFile(childNode), destructive: true })
     }
     return actions
   }
@@ -767,9 +768,11 @@ export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavig
   }, [])
 
   const handleDeleteFile = async () => {
-    if (!selectedNode || selectedNode.type !== 'file') return
+    if (!selectedNode) return
     
-    const confirmed = window.confirm(`Are you sure you want to delete "${selectedNode.name}"?`)
+    const confirmed = window.confirm(
+      `Are you sure you want to delete "${selectedNode.name}"?${selectedNode.type === 'folder' ? ' This will delete all contents inside the folder.' : ''}`
+    )
     if (!confirmed) return
 
     try {
@@ -789,11 +792,11 @@ export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavig
         onFileDeleted?.()
       } else {
         console.error(`[ContentPanel] Failed to delete ${selectedNode.name}`)
-        alert('Failed to delete file. Please try again.')
+        alert('Failed to delete item. Please try again.')
       }
     } catch (error) {
       console.error('[ContentPanel] Delete error:', error)
-      alert('An error occurred while deleting the file.')
+      alert('An error occurred while deleting the item.')
     }
   }
 
