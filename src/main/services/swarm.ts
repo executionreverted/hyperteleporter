@@ -1,36 +1,61 @@
 import Hyperswarm, { type PeerDiscovery } from 'hyperswarm'
-import type Corestore from 'corestore'
+import type Hyperdrive from 'hyperdrive'
 
-let swarm: Hyperswarm | null = null
+// Store active swarm connections per drive
+const activeSwarms = new Map<string, { swarm: Hyperswarm; discovery: PeerDiscovery }>()
 
-export function getSwarm(): Hyperswarm {
-  if (swarm) return swarm
-  swarm = new Hyperswarm()
-  return swarm
-}
-
-export function setupReplication(corestore: Corestore): void {
-  const s = getSwarm()
-  s.on('connection', (socket) => {
+export async function setupDriveReplication(driveId: string, hyperdrive: Hyperdrive): Promise<void> {
+  // Clean up any existing swarm for this drive
+  await cleanupDriveSwarm(driveId)
+  
+  const swarm = new Hyperswarm()
+  const done = hyperdrive.findingPeers()
+  
+  swarm.on('connection', (socket) => {
     try {
-      corestore.replicate(socket)
-    } catch {}
+      // Use drive.replicate() instead of corestore.replicate()
+      hyperdrive.replicate(socket)
+    } catch (error) {
+      console.error(`[swarm] Error setting up replication for drive ${driveId}:`, error)
+    }
   })
-}
-
-export async function joinTopicOnce(topic: Buffer): Promise<PeerDiscovery> {
-  const s = getSwarm()
-  const discovery = s.join(topic, { server: true, client: true })
-  await discovery.flushed()
-  return discovery
-}
-
-export async function destroySwarm(): Promise<void> {
-  if (!swarm) return
+  
+  // Join the drive's discovery topic
+  const discovery = swarm.join(hyperdrive.discoveryKey, { server: true, client: true })
+  
+  // Wait for initial peer discovery to complete
   try {
-    await swarm.destroy()
-  } catch {}
-  swarm = null
+    await discovery.flushed()
+    done() // Signal that peer finding is done
+  } catch (error) {
+    console.error(`[swarm] Error during peer discovery for drive ${driveId}:`, error)
+    done() // Still call done() to prevent hanging
+  }
+  
+  // Store the active swarm
+  activeSwarms.set(driveId, { swarm, discovery })
+  
+  console.log(`[swarm] Successfully set up replication for drive ${driveId}`)
+}
+
+export async function cleanupDriveSwarm(driveId: string): Promise<void> {
+  const active = activeSwarms.get(driveId)
+  if (!active) return
+  
+  try {
+    await active.discovery.destroy()
+    await active.swarm.destroy()
+    activeSwarms.delete(driveId)
+    console.log(`[swarm] Cleaned up swarm for drive ${driveId}`)
+  } catch (error) {
+    console.error(`[swarm] Error cleaning up swarm for drive ${driveId}:`, error)
+  }
+}
+
+export async function destroyAllSwarms(): Promise<void> {
+  const driveIds = Array.from(activeSwarms.keys())
+  await Promise.all(driveIds.map(cleanupDriveSwarm))
+  console.log('[swarm] Destroyed all active swarms')
 }
 
 

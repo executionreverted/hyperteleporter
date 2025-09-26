@@ -33,7 +33,7 @@ const PrismBackground = memo(() => (
 PrismBackground.displayName = 'PrismBackground';
 
 const DrivesList = memo(function DrivesList() {
-  const { drives, removeDrive } = useDrives();
+  const { drives, isLoading, removeDrive } = useDrives();
   const navigate = useNavigate();
   const { confirm, ConfirmDialog } = useConfirm();
   const [searchQuery, setSearchQuery] = useState("");
@@ -100,7 +100,7 @@ const DrivesList = memo(function DrivesList() {
     }
   }, [drives, searchQuery]);
 
-  if (drives.length === 0) {
+  if (drives.length === 0 && !isLoading) {
     return (
       <div className="h-screen bg-black flex items-center justify-center p-8 overflow-hidden relative">
         <PrismBackground />
@@ -155,7 +155,13 @@ const DrivesList = memo(function DrivesList() {
               WebkitScrollbar: 'none', /* Chrome, Safari, Opera */
             }}
           >
-            {filteredDrives.length > 0 ? (
+            {isLoading ? (
+              <div className="flex flex-col items-center justify-center h-64 text-white/60">
+                <div className="w-8 h-8 border-2 border-amber-400 border-t-transparent rounded-full animate-spin mb-4"></div>
+                <p className="text-xl mb-2">Loading drives...</p>
+                <p className="text-sm">Initializing Hyperdrive connections</p>
+              </div>
+            ) : filteredDrives.length > 0 ? (
               <StaticDriveGrid 
                 drives={filteredDrives} 
                 onBrowse={handleBrowseDrive}

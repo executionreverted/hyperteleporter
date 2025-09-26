@@ -4,7 +4,7 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 const icon = join(__dirname, '../../build/icon.png')
 import { initializeAllDrives, closeAllDrives, createDrive, listActiveDrives, listDrive, createFolder, uploadFiles, getFileBuffer, deleteFile, getDriveStorageInfo, joinDrive, stopAllDriveWatchers, getFolderStats, downloadFolderToDownloads, downloadFileToDownloads, checkDriveSyncStatus, getDriveSyncStatus } from './services/hyperdriveManager'
 import { addDownload, readDownloads, removeDownload } from './services/downloads'
-import { destroySwarm, getSwarm } from './services/swarm'
+// Swarm management is now handled by hyperdriveManager
 import { readUserProfile, writeUserProfile } from './services/userProfile'
 
 function createWindow(): void {
@@ -142,8 +142,6 @@ app.whenReady().then(() => {
   console.log('[main] Starting initializeAllDrives')
   initializeAllDrives().then(() => {
     console.log('[main] initializeAllDrives completed successfully')
-    // Touch swarm to ensure it is created early
-    getSwarm()
     
     // Notify all renderer windows that drives are ready
     const windows = BrowserWindow.getAllWindows()
@@ -434,8 +432,7 @@ app.on('before-quit', () => {
   // Unregister all global shortcuts
   globalShortcut.unregisterAll()
   
-  // Best-effort close of corestores
+  // Best-effort close of corestores and swarms
   closeAllDrives().catch(() => {})
   stopAllDriveWatchers().catch(() => {})
-  destroySwarm().catch(() => {})
 })

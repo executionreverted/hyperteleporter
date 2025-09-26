@@ -16,6 +16,7 @@ export interface Drive {
 
 interface DrivesContextType {
   drives: Drive[];
+  isLoading: boolean;
   addDrive: (drive: Omit<Drive, 'id' | 'createdAt'>) => void;
   removeDrive: (id: string) => void;
   updateDrive: (id: string, updates: Partial<Drive>) => void;
@@ -26,6 +27,7 @@ const DrivesContext = createContext<DrivesContextType | undefined>(undefined);
 
 export function DrivesProvider({ children }: { children: ReactNode }) {
   const [drives, setDrives] = useState<Drive[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const api = useMemo(() => (window as any)?.api ?? null, []);
 
@@ -50,9 +52,11 @@ export function DrivesProvider({ children }: { children: ReactNode }) {
             isWritable: (d.type ?? 'owned') === 'owned'
           }));
           setDrives(mapped);
+          setIsLoading(false);
         }
       } catch (err) {
         console.error('[DrivesContext] Failed to load drives:', err);
+        setIsLoading(false);
       }
     }
     load();
@@ -80,8 +84,10 @@ export function DrivesProvider({ children }: { children: ReactNode }) {
             isWritable: (d.type ?? 'owned') === 'owned'
           }));
           setDrives(mapped);
+          setIsLoading(false);
         }).catch((err: any) => {
           console.error('[DrivesContext] Failed to refresh drives:', err);
+          setIsLoading(false);
         });
       }
     };
@@ -148,7 +154,7 @@ export function DrivesProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <DrivesContext.Provider value={{ drives, addDrive, removeDrive, updateDrive, joinReadOnlyDrive }}>
+    <DrivesContext.Provider value={{ drives, isLoading, addDrive, removeDrive, updateDrive, joinReadOnlyDrive }}>
       {children}
     </DrivesContext.Provider>
   );

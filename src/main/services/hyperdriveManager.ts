@@ -2,7 +2,7 @@ import Corestore from 'corestore'
 import Hyperdrive from 'hyperdrive'
 import { join } from 'path'
 import { getHyperdriveBaseDir } from './appPaths'
-import { setupReplication, joinTopicOnce } from './swarm'
+import { setupDriveReplication, cleanupDriveSwarm, destroyAllSwarms } from './swarm'
 import { BrowserWindow } from 'electron'
 import { randomUUID } from 'crypto'
 import {
@@ -80,9 +80,8 @@ export async function createDrive(name: string): Promise<InitializedDrive> {
   const hyperdrive = new Hyperdrive(corestore)
   await hyperdrive.ready()
 
-  // Setup swarm replication for this corestore and join discovery topic
-  setupReplication(corestore)
-  await joinTopicOnce(hyperdrive.discoveryKey)
+  // Setup swarm replication for this drive
+  await setupDriveReplication(id, hyperdrive)
   await startDriveWatcher(id, hyperdrive)
 
   const record: DriveRecord = {
@@ -123,8 +122,7 @@ export async function initializeAllDrives(): Promise<InitializedDrive[]> {
         )
       ])
       
-      setupReplication(corestore)
-      await joinTopicOnce(hyperdrive.discoveryKey)
+      await setupDriveReplication(record.id, hyperdrive)
       await startDriveWatcher(record.id, hyperdrive)
       
       // Ensure backward compatibility: default type to 'owned' if missing
@@ -151,8 +149,7 @@ export async function joinDrive(name: string, publicKeyHex: string): Promise<Ini
   const hyperdrive = new Hyperdrive(corestore, Buffer.from(publicKeyHex, 'hex'))
   await hyperdrive.ready()
 
-  setupReplication(corestore)
-  await joinTopicOnce(hyperdrive.discoveryKey)
+  await setupDriveReplication(id, hyperdrive)
   await startDriveWatcher(id, hyperdrive)
 
   const record: DriveRecord = {
@@ -235,6 +232,9 @@ export function getDriveSyncStatus(driveId: string): boolean {
 }
 
 export async function closeAllDrives(): Promise<void> {
+  // Clean up all swarms first
+  await destroyAllSwarms()
+  
   const closers = Array.from(activeDrives.values()).map(async ({ corestore }) => {
     try {
       await corestore.close()
