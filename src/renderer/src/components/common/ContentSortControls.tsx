@@ -33,7 +33,7 @@ export function ContentSortControls({
       <MagicButton
         variant="default"
         onClick={() => onDirectionChange(currentDirection === 'asc' ? 'desc' : 'asc')}
-        className="px-3 py-1.5 h-8"
+        className="h-8"
       >
         {currentDirection === 'asc' ? (
           <IconSortAscending className="w-4 h-4" />

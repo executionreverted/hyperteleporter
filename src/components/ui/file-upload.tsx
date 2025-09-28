@@ -302,10 +302,10 @@ export const FileUpload = ({
         </div>
         <div className="flex flex-col items-center justify-center">
           <p className="relative z-20 font-sans font-bold text-neutral-700 dark:text-neutral-300 text-sm">
-            Upload files & folders
+            Drag files or a folder
           </p>
           <p className="relative z-20 font-sans font-normal text-neutral-400 dark:text-neutral-400 text-xs mt-1">
-            Drag or drop files and folders here or click to upload
+            Drag or drop files or a folder here or click select files
           </p>
           <div className="relative w-full mt-2 max-w-xl mx-auto">
             {!files.length && (
