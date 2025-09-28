@@ -2,9 +2,11 @@ import { app, shell, BrowserWindow, ipcMain, screen } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 const icon = join(__dirname, '../../build/icon.png')
-import { initializeAllDrives, closeAllDrives, createDrive, listActiveDrives, listDrive, createFolder, uploadFiles, uploadFolder, getFileBuffer, deleteFile, getDriveStorageInfo, joinDrive, stopAllDriveWatchers, getFolderStats, getFileStats, downloadFolderToDownloads, downloadFileToDownloads, checkDriveSyncStatus, getDriveSyncStatus, clearDriveContent } from './services/hyperdriveManager'
+import { initializeAllDrives, closeAllDrives, createDrive, listActiveDrives, listDrive, createFolder, uploadFiles, uploadFolder, getFileBuffer, deleteFile, getDriveStorageInfo, joinDrive, stopAllDriveWatchers, getFolderStats, getFileStats, downloadFolderToDownloads, downloadFileToDownloads, checkDriveSyncStatus, getDriveSyncStatus, clearDriveContent, getActiveDrive } from './services/hyperdriveManager'
 import { addDownload, readDownloads, removeDownload } from './services/downloads'
 import { readUserProfile, writeUserProfile } from './services/userProfile'
+import { removeDrive, getDriveRecordById } from './services/driveRegistry'
+import { promises as fs } from 'fs'
 import { 
   isAutolaunchEnabled, 
   enableAutolaunch, 
@@ -413,6 +415,57 @@ app.whenReady().then(() => {
     // console.log(`[ipc] drives:getSyncStatus called for driveId=${driveId}`)
     const isSyncing = getDriveSyncStatus(driveId)
     return { isSyncing }
+  })
+
+  ipcMain.handle('drives:removeDrive', async (_evt, { driveId }: { driveId: string }) => {
+    console.log(`[ipc] drives:removeDrive request: driveId=${driveId}`)
+    try {
+      // 1. Close the active drive first (unlock corestore)
+      const drive = getActiveDrive(driveId)
+      if (drive) {
+        console.log(`[ipc] drives:removeDrive: closing active drive ${driveId}`)
+        await drive.corestore.close()
+        console.log(`[ipc] drives:removeDrive: closed corestore for ${driveId}`)
+      }
+
+      // 2. Get drive record to find storage directory
+      const driveRecord = await getDriveRecordById(driveId)
+      if (!driveRecord) {
+        console.warn(`[ipc] drives:removeDrive: drive record not found for ${driveId}`)
+        return { success: false, error: 'Drive record not found' }
+      }
+
+      // 3. Delete the storage directory
+      console.log(`[ipc] drives:removeDrive: deleting storage directory ${driveRecord.storageDir}`)
+      try {
+        await fs.rm(driveRecord.storageDir, { recursive: true, force: true })
+        console.log(`[ipc] drives:removeDrive: deleted storage directory for ${driveId}`)
+      } catch (dirError) {
+        console.warn(`[ipc] drives:removeDrive: failed to delete storage directory:`, dirError)
+        // Continue anyway - registry cleanup is more important
+      }
+
+      // 4. Remove from registry
+      console.log(`[ipc] drives:removeDrive: removing from registry ${driveId}`)
+      await removeDrive(driveId)
+      console.log(`[ipc] drives:removeDrive: removed from registry for ${driveId}`)
+
+      // 5. Broadcast drive removed event
+      const windows = BrowserWindow.getAllWindows()
+      for (const win of windows) {
+        try {
+          win.webContents.send('drive:removed', { driveId })
+        } catch (err) {
+          console.error('[main] Failed to send drive:removed event:', err)
+        }
+      }
+
+      console.log(`[ipc] drives:removeDrive: successfully removed drive ${driveId}`)
+      return { success: true }
+    } catch (error) {
+      console.error(`[ipc] drives:removeDrive failed:`, error)
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' }
+    }
   })
 
   // Expose user profile IPC (persisted on disk, separate from Hyperdrive for now)

@@ -64,7 +64,14 @@ const DrivesList = memo(function DrivesList() {
       cancelText: 'Cancel',
       confirmButtonClass: 'bg-red-500 hover:bg-red-600 text-white',
       cancelButtonClass: 'bg-gray-200 text-black dark:bg-gray-700 dark:text-white',
-      onConfirm: () => removeDrive(drive.id),
+      onConfirm: async () => {
+        try {
+          await removeDrive(drive.id);
+        } catch (error) {
+          console.error('Failed to delete drive:', error);
+          // The removeDrive function already handles errors and logging
+        }
+      },
     });
   }, [confirm, removeDrive]);
 

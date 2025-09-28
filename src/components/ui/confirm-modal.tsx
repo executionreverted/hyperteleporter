@@ -190,7 +190,7 @@ export function useConfirm() {
     cancelText?: string;
     confirmButtonClass?: string;
     cancelButtonClass?: string;
-    onConfirm?: () => void;
+    onConfirm?: () => void | Promise<void>;
     onCancel?: () => void;
   }>({
     isOpen: false,
@@ -204,7 +204,7 @@ export function useConfirm() {
     cancelText?: string;
     confirmButtonClass?: string;
     cancelButtonClass?: string;
-    onConfirm: () => void;
+    onConfirm: () => void | Promise<void>;
     onCancel?: () => void;
   }) => {
     setConfirmState({
@@ -227,9 +227,14 @@ export function useConfirm() {
             cancelText={confirmState.cancelText}
             confirmButtonClass={confirmState.confirmButtonClass}
             cancelButtonClass={confirmState.cancelButtonClass}
-            onConfirm={() => {
-              confirmState.onConfirm?.();
-              setConfirmState({ isOpen: false, message: '' });
+            onConfirm={async () => {
+              try {
+                await confirmState.onConfirm?.();
+              } catch (error) {
+                console.error('Confirm action failed:', error);
+              } finally {
+                setConfirmState({ isOpen: false, message: '' });
+              }
             }}
             onCancel={() => {
               confirmState.onCancel?.();

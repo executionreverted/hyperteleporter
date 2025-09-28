@@ -86,6 +86,24 @@ export function DrivesProvider({ children }: { children: ReactNode }) {
     };
   }, [loadDrives]);
 
+  // Listen for drive removed events from main process
+  useEffect(() => {
+    const { ipcRenderer } = (window as any).electron || {};
+    if (!ipcRenderer) return;
+
+    const handleDriveRemoved = (event: any, { driveId }: { driveId: string }) => {
+      console.log(`[DrivesContext] Received drive:removed event for ${driveId}`);
+      setDrives(prev => prev.filter(drive => drive.id !== driveId));
+    };
+
+    ipcRenderer.on('drive:removed', handleDriveRemoved);
+    return () => {
+      try {
+        ipcRenderer.removeListener('drive:removed', handleDriveRemoved);
+      } catch {}
+    };
+  }, []);
+
   const addDrive = useCallback(async (driveData: Omit<Drive, 'id' | 'createdAt'>) => {
     try {
       if (api?.drives?.create) {
@@ -127,8 +145,23 @@ export function DrivesProvider({ children }: { children: ReactNode }) {
     return newDrive
   }, [api]);
 
-  const removeDrive = useCallback((id: string) => {
-    setDrives(prev => prev.filter(drive => drive.id !== id));
+  const removeDrive = useCallback(async (id: string) => {
+    try {
+      // Call the main process to properly delete the drive
+      const result = await window.electron.ipcRenderer.invoke('drives:removeDrive', { driveId: id });
+      
+      if (result.success) {
+        // Only update UI state if deletion was successful
+        setDrives(prev => prev.filter(drive => drive.id !== id));
+        console.log(`[DrivesContext] Successfully removed drive ${id}`);
+      } else {
+        console.error(`[DrivesContext] Failed to remove drive ${id}:`, result.error);
+        // You might want to show an error message to the user here
+      }
+    } catch (error) {
+      console.error(`[DrivesContext] Error removing drive ${id}:`, error);
+      // You might want to show an error message to the user here
+    }
   }, []);
 
   const updateDrive = useCallback((id: string, updates: Partial<Drive>) => {

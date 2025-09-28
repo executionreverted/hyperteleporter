@@ -13,7 +13,8 @@ export async function setupDriveReplication(driveId: string, hyperdrive: Hyperdr
   
   swarm.on('connection', (socket) => {
     try {
-      // Use drive.replicate() instead of corestore.replicate()
+      // Replicate both corestore and drive as per Hyperdrive docs
+      hyperdrive.corestore.replicate(socket)
       hyperdrive.replicate(socket)
     } catch (error) {
       console.error(`[swarm] Error setting up replication for drive ${driveId}:`, error)
