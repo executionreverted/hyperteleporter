@@ -52,6 +52,7 @@ export const UploadProgressModal: React.FC = () => {
       loading={uploadState.isUploading}
       duration={1000}
       loop={false}
+      currentStep={currentStep}
     />
   );
 };

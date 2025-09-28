@@ -82,7 +82,7 @@ export function useFileOperations({
       try {
         const payload = await Promise.all(individualFiles.map(async (f, index) => {
           console.log(`[Upload Debug] Processing individual file ${index + 1}/${individualFiles.length}:`, f.name);
-          updateProgress(f.name, index);
+          updateProgress(f.name, index + 1);
           
           try {
             const data = await f.arrayBuffer();
@@ -134,7 +134,7 @@ export function useFileOperations({
       try {
         // Process folder files directly
         const uploadFiles = await Promise.all(folderFiles.map(async (file, index) => {
-          updateProgress(file.name, index);
+          updateProgress(file.name, index + 1);
           const data = await file.arrayBuffer();
           // Extract the relative path within the folder (remove folder name from webkitRelativePath)
           const webkitPath = file.webkitRelativePath || file.name;
