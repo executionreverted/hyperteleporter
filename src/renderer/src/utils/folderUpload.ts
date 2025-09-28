@@ -9,6 +9,7 @@ export interface UploadResult {
   folderName: string;
   hasConflicts: boolean;
   conflicts: string[];
+  shouldCreateFolder: boolean; // New field to indicate if a folder should be created
 }
 
 /**
@@ -22,7 +23,7 @@ export function processFolderUpload(files: FileList): UploadResult {
   const conflicts: string[] = [];
   
   if (fileArray.length === 0) {
-    return { files: [], folderName: '', hasConflicts: false, conflicts: [] };
+    return { files: [], folderName: '', hasConflicts: false, conflicts: [], shouldCreateFolder: false };
   }
   
   // Check if files have webkitRelativePath (from webkitdirectory input)
@@ -44,7 +45,7 @@ function processWebkitDirectoryFiles(fileArray: File[]): UploadResult {
   // Extract folder name from the first file's path
   const firstFile = fileArray[0];
   if (!firstFile.webkitRelativePath) {
-    return { files: [], folderName: '', hasConflicts: false, conflicts: [] };
+    return { files: [], folderName: '', hasConflicts: false, conflicts: [], shouldCreateFolder: false };
   }
   
   // Get the folder name from the webkitRelativePath
@@ -71,7 +72,8 @@ function processWebkitDirectoryFiles(fileArray: File[]): UploadResult {
     files: filesWithPath,
     folderName,
     hasConflicts: conflicts.length > 0,
-    conflicts
+    conflicts,
+    shouldCreateFolder: true
   };
 }
 
@@ -87,8 +89,13 @@ function processDragDropFiles(fileArray: File[]): UploadResult {
   const commonPath = findCommonPath(fileArray.map(f => f.webkitRelativePath || f.name));
   
   if (commonPath) {
-    // Files seem to be from a folder
-    const folderName = commonPath.split('/')[0] || 'uploaded-files';
+    // Files seem to be from a folder - create folder structure
+    let folderName = commonPath.split('/')[0];
+    
+    // Special case: if folder name is "virtual-root", treat as root directory
+    if (folderName === 'virtual-root') {
+      folderName = '';
+    }
     
     for (const file of fileArray) {
       const webkitPath = file.webkitRelativePath;
@@ -107,25 +114,25 @@ function processDragDropFiles(fileArray: File[]): UploadResult {
       files: filesWithPath,
       folderName,
       hasConflicts: conflicts.length > 0,
-      conflicts
+      conflicts,
+      shouldCreateFolder: folderName !== '' // Don't create folder if it's root
     };
   } else {
-    // No common path - create a folder for multiple files
-    const folderName = 'uploaded-files';
-    
+    // No common path - don't create a folder, upload files directly
     for (const file of fileArray) {
       filesWithPath.push({
         file,
         relativePath: file.name,
-        folderName
+        folderName: '' // Empty folder name indicates direct upload
       });
     }
     
     return {
       files: filesWithPath,
-      folderName,
+      folderName: '',
       hasConflicts: conflicts.length > 0,
-      conflicts
+      conflicts,
+      shouldCreateFolder: false
     };
   }
 }

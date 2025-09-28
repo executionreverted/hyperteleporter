@@ -1,6 +1,7 @@
 "use client";
 import { cn } from "../../renderer/lib/utils";
 import * as React from "react";
+import { useMemo } from "react";
 import { TreeNode } from "./tree-view";
 import { motion } from "motion/react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
@@ -14,6 +15,8 @@ import GlareHover from "./glare-hover";
 import { AnimatePresence } from "motion/react";
 import { useToaster } from "../../renderer/src/contexts/ToasterContext";
 import { useConfirm } from "./confirm-modal";
+import { useContentSorting } from "../../renderer/src/hooks/useContentSorting";
+import { ContentSortControls } from "../../renderer/src/components/common/ContentSortControls";
 
 interface ContentPanelProps {
   selectedNode?: TreeNode;
@@ -496,6 +499,15 @@ const FolderContents = ({ node, onFileClick, onNavigateUp, canNavigateUp, driveI
   const toaster = useToaster()
   const { isOpen, position, actions, openContextMenu, closeContextMenu } = useContextMenu()
   const { confirm, ConfirmDialog } = useConfirm()
+  
+  // Sorting functionality
+  const { sortConfig, sortFiles, setSortCriteria, setSortDirection } = useContentSorting()
+  
+  // Sort the children
+  const sortedChildren = useMemo(() => {
+    if (!node.children) return []
+    return sortFiles(node.children)
+  }, [node.children, sortFiles])
 
   const handleDeleteFile = async (fileNode: TreeNode) => {
     confirm({
@@ -626,17 +638,27 @@ const FolderContents = ({ node, onFileClick, onNavigateUp, canNavigateUp, driveI
                 Folder Contents
               </h3>
             </div>
-            <div className="text-sm text-neutral-400 truncate">
-              <span className="text-white font-medium">{node.name}</span>
-              <span className="mx-2">•</span>
-              <span>{totalItems} items</span>
-              <span className="mx-2">•</span>
-              <span>{folderCount} folders, {fileCount} files</span>
-              {node.modified && (
-                <>
-                  <span className="mx-2">•</span>
-                  <span>Modified {node.modified}</span>
-                </>
+            <div className="flex items-center gap-4">
+              <div className="text-sm text-neutral-400 truncate">
+                <span className="text-white font-medium">{node.name}</span>
+                <span className="mx-2">•</span>
+                <span>{totalItems} items</span>
+                <span className="mx-2">•</span>
+                <span>{folderCount} folders, {fileCount} files</span>
+                {node.modified && (
+                  <>
+                    <span className="mx-2">•</span>
+                    <span>Modified {node.modified}</span>
+                  </>
+                )}
+              </div>
+              {totalItems > 0 && (
+                <ContentSortControls
+                  currentCriteria={sortConfig.criteria}
+                  currentDirection={sortConfig.direction}
+                  onCriteriaChange={setSortCriteria}
+                  onDirectionChange={setSortDirection}
+                />
               )}
             </div>
           </div>
@@ -675,7 +697,7 @@ const FolderContents = ({ node, onFileClick, onNavigateUp, canNavigateUp, driveI
                 <span className="text-xs text-neutral-400 text-center mt-1">Parent</span>
               </div>
             )}
-            {node.children?.map((child) => (
+            {sortedChildren.map((child) => (
               <div
                 key={child.id}
                 className="flex flex-col items-center p-4 cursor-pointer group"

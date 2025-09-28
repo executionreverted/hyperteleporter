@@ -49,17 +49,12 @@ export function useFileOperations({
       return webkitPath && webkitPath.includes('/') && webkitPath.split('/').length > 1
     })
     
-    // If not a folder upload but multiple files, treat as a folder upload
-    const shouldTreatAsFolder = !isFolderUpload && files.length > 1
-    
-    if (isFolderUpload || shouldTreatAsFolder) {
+    if (isFolderUpload) {
       // Process folder upload
       const { processFolderUpload, checkNameConflicts, prepareFilesForUpload } = await import('../../../utils/folderUpload');
       
       const result = processFolderUpload(files as any)
-      
-      // If no folder name detected, create one for multiple files
-      const folderName = result.folderName || 'uploaded-files'
+      const folderName = result.folderName
       
       // Check for name conflicts (simplified - you might want to get existing items from state)
       const conflictCheck = checkNameConflicts(folderName, [])
@@ -113,8 +108,8 @@ export function useFileOperations({
         toaster.showError('Upload Failed', 'Failed to upload folder. Please try again.')
       }
     } else {
-      // Regular file upload
-      startUpload(files.length)
+      // Handle regular file uploads (single or multiple files without folder structure)
+      startUpload(files.length, '')
       toaster.showInfo('Upload Started', `Uploading ${files.length} file(s)...`)
       
       try {
