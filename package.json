@@ -43,6 +43,7 @@
     "clsx": "^2.1.1",
     "corestore": "^7.4.7",
     "downloads-folder": "^3.0.3",
+    "electron-squirrel-startup": "^1.0.1",
     "electron-updater": "^6.3.9",
     "gsap": "^3.13.0",
     "hyperbee": "^2.26.5",

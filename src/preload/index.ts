@@ -42,6 +42,14 @@ const api = {
       return !!(name && typeof name === 'string' && name.trim().length > 0)
     }
   },
+  autolaunch: {
+    isEnabled: async () => ipcRenderer.invoke('autolaunch:isEnabled'),
+    enable: async (options: { minimized?: boolean; hidden?: boolean } = {}) => ipcRenderer.invoke('autolaunch:enable', options),
+    disable: async () => ipcRenderer.invoke('autolaunch:disable'),
+    toggle: async (options: { minimized?: boolean; hidden?: boolean } = {}) => ipcRenderer.invoke('autolaunch:toggle', options),
+    getSettings: async () => ipcRenderer.invoke('autolaunch:getSettings'),
+    wasLaunchedAtStartup: async () => ipcRenderer.invoke('autolaunch:wasLaunchedAtStartup')
+  },
   files: {
     list: async (_folder?: string) => {
       return []
@@ -91,11 +99,6 @@ const api = {
         return null
       }
     }
-  },
-  // Global shortcuts
-  onGlobalSearchTriggered: (callback: () => void) => {
-    ipcRenderer.on('global-search-triggered', callback)
-    return () => ipcRenderer.removeListener('global-search-triggered', callback)
   }
 }
 

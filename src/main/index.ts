@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain, screen, globalShortcut } from 'electron' 
+import { app, shell, BrowserWindow, ipcMain, screen } from 'electron' 
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 const icon = join(__dirname, '../../build/icon.png')
@@ -6,6 +6,20 @@ import { initializeAllDrives, closeAllDrives, createDrive, listActiveDrives, lis
 import { addDownload, readDownloads, removeDownload } from './services/downloads'
 // Swarm management is now handled by hyperdriveManager
 import { readUserProfile, writeUserProfile } from './services/userProfile'
+import { autoUpdater } from 'electron-updater'
+import { 
+  isAutolaunchEnabled, 
+  enableAutolaunch, 
+  disableAutolaunch, 
+  toggleAutolaunch, 
+  getAutolaunchSettings,
+  wasLaunchedAtStartup 
+} from './services/autolaunch'
+
+// Handle squirrel startup events (Windows installer)
+if (require('electron-squirrel-startup')) {
+  app.quit()
+}
 
 function createWindow(): void {
   // Create the browser window.
@@ -77,51 +91,12 @@ function createWindow(): void {
 
 // Register global shortcuts
 function registerGlobalShortcuts(): void {
-  // Register Ctrl+R (or Cmd+R on macOS) for app reload
-  const ret = globalShortcut.register('CommandOrControl+R', () => {
-    const mainWindow = BrowserWindow.getAllWindows()[0]
-    if (mainWindow) {
-      console.log('Global shortcut triggered: Reloading app...')
-      mainWindow.reload()
-    }
-  })
-
-  // Register Ctrl+Shift+R (or Cmd+Shift+R on macOS) for hard reload (ignoring cache)
-  const hardReloadRet = globalShortcut.register('CommandOrControl+Shift+R', () => {
-    const mainWindow = BrowserWindow.getAllWindows()[0]
-    if (mainWindow) {
-      console.log('Global shortcut triggered: Hard reloading app (ignoring cache)...')
-      mainWindow.webContents.reloadIgnoringCache()
-    }
-  })
-
-  if (!ret) {
-    console.log('Failed to register global shortcut CommandOrControl+R')
-  } else {
-    console.log('Global shortcut CommandOrControl+R registered successfully')
-  }
-
-  if (!hardReloadRet) {
-    console.log('Failed to register global shortcut CommandOrControl+Shift+R')
-  } else {
-    console.log('Global shortcut CommandOrControl+Shift+R registered successfully')
-  }
-
-  // Register Ctrl+F (or Cmd+F on macOS) for search functionality
-  const searchRet = globalShortcut.register('CommandOrControl+F', () => {
-    const mainWindow = BrowserWindow.getAllWindows()[0]
-    if (mainWindow) {
-      console.log('Global shortcut triggered: Opening search...')
-      // Send IPC message to renderer to handle search
-      mainWindow.webContents.send('global-search-triggered')
-    }
-  })
-
-  if (!searchRet) {
-    console.log('Failed to register global shortcut CommandOrControl+F')
-  } else {
-    console.log('Global shortcut CommandOrControl+F registered successfully')
-  }
+  // Note: All global shortcuts removed to avoid interfering with other applications
+  // - Ctrl+R: Browser refresh functionality
+  // - Ctrl+Shift+R: Browser hard refresh functionality  
+  // - Ctrl+F: Browser search functionality
+  // App-specific shortcuts can be handled in the renderer process instead
+  console.log('Global shortcuts disabled to prevent interference with browser functionality')
 }
 
 // This method will be called when Electron has finished
@@ -457,6 +432,49 @@ app.whenReady().then(() => {
     return true
   })
 
+  // Autolaunch IPC handlers
+  ipcMain.handle('autolaunch:isEnabled', async () => {
+    console.log('[main] autolaunch:isEnabled called')
+    const enabled = isAutolaunchEnabled()
+    console.log('[main] autolaunch:isEnabled returning:', enabled)
+    return enabled
+  })
+
+  ipcMain.handle('autolaunch:enable', async (_evt, options: { minimized?: boolean; hidden?: boolean } = {}) => {
+    console.log('[main] autolaunch:enable called with options:', options)
+    const success = enableAutolaunch(options)
+    console.log('[main] autolaunch:enable returning:', success)
+    return success
+  })
+
+  ipcMain.handle('autolaunch:disable', async () => {
+    console.log('[main] autolaunch:disable called')
+    const success = disableAutolaunch()
+    console.log('[main] autolaunch:disable returning:', success)
+    return success
+  })
+
+  ipcMain.handle('autolaunch:toggle', async (_evt, options: { minimized?: boolean; hidden?: boolean } = {}) => {
+    console.log('[main] autolaunch:toggle called with options:', options)
+    const success = toggleAutolaunch(options)
+    console.log('[main] autolaunch:toggle returning:', success)
+    return success
+  })
+
+  ipcMain.handle('autolaunch:getSettings', async () => {
+    console.log('[main] autolaunch:getSettings called')
+    const settings = getAutolaunchSettings()
+    console.log('[main] autolaunch:getSettings returning:', settings)
+    return settings
+  })
+
+  ipcMain.handle('autolaunch:wasLaunchedAtStartup', async () => {
+    console.log('[main] autolaunch:wasLaunchedAtStartup called')
+    const wasLaunched = wasLaunchedAtStartup()
+    console.log('[main] autolaunch:wasLaunchedAtStartup returning:', wasLaunched)
+    return wasLaunched
+  })
+
   createWindow()
 
   // Register global shortcuts
@@ -473,9 +491,6 @@ app.whenReady().then(() => {
 // for applications and their menu bar to stay active until the user quits
 // explicitly with Cmd + Q.
 app.on('window-all-closed', () => {
-  // Unregister global shortcuts when all windows are closed
-  globalShortcut.unregisterAll()
-  
   if (process.platform !== 'darwin') {
     app.quit()
   }
@@ -485,9 +500,6 @@ app.on('window-all-closed', () => {
 // code. You can also put them in separate files and require them here.
 
 app.on('before-quit', () => {
-  // Unregister all global shortcuts
-  globalShortcut.unregisterAll()
-  
   // Best-effort close of corestores and swarms
   closeAllDrives().catch(() => {})
   stopAllDriveWatchers().catch(() => {})

@@ -20,14 +20,20 @@ export function useGlobalSearch({ onSearchTriggered, searchInputRef }: UseGlobal
   }, [onSearchTriggered, searchInputRef])
 
   useEffect(() => {
-    // Set up the global search listener
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const cleanup = (window as any).api?.onGlobalSearchTriggered?.(handleGlobalSearch)
+    // Set up local keyboard shortcut listener (only works when app is focused)
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // Check for Ctrl+F (Windows/Linux) or Cmd+F (macOS)
+      if ((event.ctrlKey || event.metaKey) && event.key === 'f') {
+        event.preventDefault() // Prevent browser search
+        handleGlobalSearch()
+      }
+    }
+
+    // Add the event listener to the document
+    document.addEventListener('keydown', handleKeyDown)
     
     return () => {
-      if (cleanup) {
-        cleanup()
-      }
+      document.removeEventListener('keydown', handleKeyDown)
     }
   }, [handleGlobalSearch])
 

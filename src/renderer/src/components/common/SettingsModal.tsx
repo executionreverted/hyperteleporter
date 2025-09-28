@@ -1,8 +1,10 @@
 import React, { useState, useMemo } from 'react'
-import { IconX, IconSettings, IconTrash, IconDownload, IconUpload, IconBell, IconShield, IconPalette, IconDatabase } from '@tabler/icons-react'
+import { IconX, IconSettings, IconTrash, IconDownload, IconUpload, IconBell, IconShield, IconPalette, IconDatabase, IconRocket } from '@tabler/icons-react'
 import { useEscapeKey } from '../../hooks/useEscapeKey'
 import { MagicButton } from './MagicButton'
 import { ConfirmDialog } from './ConfirmDialog'
+import { AutolaunchSettings } from './AutolaunchSettings'
+import { Switch } from '../../../../components/ui/switch'
 
 interface SettingsModalProps {
   isOpen: boolean
@@ -59,7 +61,7 @@ export function SettingsModal({ isOpen, onClose, onClearContent }: SettingsModal
     cacheSize: '500MB'
   })
 
-  useEscapeKey(onClose)
+  useEscapeKey({ onEscape: onClose })
 
   const handleSettingChange = (settingId: string, value: any) => {
     setSettings(prev => ({
@@ -139,6 +141,12 @@ export function SettingsModal({ isOpen, onClose, onClearContent }: SettingsModal
           onChange: (value) => handleSettingChange('language', value)
         }
       ]
+    },
+    {
+      id: 'autolaunch',
+      title: 'Startup',
+      icon: <IconRocket className="w-5 h-5" />,
+      settings: []
     },
     {
       id: 'downloads',
@@ -284,19 +292,11 @@ export function SettingsModal({ isOpen, onClose, onClearContent }: SettingsModal
               <label className="text-sm font-medium text-white">{setting.label}</label>
               <p className="text-xs text-neutral-400 mt-1">{setting.description}</p>
             </div>
-            <button
-              onClick={() => setting.onChange?.(!setting.value)}
+            <Switch
+              checked={setting.value}
+              onCheckedChange={(checked) => setting.onChange?.(checked)}
               disabled
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors opacity-50 cursor-not-allowed ${
-                setting.value ? 'bg-blue-600' : 'bg-neutral-600'
-              }`}
-            >
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                  setting.value ? 'translate-x-6' : 'translate-x-1'
-                }`}
-              />
-            </button>
+            />
           </div>
         )
 
@@ -387,7 +387,7 @@ export function SettingsModal({ isOpen, onClose, onClearContent }: SettingsModal
         </div>
 
         {/* Content */}
-        <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-600 scrollbar-track-neutral-800 hover:scrollbar-thumb-neutral-500">
+        <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-600 hover:scrollbar-thumb-neutral-500">
           <div className="p-6">
           <div className="space-y-8">
             {settingSections.map((section) => (
@@ -398,11 +398,17 @@ export function SettingsModal({ isOpen, onClose, onClearContent }: SettingsModal
                 </div>
                 
                 <div className="space-y-6">
-                  {section.settings.map((setting) => (
-                    <div key={setting.id} className="p-4 bg-neutral-800/50 rounded-lg">
-                      {renderSetting(setting)}
+                  {section.id === 'autolaunch' ? (
+                    <div className="p-4 bg-neutral-800/50 rounded-lg">
+                      <AutolaunchSettings />
                     </div>
-                  ))}
+                  ) : (
+                    section.settings.map((setting) => (
+                      <div key={setting.id} className="p-4 bg-neutral-800/50 rounded-lg">
+                        {renderSetting(setting)}
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
             ))}

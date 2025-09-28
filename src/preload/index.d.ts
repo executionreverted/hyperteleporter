@@ -29,13 +29,19 @@ declare global {
         updateProfile: (profile: Record<string, unknown>) => Promise<any>
         hasUsername: () => Promise<boolean>
       }
+      autolaunch: {
+        isEnabled: () => Promise<boolean>
+        enable: (options?: { minimized?: boolean; hidden?: boolean }) => Promise<boolean>
+        disable: () => Promise<boolean>
+        toggle: (options?: { minimized?: boolean; hidden?: boolean }) => Promise<boolean>
+        getSettings: () => Promise<{ enabled: boolean; minimized: boolean; hidden: boolean }>
+        wasLaunchedAtStartup: () => Promise<boolean>
+      }
       files: {
         list: (folder?: string) => Promise<any[]>
         getFileUrl: (driveId: string, path: string) => Promise<string | null>
         getFileText: (driveId: string, path: string) => Promise<string | null>
       }
-      // Global shortcuts
-      onGlobalSearchTriggered: (callback: () => void) => () => void
     }
   }
 }
