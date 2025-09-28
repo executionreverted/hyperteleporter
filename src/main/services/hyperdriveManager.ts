@@ -1840,6 +1840,19 @@ export async function clearDriveContent(driveId: string, onProgress?: (currentIt
       }
     }
     
+    // Also check for .chunks folders that might not be detected as root directories
+    // because they contain files (like .keep, manifest.json, chunk.000, etc.)
+    for await (const file of drive.list('/', { recursive: true })) {
+      const relativePath = file.key === '/' ? '' : file.key.substring(1)
+      if (relativePath && relativePath.endsWith('.chunks')) {
+        const rootDir = relativePath
+        if (!rootDirectories.has(rootDir)) {
+          rootDirectories.add(rootDir)
+          console.log(`[hyperdrive] Found .chunks folder: ${rootDir}`)
+        }
+      }
+    }
+    
     // Add all root directories to the files to delete
     rootFiles.push(...Array.from(rootDirectories))
     
@@ -1872,6 +1885,26 @@ export async function clearDriveContent(driveId: string, onProgress?: (currentIt
         // Emit progress event
         if (onProgress) {
           onProgress(item, deletedCount, totalItems)
+        }
+        
+        // First check if this is a pseudo-file (chunked file) - same logic as deleteFile
+        const entries = await listDrive(driveId, '/', true)
+        const pseudoFile = entries.find(entry => entry.key === itemPath)
+        
+        if (pseudoFile?.value?.metadata) {
+          try {
+            const metadata = JSON.parse(pseudoFile.value.metadata)
+            if (metadata.is_chunked && metadata.chunkFolder) {
+              console.log(`[hyperdrive] clearDriveContent ${itemPath}: deleting pseudo-file, targeting chunks folder: ${metadata.chunkFolder}`)
+              // Delete the entire .chunks folder
+              await deleteFolderContents(drive, metadata.chunkFolder)
+              console.log(`[hyperdrive] clearDriveContent ${itemPath}: successfully deleted chunked file`)
+              deletedCount++
+              continue
+            }
+          } catch (e) {
+            // Not a pseudo-file, continue with normal processing
+          }
         }
         
         // Use the same pattern as deleteFile for each item
