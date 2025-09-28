@@ -20,6 +20,7 @@ const api = {
       return ipcRenderer.invoke('drives:uploadFolder', { driveId, folderPath, files: payload })
     },
     deleteFile: async (driveId: string, path: string) => ipcRenderer.invoke('drives:deleteFile', { driveId, path }),
+    clearContent: async (driveId: string) => ipcRenderer.invoke('drive:clearContent', { driveId }),
     getStorageInfo: async (driveId: string) => ipcRenderer.invoke('drives:getStorageInfo', { driveId }),
     getFolderStats: async (driveId: string, folder: string) => ipcRenderer.invoke('drives:getFolderStats', { driveId, folder }),
     downloadFile: async (driveId: string, filePath: string, fileName: string, driveName: string) => ipcRenderer.invoke('drives:downloadFile', { driveId, filePath, fileName, driveName }),
@@ -102,6 +103,12 @@ const api = {
 ipcRenderer.on('download-progress', (_, data) => {
   // Forward to renderer
   window.dispatchEvent(new CustomEvent('download-progress', { detail: data }))
+})
+
+// Clear content progress events
+ipcRenderer.on('clear-content-progress', (_, data) => {
+  // Forward to renderer
+  window.dispatchEvent(new CustomEvent('clear-content-progress', { detail: data }))
 })
 
 // Use `contextBridge` APIs to expose Electron APIs to

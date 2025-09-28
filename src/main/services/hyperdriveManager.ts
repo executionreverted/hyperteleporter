@@ -197,7 +197,7 @@ export async function checkDriveSyncStatus(driveId: string): Promise<{ isSyncing
         activeDrives.set(driveId, currentDrive)
       }
       
-      console.log(`[hyperdrive] Owned drive ${driveId}: syncing=false, version=${currentVersion}, peers=${peers}`)
+      // console.log(`[hyperdrive] Owned drive ${driveId}: syncing=false, version=${currentVersion}, peers=${peers}`)
       return { isSyncing: false, version: currentVersion, peers, isFindingPeers: false }
     }
     
@@ -412,22 +412,44 @@ async function isFolder(drive: any, path: string): Promise<boolean> {
 // Helper function to delete all contents of a folder recursively
 async function deleteFolderContents(drive: any, folderPath: string): Promise<void> {
   const prefix = folderPath.endsWith('/') ? folderPath : `${folderPath}/`
-  const entriesToDelete: string[] = []
+  const entriesToDelete: any[] = []
   
-  // Collect all entries under this folder
+  // Collect all entries under this folder with their blob references
   for await (const entry of drive.list('/', { recursive: true })) {
     if (entry.key.startsWith(prefix)) {
-      entriesToDelete.push(entry.key)
+      entriesToDelete.push(entry)
     }
   }
   
-  // Delete all entries (files and subfolders)
-  for (const entryPath of entriesToDelete) {
+  // Delete all entries (files and subfolders) with proper blob clearing
+  for (const entry of entriesToDelete) {
     try {
+      const entryPath = entry.key
+      const blobRef = entry.value?.blob
+      
+      console.log(`[hyperdrive] deleteFolderContents: deleting ${entryPath}, hasBlob=${!!blobRef}`)
+      
+      // Remove file entry from drive structure
       await drive.del(entryPath)
-      console.log(`[hyperdrive] deleteFolderContents: deleted ${entryPath}`)
+      console.log(`[hyperdrive] deleteFolderContents: del() completed for ${entryPath}`)
+      
+      // Free blob storage to reclaim disk space if it's a file with blob data
+      if (blobRef) {
+        try {
+          const blobs = await drive.getBlobs()
+          const cleared = await blobs.clear(blobRef, { diff: true })
+          console.log(`[hyperdrive] deleteFolderContents: blobs.clear() completed for ${entryPath}, cleared bytes:`, cleared)
+        } catch (err) {
+          console.warn(`[hyperdrive] deleteFolderContents: blobs.clear failed for ${entryPath}, falling back to drive.clear`, err)
+          // Fallback to path-based clear
+          const cleared = await drive.clear(entryPath, { diff: true })
+          console.log(`[hyperdrive] deleteFolderContents: drive.clear() completed for ${entryPath}, cleared bytes:`, cleared)
+        }
+      }
+      
+      console.log(`[hyperdrive] deleteFolderContents: successfully deleted ${entryPath}`)
     } catch (err) {
-      console.warn(`[hyperdrive] deleteFolderContents: failed to delete ${entryPath}:`, err)
+      console.warn(`[hyperdrive] deleteFolderContents: failed to delete ${entry.key}:`, err)
     }
   }
 }
@@ -575,12 +597,14 @@ export async function getFolderStats(driveId: string, folder: string): Promise<{
 
 import { writeFile, mkdir } from 'fs/promises'
 import { homedir } from 'os'
+import { getDownloadConfig, DownloadConfig } from '../config/downloadConfig'
 
 // Single file download using proper Hyperdrive API
 export async function downloadFileToDownloads(driveId: string, filePath: string, fileName: string, driveName: string): Promise<{ success: boolean; downloadPath: string }> {
   const drive = activeDrives.get(driveId)?.hyperdrive
   if (!drive) throw new Error('Drive not found')
   
+  const config = getDownloadConfig()
   const downloadsDir = join(homedir(), 'Downloads', 'HyperTeleporter', driveName)
   const normalizedPath = filePath.startsWith('/') ? filePath : `/${filePath}`
   
@@ -593,14 +617,8 @@ export async function downloadFileToDownloads(driveId: string, filePath: string,
       throw new Error('File does not exist')
     }
 
-    // Get file data using drive.get() with proper options
     console.log(`[hyperdrive] Downloading file: ${normalizedPath}`)
-    const data = await drive.get(normalizedPath, { wait: true, timeout: 30000 })
     
-    if (!data) {
-      throw new Error('File is empty or could not be read')
-    }
-
     // Create directory structure
     const pathParts = filePath.split('/').filter(Boolean)
     const dirPath = pathParts.slice(0, -1).join('/')
@@ -611,7 +629,33 @@ export async function downloadFileToDownloads(driveId: string, filePath: string,
     }
 
     const targetPath = join(finalDir, fileName)
-    await writeFile(targetPath, data)
+    
+    // Try streaming first for better performance and memory efficiency
+    try {
+      const stream = drive.createReadStream(normalizedPath, { wait: true, timeout: config.streamTimeout })
+      const writeStream = require('fs').createWriteStream(targetPath)
+      
+      await new Promise((resolve, reject) => {
+        stream.pipe(writeStream)
+        writeStream.on('finish', resolve)
+        writeStream.on('error', reject)
+        stream.on('error', reject)
+      })
+      
+      console.log(`[hyperdrive] Downloaded file (stream): ${fileName} to ${targetPath}`)
+    } catch (streamError) {
+      console.warn(`[hyperdrive] Streaming failed for ${normalizedPath}, falling back to buffer method:`, streamError)
+      
+      // Fallback to buffer method
+      const data = await drive.get(normalizedPath, { wait: true, timeout: config.streamTimeout })
+      
+      if (!data) {
+        throw new Error('File is empty or could not be read')
+      }
+
+      await writeFile(targetPath, data)
+      console.log(`[hyperdrive] Downloaded file (buffer): ${fileName} to ${targetPath}`)
+    }
 
     console.log(`[hyperdrive] Downloaded file: ${fileName} to ${targetPath}`)
     return { success: true, downloadPath: targetPath }
@@ -621,11 +665,206 @@ export async function downloadFileToDownloads(driveId: string, filePath: string,
   }
 }
 
-// Folder download using proper Hyperdrive API
+// Progress batching utility
+class ProgressBatcher {
+  private updates: Array<{ currentFile: string; downloadedFiles: number; totalFiles: number }> = []
+  private batchTimeout: NodeJS.Timeout | null = null
+  private onProgress: (currentFile: string, downloadedFiles: number, totalFiles: number) => void
+  private batchInterval: number
+
+  constructor(onProgress: (currentFile: string, downloadedFiles: number, totalFiles: number) => void, batchInterval = 100) {
+    this.onProgress = onProgress
+    this.batchInterval = batchInterval
+  }
+
+  addUpdate(update: { currentFile: string; downloadedFiles: number; totalFiles: number }) {
+    this.updates.push(update)
+    
+    if (!this.batchTimeout) {
+      this.batchTimeout = setTimeout(() => {
+        this.flushUpdates()
+      }, this.batchInterval)
+    }
+  }
+
+  private flushUpdates() {
+    if (this.updates.length > 0) {
+      // Send the latest update
+      const latest = this.updates[this.updates.length - 1]
+      this.onProgress(latest.currentFile, latest.downloadedFiles, latest.totalFiles)
+      this.updates = []
+    }
+    this.batchTimeout = null
+  }
+
+  destroy() {
+    if (this.batchTimeout) {
+      clearTimeout(this.batchTimeout)
+      this.batchTimeout = null
+    }
+    this.flushUpdates()
+  }
+}
+
+// Parallel download utility
+async function downloadFileParallel(
+  drive: Hyperdrive, 
+  entry: { key: string; value: any }, 
+  targetDir: string, 
+  folderPath: string,
+  progressBatcher: ProgressBatcher,
+  totalFiles: number,
+  config: DownloadConfig
+): Promise<{ success: boolean; filePath?: string; error?: string }> {
+  try {
+    console.log(`[hyperdrive] Downloading file: ${entry.key}`)
+    
+    // Use streaming for better memory efficiency
+    const relativePath = entry.key.startsWith(folderPath) 
+      ? entry.key.slice(folderPath.length).replace(/^\//, '')
+      : entry.key.replace(/^\//, '')
+    
+    const filePath = join(targetDir, relativePath)
+    const fileDir = join(targetDir, relativePath.split('/').slice(0, -1).join('/'))
+    
+    if (fileDir !== targetDir) {
+      await mkdir(fileDir, { recursive: true })
+    }
+
+    // Try streaming first for better performance if enabled
+    if (config.enableStreaming) {
+      try {
+        const stream = drive.createReadStream(entry.key, { wait: true, timeout: config.streamTimeout })
+        const writeStream = require('fs').createWriteStream(filePath)
+        
+        await new Promise((resolve, reject) => {
+          stream.pipe(writeStream)
+          writeStream.on('finish', resolve)
+          writeStream.on('error', reject)
+          stream.on('error', reject)
+        })
+        
+        console.log(`[hyperdrive] Downloaded (stream): ${relativePath}`)
+        return { success: true, filePath }
+      } catch (streamError) {
+        console.warn(`[hyperdrive] Streaming failed for ${entry.key}, falling back to buffer method:`, streamError)
+      }
+    }
+    
+    // Fallback to buffer method with retries
+    let data: Buffer | null = null
+    for (let attempt = 1; attempt <= config.maxRetries; attempt++) {
+      try {
+        data = await drive.get(entry.key, { wait: true, timeout: config.streamTimeout })
+        if (data && data.length > 0) break
+      } catch (err) {
+        console.warn(`[hyperdrive] get() attempt ${attempt} failed for ${entry.key}:`, err)
+      }
+      
+      // On retry, try a blocking prefetch for this single file
+      try {
+        const blocking = await drive.download(entry.key, { wait: true })
+        await blocking.done()
+      } catch (e) {
+        console.warn(`[hyperdrive] Blocking prefetch failed for ${entry.key}:`, e)
+      }
+      
+      // Exponential backoff before next try
+      if (attempt < config.maxRetries) {
+        await new Promise(r => setTimeout(r, config.retryDelay * attempt))
+      }
+    }
+    
+    if (data && data.length > 0) {
+      await writeFile(filePath, data)
+      console.log(`[hyperdrive] Downloaded (buffer): ${relativePath}`)
+      return { success: true, filePath }
+    } else {
+      return { success: false, error: 'No data after retries' }
+    }
+  } catch (err) {
+    console.error(`[hyperdrive] Failed to download file ${entry.key}:`, err)
+    return { success: false, error: String(err) }
+  }
+}
+
+// Chunk array utility for batching
+function chunkArray<T>(array: T[], chunkSize: number): T[][] {
+  const chunks: T[][] = []
+  for (let i = 0; i < array.length; i += chunkSize) {
+    chunks.push(array.slice(i, i + chunkSize))
+  }
+  return chunks
+}
+
+// Smart prefetching system
+class SmartPrefetcher {
+  private drive: Hyperdrive
+  private prefetchQueue: string[] = []
+  private isPrefetching = false
+  private prefetchPromises = new Map<string, Promise<any>>()
+  private enabled: boolean
+  private batchSize: number
+
+  constructor(drive: Hyperdrive, enabled = true, batchSize = 3) {
+    this.drive = drive
+    this.enabled = enabled
+    this.batchSize = batchSize
+  }
+
+  async prefetchFiles(files: Array<{ key: string; value: any }>, currentIndex: number, batchSize?: number) {
+    if (!this.enabled) return
+    
+    const prefetchBatchSize = batchSize || this.batchSize
+    const nextFiles = files.slice(currentIndex + 1, currentIndex + 1 + prefetchBatchSize)
+    
+    for (const file of nextFiles) {
+      if (!this.prefetchPromises.has(file.key)) {
+        const prefetchPromise = this.prefetchFile(file.key)
+        this.prefetchPromises.set(file.key, prefetchPromise)
+      }
+    }
+  }
+
+  private async prefetchFile(filePath: string) {
+    try {
+      // Use non-blocking download for prefetching
+      const download = await this.drive.download(filePath, { wait: false })
+      console.log(`[SmartPrefetcher] Started prefetch for: ${filePath}`)
+      return download
+    } catch (err) {
+      console.warn(`[SmartPrefetcher] Prefetch failed for ${filePath}:`, err)
+      return null
+    }
+  }
+
+  async waitForPrefetch(filePath: string) {
+    const prefetchPromise = this.prefetchPromises.get(filePath)
+    if (prefetchPromise) {
+      try {
+        const download = await prefetchPromise
+        if (download) {
+          await download.done()
+          console.log(`[SmartPrefetcher] Prefetch completed for: ${filePath}`)
+        }
+      } catch (err) {
+        console.warn(`[SmartPrefetcher] Prefetch wait failed for ${filePath}:`, err)
+      }
+    }
+  }
+
+  cleanup() {
+    this.prefetchPromises.clear()
+    this.prefetchQueue = []
+  }
+}
+
+// Folder download using parallel processing and streaming
 export async function downloadFolderToDownloads(driveId: string, folder: string, _folderName: string, driveName: string, onProgress?: (currentFile: string, downloadedFiles: number, totalFiles: number) => void): Promise<{ success: boolean; downloadPath: string; fileCount: number }> {
   const drive = activeDrives.get(driveId)?.hyperdrive
   if (!drive) throw new Error('Drive not found')
 
+  const config = getDownloadConfig()
   const downloadsDir = join(homedir(), 'Downloads', 'HyperTeleporter', driveName)
   
   // Handle virtual-root and root folder cases
@@ -642,140 +881,102 @@ export async function downloadFolderToDownloads(driveId: string, folder: string,
     await mkdir(downloadsDir, { recursive: true })
     await mkdir(targetDir, { recursive: true })
     
-  console.log(`[hyperdrive] Starting folder download: ${folder}`)
-  console.log(`[hyperdrive] Normalized folder path: ${folderPath}`)
-  
-  // First, download all blobs for the folder using the proper Hyperdrive API
-  console.log(`[hyperdrive] Downloading all blobs for folder: ${folderPath}`)
-  try {
-    await drive.download(folderPath, { recursive: true, wait: false })
-    // Don't wait for completion - let it download in background
-    console.log(`[hyperdrive] Started background download for folder: ${folderPath}`)
-  } catch (err) {
-    console.warn(`[hyperdrive] Background download failed for ${folderPath}:`, err)
-  }
+    console.log(`[hyperdrive] Starting parallel folder download: ${folder}`)
+    console.log(`[hyperdrive] Normalized folder path: ${folderPath}`)
+    console.log(`[hyperdrive] Using config:`, {
+      concurrentDownloads: config.concurrentDownloads,
+      enablePrefetching: config.enablePrefetching,
+      enableStreaming: config.enableStreaming
+    })
     
-    // First, count total files for progress tracking
-    let totalFiles = 0
+    // Set up progress batching and smart prefetching
+    const progressBatcher = onProgress ? new ProgressBatcher(onProgress, config.progressBatchInterval) : null
+    const prefetcher = new SmartPrefetcher(drive, config.enablePrefetching, config.prefetchBatchSize)
+    
+    // First, download all blobs for the folder using the proper Hyperdrive API
+    console.log(`[hyperdrive] Downloading all blobs for folder: ${folderPath}`)
+    try {
+      const download = await drive.download(folderPath, { recursive: true, wait: false })
+      // Don't wait for completion - let it download in background
+      console.log(`[hyperdrive] Started background download for folder: ${folderPath}`)
+    } catch (err) {
+      console.warn(`[hyperdrive] Background download failed for ${folderPath}:`, err)
+    }
+    
+    // Collect all files first
+    const files: Array<{ key: string; value: any }> = []
     for await (const entry of drive.list(folderPath, { recursive: true })) {
       if (entry?.key && (!!entry?.value?.blob || !!entry?.value?.linkname)) {
-        totalFiles++
+        files.push(entry)
       }
     }
     
+    const totalFiles = files.length
     console.log(`[hyperdrive] Total files to download: ${totalFiles}`)
     
-    // Now list and download all files in the folder
+    if (totalFiles === 0) {
+      throw new Error(`Folder "${folderPath}" is empty or does not exist`)
+    }
+    
+    // Process files in parallel batches
+    const batches = chunkArray(files, config.concurrentDownloads)
+    
     let fileCount = 0
     let processedFiles = 0
-    let totalEntries = 0
-    console.log(`[hyperdrive] Listing entries in folder: ${folderPath}`)
     
-    for await (const entry of drive.list(folderPath, { recursive: true })) {
-      totalEntries++
-      console.log(`[hyperdrive] Entry ${totalEntries}: key="${entry?.key}", hasBlob=${!!entry?.value?.blob}, hasLinkname=${!!entry?.value?.linkname}`)
+    for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+      const batch = batches[batchIndex]
       
-      if (!entry?.key) {
-        console.log(`[hyperdrive] Skipping entry ${totalEntries} - no key`)
-        continue
+      // Start prefetching next batch while current batch is processing
+      if (batchIndex < batches.length - 1) {
+        const nextBatchStartIndex = (batchIndex + 1) * config.concurrentDownloads
+        prefetcher.prefetchFiles(files, nextBatchStartIndex - 1, config.concurrentDownloads)
       }
       
-      const isFile = !!entry?.value?.blob || !!entry?.value?.linkname
-      console.log(`[hyperdrive] Entry ${totalEntries} isFile: ${isFile}`)
-      
-      if (isFile) {
-        processedFiles++ // Count files we attempt to process
-        try {
-          console.log(`[hyperdrive] Downloading file: ${entry.key}`)
-          // Prefetch this file's blobs to reduce timeouts
-          try {
-            await drive.download(entry.key, { wait: false })
-            // best-effort prefetch; do not await
-          } catch (e) {
-            console.warn(`[hyperdrive] Prefetch failed for ${entry.key}:`, e)
-          }
-
-          // Try up to 3 times with small backoff to avoid transient timeouts
-          let data: Buffer | null = null
-          const attempts = 3
-          for (let attempt = 1; attempt <= attempts; attempt++) {
-            try {
-              data = await drive.get(entry.key, { wait: true, timeout: 30000 })
-              if (data && data.length > 0) break
-            } catch (err) {
-              console.warn(`[hyperdrive] get() attempt ${attempt} failed for ${entry.key}:`, err)
-            }
-            // On retry, try a blocking prefetch for this single file
-            try {
-              const blocking = await drive.download(entry.key, { wait: true })
-              await blocking.done()
-            } catch (e) {
-              console.warn(`[hyperdrive] Blocking prefetch failed for ${entry.key}:`, e)
-            }
-            // Small backoff before next try
-            await new Promise(r => setTimeout(r, 1000 * attempt))
-          }
-          
-          if (data && data.length > 0) {
-            // Calculate relative path from the folder
-            const relativePath = entry.key.startsWith(folder) 
-              ? entry.key.slice(folder.length).replace(/^\//, '')
-              : entry.key.replace(/^\//, '')
-            
-            const filePath = join(targetDir, relativePath)
-            const fileDir = join(targetDir, relativePath.split('/').slice(0, -1).join('/'))
-            
-            if (fileDir !== targetDir) {
-              await mkdir(fileDir, { recursive: true })
-            }
-
-            await writeFile(filePath, data)
-            fileCount++
-            console.log(`[hyperdrive] Downloaded: ${relativePath}`)
-            
-            // Report progress AFTER successful download
-            if (onProgress) {
-              console.log(`[hyperdrive] Reporting progress: file=${entry.key}, processed=${processedFiles}, total=${totalFiles}`)
-              onProgress(entry.key, processedFiles, totalFiles)
-            }
-          } else {
-            console.warn(`[hyperdrive] Skipped (no data after retries): ${entry.key}`)
-            // Report progress for skipped files too
-            if (onProgress) {
-              console.log(`[hyperdrive] Reporting progress (skipped): file=${entry.key}, processed=${processedFiles}, total=${totalFiles}`)
-              onProgress(entry.key, processedFiles, totalFiles)
-            }
-          }
-        } catch (err) {
-          console.error(`[hyperdrive] Failed to download file ${entry.key}:`, err)
-          // Still report progress even if file failed to keep progress bar moving
-          if (onProgress) {
-            console.log(`[hyperdrive] Reporting progress (failed): file=${entry.key}, processed=${processedFiles}, total=${totalFiles}`)
-            onProgress(entry.key, processedFiles, totalFiles)
-          }
+      const batchPromises = batch.map(async (entry, entryIndex) => {
+        // Wait for prefetch if available
+        await prefetcher.waitForPrefetch(entry.key)
+        
+        const result = await downloadFileParallel(drive, entry, targetDir, folderPath, progressBatcher!, totalFiles, config)
+        
+        processedFiles++
+        
+        if (result.success) {
+          fileCount++
         }
-      }
+        
+        // Report progress
+        if (progressBatcher) {
+          progressBatcher.addUpdate({
+            currentFile: entry.key,
+            downloadedFiles: processedFiles,
+            totalFiles
+          })
+        }
+        
+        return result
+      })
+      
+      // Wait for all files in this batch to complete
+      const batchResults = await Promise.allSettled(batchPromises)
+      
+      // Log batch results
+      const successful = batchResults.filter(r => r.status === 'fulfilled' && r.value.success).length
+      const failed = batchResults.filter(r => r.status === 'rejected' || (r.status === 'fulfilled' && !r.value.success)).length
+      
+      console.log(`[hyperdrive] Batch ${batchIndex + 1}/${batches.length} completed: ${successful} successful, ${failed} failed`)
     }
 
-    console.log(`[hyperdrive] Folder download completed. Total entries found: ${totalEntries}, Files processed: ${processedFiles}, Files downloaded: ${fileCount}`)
+    // Cleanup prefetcher and flush any remaining progress updates
+    prefetcher.cleanup()
+    if (progressBatcher) {
+      progressBatcher.destroy()
+    }
+
+    console.log(`[hyperdrive] Parallel folder download completed. Files processed: ${processedFiles}, Files downloaded: ${fileCount}`)
 
     if (fileCount === 0) {
-      // Check if the folder exists at all by trying to list it
-      let hasAnyEntries = false
-      try {
-        for await (const entry of drive.list(folderPath, { recursive: true })) {
-          hasAnyEntries = true
-          break // Just check if there's at least one entry
-        }
-      } catch (err) {
-        console.warn(`[hyperdrive] Error checking folder entries:`, err)
-      }
-      
-      if (!hasAnyEntries) {
-        throw new Error(`Folder "${folderPath}" is empty or does not exist`)
-      } else {
-        throw new Error(`No downloadable files found in folder "${folderPath}"`)
-      }
+      throw new Error(`No downloadable files found in folder "${folderPath}"`)
     }
 
     return { success: true, downloadPath: targetDir, fileCount }
@@ -784,5 +985,168 @@ export async function downloadFolderToDownloads(driveId: string, folder: string,
     throw err
   }
 }
+
+/**
+ * Clear all content from a drive
+ */
+export async function clearDriveContent(driveId: string, onProgress?: (currentItem: string, deletedCount: number, totalItems: number) => void): Promise<{ deletedCount: number }> {
+  console.log(`[hyperdrive] clearDriveContent called for driveId=${driveId}`)
+  
+  try {
+    const drive = activeDrives.get(driveId)?.hyperdrive
+    if (!drive) {
+      throw new Error(`Drive ${driveId} not found`)
+    }
+
+    let deletedCount = 0
+
+    // Get all files and folders in the root directory using list method
+    const rootFiles: string[] = []
+    const allFiles: any[] = []
+    const rootDirectories = new Set<string>()
+    
+    for await (const file of drive.list('/', { recursive: true })) {
+      allFiles.push(file)
+      // Get the relative path from root
+      const relativePath = file.key === '/' ? '' : file.key.substring(1) // Remove leading slash
+      
+      if (relativePath) {
+        // Extract the first part of the path (root level directory)
+        const firstSlash = relativePath.indexOf('/')
+        if (firstSlash === -1) {
+          // Direct file in root
+          rootFiles.push(relativePath)
+        } else {
+          // File in subdirectory - add the root directory to our set
+          const rootDir = relativePath.substring(0, firstSlash)
+          rootDirectories.add(rootDir)
+        }
+      }
+    }
+    
+    // Add all root directories to the files to delete
+    rootFiles.push(...Array.from(rootDirectories))
+    
+    console.log(`[hyperdrive] All files found:`, allFiles.length, 'total files')
+    console.log(`[hyperdrive] Root level directories:`, Array.from(rootDirectories))
+    console.log(`[hyperdrive] Root level files:`, rootFiles)
+    
+    if (rootFiles.length === 0) {
+      console.log(`[hyperdrive] No items found in root directory`)
+      return { deletedCount: 0 }
+    }
+    
+    const totalItems = rootFiles.length
+    console.log(`[hyperdrive] Found ${totalItems} items in root directory`)
+
+    // Use the proven individual deletion approach (drive.purge() has compatibility issues)
+    console.log(`[hyperdrive] Using individual deletion approach to clear all content`)
+    
+    // Use drive.clearAll() to clear all blobs from storage first
+    console.log(`[hyperdrive] Using drive.clearAll() to remove all blobs from storage`)
+    const cleared = await drive.clearAll({ diff: true })
+    console.log(`[hyperdrive] clearAll result:`, cleared)
+
+    // Now delete all the file structure entries using the same pattern as deleteFile
+    for (let i = 0; i < rootFiles.length; i++) {
+      const item = rootFiles[i]
+      try {
+        const itemPath = `/${item}`
+        
+        // Emit progress event
+        if (onProgress) {
+          onProgress(item, deletedCount, totalItems)
+        }
+        
+        // Use the same pattern as deleteFile for each item
+        const isFolderPath = await isFolder(drive, itemPath)
+        console.log(`[hyperdrive] clearDriveContent ${itemPath}: isFolder=${isFolderPath}`)
+        
+        if (isFolderPath) {
+          // Handle folder deletion using the same pattern as deleteFile
+          console.log(`[hyperdrive] clearDriveContent ${itemPath}: deleting folder and all contents`)
+          await deleteFolderContents(drive, itemPath)
+        } else {
+          // Handle file deletion using the same pattern as deleteFile
+          const existsBefore = await drive.exists(itemPath)
+          console.log(`[hyperdrive] clearDriveContent ${itemPath}: exists before=${existsBefore}`)
+          
+          if (!existsBefore) {
+            console.log(`[hyperdrive] clearDriveContent ${itemPath}: file does not exist, nothing to delete`)
+            deletedCount++
+            continue
+          }
+        
+          // Read entry BEFORE deletion so we can get the blob reference to clear
+          const entryBefore = await drive.entry(itemPath)
+          const blobRef = entryBefore?.value?.blob
+          console.log(`[hyperdrive] clearDriveContent ${itemPath}: entry blob before del=`, blobRef)
+
+          // Remove file entry from drive structure
+          await drive.del(itemPath)
+          console.log(`[hyperdrive] clearDriveContent ${itemPath}: del() completed`)
+          
+          // Free blob storage to reclaim disk space using explicit blob reference if available
+          let cleared: any = null
+          if (blobRef) {
+            try {
+              const blobs = await drive.getBlobs()
+              cleared = await blobs.clear(blobRef, { diff: true })
+              console.log(`[hyperdrive] clearDriveContent ${itemPath}: blobs.clear() completed, cleared bytes:`, cleared)
+            } catch (err) {
+              console.warn(`[hyperdrive] clearDriveContent ${itemPath}: blobs.clear failed, falling back to drive.clear`, err)
+              // Fallback to path-based clear
+              cleared = await drive.clear(itemPath, { diff: true })
+              console.log(`[hyperdrive] clearDriveContent ${itemPath}: drive.clear() completed, cleared bytes:`, cleared)
+            }
+          } else {
+            // No blobRef (e.g., symlink) - attempt path-based clear anyway
+            cleared = await drive.clear(itemPath, { diff: true })
+            console.log(`[hyperdrive] clearDriveContent ${itemPath}: drive.clear() (no blobRef) completed, cleared bytes:`, cleared)
+          }
+        }
+        
+        deletedCount++
+        console.log(`[hyperdrive] clearDriveContent ${itemPath}: deleted successfully`)
+        
+      } catch (err) {
+        console.warn(`[hyperdrive] clearDriveContent: Failed to delete ${item}:`, err)
+        // Continue with other items even if one fails
+      }
+    }
+
+    console.log(`[hyperdrive] clearDriveContent completed. Deleted ${deletedCount} items`)
+    
+    // Verify what's left in the drive
+    const remainingFiles: string[] = []
+    for await (const file of drive.list('/', { recursive: true })) {
+      const relativePath = file.key === '/' ? '' : file.key.substring(1)
+      if (relativePath) {
+        const firstSlash = relativePath.indexOf('/')
+        if (firstSlash === -1) {
+          remainingFiles.push(relativePath)
+        } else {
+          const rootDir = relativePath.substring(0, firstSlash)
+          if (!remainingFiles.includes(rootDir)) {
+            remainingFiles.push(rootDir)
+          }
+        }
+      }
+    }
+    console.log(`[hyperdrive] Remaining files after deletion:`, remainingFiles)
+    
+    // Update drive and broadcast changes (same as deleteFile)
+    try { 
+      await drive.update({ wait: false }) 
+    } catch {}
+    broadcastDriveChanged(driveId)
+    
+    return { deletedCount }
+  } catch (err) {
+    console.error(`[hyperdrive] clearDriveContent failed for ${driveId}:`, err)
+    throw err
+  }
+}
+
 
 

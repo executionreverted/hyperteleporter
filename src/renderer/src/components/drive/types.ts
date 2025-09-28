@@ -46,6 +46,7 @@ export interface DrivePageState {
   showNewFolderModal: boolean
   targetFolderForNewFolder: string
   showDownloadsModal: boolean
+  showSettingsModal: boolean
   isDriveSyncing: boolean
   syncStatus: SyncStatus | null
   isInitialSync: boolean

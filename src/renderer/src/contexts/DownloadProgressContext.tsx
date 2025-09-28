@@ -1,26 +1,28 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useState, ReactNode, useEffect, useRef, useCallback } from 'react';
 
 interface DownloadProgressState {
-  isDownloading: boolean;
+  downloadId: string;
+  folderName: string;
   currentFile: string;
   progress: number;
   totalFiles: number;
   downloadedFiles: number;
-  folderName: string;
-  downloadId: string;
   downloadPath: string;
   status: 'downloading' | 'completed' | 'failed';
   error?: string;
+  shouldShow: boolean;
+  startTime: number;
 }
 
 interface DownloadProgressContextType {
-  downloadState: DownloadProgressState;
+  downloads: Record<string, DownloadProgressState>;
   startDownload: (folderName: string, totalFiles: number, downloadId: string, downloadPath: string) => void;
-  updateProgress: (currentFile: string, downloadedFiles: number, totalFiles?: number) => void;
-  updateDownloadPath: (downloadPath: string) => void;
+  updateProgress: (downloadId: string, currentFile: string, downloadedFiles: number, totalFiles?: number) => void;
+  updateDownloadPath: (downloadId: string, downloadPath: string) => void;
   completeDownload: (downloadId: string) => void;
   failDownload: (downloadId: string, error: string) => void;
-  resetDownload: () => void;
+  removeDownload: (downloadId: string) => void;
+  getActiveDownloads: () => DownloadProgressState[];
 }
 
 const DownloadProgressContext = createContext<DownloadProgressContextType | undefined>(undefined);
@@ -38,91 +40,191 @@ interface DownloadProgressProviderProps {
 }
 
 export const DownloadProgressProvider: React.FC<DownloadProgressProviderProps> = ({ children }) => {
-  const [downloadState, setDownloadState] = useState<DownloadProgressState>({
-    isDownloading: false,
-    currentFile: '',
-    progress: 0,
-    totalFiles: 0,
-    downloadedFiles: 0,
-    folderName: '',
-    downloadId: '',
-    downloadPath: '',
-    status: 'downloading',
-  });
+  const [downloads, setDownloads] = useState<Record<string, DownloadProgressState>>({});
+  const autoHideTimeoutsRef = useRef<Record<string, NodeJS.Timeout>>({});
 
   const startDownload = (folderName: string, totalFiles: number, downloadId: string, downloadPath: string) => {
-    setDownloadState({
-      isDownloading: true,
+    const newDownload: DownloadProgressState = {
+      downloadId,
+      folderName,
       currentFile: '',
       progress: 0,
       totalFiles,
       downloadedFiles: 0,
-      folderName,
-      downloadId,
       downloadPath,
       status: 'downloading',
+      shouldShow: true,
+      startTime: Date.now(),
+    };
+
+    setDownloads(prev => ({
+      ...prev,
+      [downloadId]: newDownload
+    }));
+  };
+
+  const updateProgress = (downloadId: string, currentFile: string, downloadedFiles: number, totalFiles?: number) => {
+    setDownloads(prev => {
+      const download = prev[downloadId];
+      if (download) {
+        return {
+          ...prev,
+          [downloadId]: {
+            ...download,
+            currentFile,
+            downloadedFiles,
+            totalFiles: totalFiles || download.totalFiles,
+            progress: (totalFiles || download.totalFiles) > 0 ? (downloadedFiles / (totalFiles || download.totalFiles)) * 100 : 0,
+          }
+        };
+      }
+      return prev;
     });
   };
 
-  const updateProgress = (currentFile: string, downloadedFiles: number, totalFiles?: number) => {
-    setDownloadState(prev => ({
-      ...prev,
-      currentFile,
-      downloadedFiles,
-      totalFiles: totalFiles || prev.totalFiles,
-      progress: (totalFiles || prev.totalFiles) > 0 ? (downloadedFiles / (totalFiles || prev.totalFiles)) * 100 : 0,
-    }));
-  };
-
-  const updateDownloadPath = (downloadPath: string) => {
-    setDownloadState(prev => ({
-      ...prev,
-      downloadPath,
-    }));
+  const updateDownloadPath = (downloadId: string, downloadPath: string) => {
+    setDownloads(prev => {
+      const download = prev[downloadId];
+      if (download) {
+        return {
+          ...prev,
+          [downloadId]: {
+            ...download,
+            downloadPath,
+          }
+        };
+      }
+      return prev;
+    });
   };
 
   const completeDownload = (downloadId: string) => {
-    setDownloadState(prev => ({
-      ...prev,
-      isDownloading: false,
-      progress: 100,
-      status: 'completed',
-    }));
+    // Clear any existing timeout for this download
+    const existingTimeout = autoHideTimeoutsRef.current[downloadId];
+    if (existingTimeout) {
+      clearTimeout(existingTimeout);
+      delete autoHideTimeoutsRef.current[downloadId];
+    }
+
+    setDownloads(prev => {
+      const download = prev[downloadId];
+      if (download) {
+        return {
+          ...prev,
+          [downloadId]: {
+            ...download,
+            progress: 100,
+            status: 'completed',
+            shouldShow: true, // Show completed state briefly
+          }
+        };
+      }
+      return prev;
+    });
+
+    // Auto-hide after 3 seconds
+    const timeout = setTimeout(() => {
+      setDownloads(prev => {
+        const download = prev[downloadId];
+        if (download) {
+          return {
+            ...prev,
+            [downloadId]: {
+              ...download,
+              shouldShow: false,
+            }
+          };
+        }
+        return prev;
+      });
+      delete autoHideTimeoutsRef.current[downloadId];
+    }, 3000);
+    
+    autoHideTimeoutsRef.current[downloadId] = timeout;
   };
 
   const failDownload = (downloadId: string, error: string) => {
-    setDownloadState(prev => ({
-      ...prev,
-      isDownloading: false,
-      status: 'failed',
-      error,
-    }));
+    // Clear any existing timeout for this download
+    const existingTimeout = autoHideTimeoutsRef.current[downloadId];
+    if (existingTimeout) {
+      clearTimeout(existingTimeout);
+      delete autoHideTimeoutsRef.current[downloadId];
+    }
+
+    setDownloads(prev => {
+      const download = prev[downloadId];
+      if (download) {
+        return {
+          ...prev,
+          [downloadId]: {
+            ...download,
+            status: 'failed',
+            error,
+            shouldShow: true, // Show failed state briefly
+          }
+        };
+      }
+      return prev;
+    });
+
+    // Auto-hide failed downloads after 5 seconds (longer for errors)
+    const timeout = setTimeout(() => {
+      setDownloads(prev => {
+        const download = prev[downloadId];
+        if (download) {
+          return {
+            ...prev,
+            [downloadId]: {
+              ...download,
+              shouldShow: false,
+            }
+          };
+        }
+        return prev;
+      });
+      delete autoHideTimeoutsRef.current[downloadId];
+    }, 5000);
+    
+    autoHideTimeoutsRef.current[downloadId] = timeout;
   };
 
-  const resetDownload = () => {
-    setDownloadState({
-      isDownloading: false,
-      currentFile: '',
-      progress: 0,
-      totalFiles: 0,
-      downloadedFiles: 0,
-      folderName: '',
-      downloadId: '',
-      downloadPath: '',
-      status: 'downloading',
+  const removeDownload = (downloadId: string) => {
+    // Clear any existing timeout for this download
+    const existingTimeout = autoHideTimeoutsRef.current[downloadId];
+    if (existingTimeout) {
+      clearTimeout(existingTimeout);
+      delete autoHideTimeoutsRef.current[downloadId];
+    }
+
+    setDownloads(prev => {
+      const { [downloadId]: removed, ...rest } = prev;
+      return rest;
     });
   };
+
+  const getActiveDownloads = (): DownloadProgressState[] => {
+    return Object.values(downloads).filter(download => download.shouldShow);
+  };
+
+  // Cleanup timeouts on unmount
+  useEffect(() => {
+    return () => {
+      Object.values(autoHideTimeoutsRef.current).forEach(timeout => clearTimeout(timeout));
+      autoHideTimeoutsRef.current = {};
+    };
+  }, []);
 
   return (
     <DownloadProgressContext.Provider
       value={{
-        downloadState,
+        downloads,
         startDownload,
         updateProgress,
         updateDownloadPath,
         completeDownload,
         failDownload,
-        resetDownload,
+        removeDownload,
+        getActiveDownloads,
       }}
     >
       {children}

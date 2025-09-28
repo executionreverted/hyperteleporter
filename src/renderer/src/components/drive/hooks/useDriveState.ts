@@ -15,6 +15,7 @@ const initialState: DrivePageState = {
   showNewFolderModal: false,
   targetFolderForNewFolder: '/',
   showDownloadsModal: false,
+  showSettingsModal: false,
   isDriveSyncing: false,
   syncStatus: null,
   isInitialSync: false,
@@ -83,6 +84,10 @@ export function useDriveState() {
     setState(prev => ({ ...prev, showDownloadsModal }))
   }, [])
 
+  const setShowSettingsModal = useCallback((showSettingsModal: boolean) => {
+    setState(prev => ({ ...prev, showSettingsModal }))
+  }, [])
+
   const setHoveredEllipsis = useCallback((hoveredEllipsis: boolean) => {
     setState(prev => ({ ...prev, hoveredEllipsis }))
   }, [])
@@ -112,6 +117,7 @@ export function useDriveState() {
     setShowNewFolderModal,
     setTargetFolderForNewFolder,
     setShowDownloadsModal,
+    setShowSettingsModal,
     setHoveredEllipsis,
     setHideTimeout,
     resetState,

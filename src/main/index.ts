@@ -2,7 +2,7 @@ import { app, shell, BrowserWindow, ipcMain, screen, globalShortcut } from 'elec
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 const icon = join(__dirname, '../../build/icon.png')
-import { initializeAllDrives, closeAllDrives, createDrive, listActiveDrives, listDrive, createFolder, uploadFiles, uploadFolder, getFileBuffer, deleteFile, getDriveStorageInfo, joinDrive, stopAllDriveWatchers, getFolderStats, downloadFolderToDownloads, downloadFileToDownloads, checkDriveSyncStatus, getDriveSyncStatus } from './services/hyperdriveManager'
+import { initializeAllDrives, closeAllDrives, createDrive, listActiveDrives, listDrive, createFolder, uploadFiles, uploadFolder, getFileBuffer, deleteFile, getDriveStorageInfo, joinDrive, stopAllDriveWatchers, getFolderStats, downloadFolderToDownloads, downloadFileToDownloads, checkDriveSyncStatus, getDriveSyncStatus, clearDriveContent } from './services/hyperdriveManager'
 import { addDownload, readDownloads, removeDownload } from './services/downloads'
 // Swarm management is now handled by hyperdriveManager
 import { readUserProfile, writeUserProfile } from './services/userProfile'
@@ -320,10 +320,12 @@ app.whenReady().then(() => {
   ipcMain.handle('drives:downloadFolder', async (event, { driveId, folder, folderName, driveName }: { driveId: string, folder: string, folderName: string, driveName: string }) => {
     console.log(`[ipc] drives:downloadFolder request: driveId=${driveId}, folder=${folder}, folderName=${folderName}, driveName=${driveName}`)
     try {
+      const downloadId = `download-${Date.now()}`
       const result = await downloadFolderToDownloads(driveId, folder, folderName, driveName, (currentFile, downloadedFiles, totalFiles) => {
         // Send progress update to renderer
         console.log(`[ipc] Sending download progress: file=${currentFile}, downloaded=${downloadedFiles}, total=${totalFiles}`)
         event.sender.send('download-progress', {
+          downloadId,
           currentFile,
           downloadedFiles,
           totalFiles,
@@ -396,6 +398,26 @@ app.whenReady().then(() => {
       }
     } catch (error) {
       console.error(`[ipc] downloads:openFolder failed:`, error)
+      return { success: false, error: String(error) }
+    }
+  })
+
+  ipcMain.handle('drive:clearContent', async (event, { driveId }: { driveId: string }) => {
+    console.log(`[ipc] drive:clearContent called for driveId=${driveId}`)
+    try {
+      const result = await clearDriveContent(driveId, (currentItem, deletedCount, totalItems) => {
+        // Send progress update to renderer
+        console.log(`[ipc] Sending clear progress: item=${currentItem}, deleted=${deletedCount}, total=${totalItems}`)
+        event.sender.send('clear-content-progress', {
+          currentItem,
+          deletedCount,
+          totalItems,
+          progress: totalItems > 0 ? (deletedCount / totalItems) * 100 : 0
+        })
+      })
+      return { success: true, deletedCount: result.deletedCount }
+    } catch (error) {
+      console.error(`[ipc] drive:clearContent failed:`, error)
       return { success: false, error: String(error) }
     }
   })

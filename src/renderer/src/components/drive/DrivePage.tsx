@@ -6,6 +6,8 @@ import { Dropzone } from '../../../../components/ui/dropzone'
 import Prism from '../../../../components/ui/prism'
 import { ContextMenu } from '../../../../components/ui/context-menu'
 import { DownloadsModal } from '../common/DownloadsModal'
+import { SettingsModal } from '../common/SettingsModal'
+import { ClearContentProgressModal } from '../common/ClearContentProgressModal'
 import { useDriveState } from './hooks/useDriveState'
 import { useFileOperations } from './hooks/useFileOperations'
 import { useNavigation } from './hooks/useNavigation'
@@ -30,6 +32,15 @@ export const DrivePage: React.FC = () => {
   const [isPreviewOpen, setIsPreviewOpen] = useState(false)
   const [previewNode, setPreviewNode] = useState<TreeNode | null>(null)
   
+  // Clear content progress state
+  const [clearProgress, setClearProgress] = useState({
+    isOpen: false,
+    currentItem: '',
+    deletedCount: 0,
+    totalItems: 0,
+    progress: 0
+  })
+  
   const {
     state,
     currentPathRef,
@@ -46,6 +57,7 @@ export const DrivePage: React.FC = () => {
     setShowNewFolderModal,
     setTargetFolderForNewFolder,
     setShowDownloadsModal,
+    setShowSettingsModal,
     setHoveredEllipsis,
     setHideTimeout,
   } = useDriveState()
@@ -109,6 +121,25 @@ export const DrivePage: React.FC = () => {
     currentPathRef.current = state.treeRoot || '/'
   }, [state.treeRoot, currentPathRef])
 
+  // Listen for clear content progress events
+  useEffect(() => {
+    const handleClearProgress = (event: CustomEvent) => {
+      const { currentItem, deletedCount, totalItems, progress } = event.detail
+      setClearProgress(prev => ({
+        ...prev,
+        currentItem,
+        deletedCount,
+        totalItems,
+        progress
+      }))
+    }
+
+    window.addEventListener('clear-content-progress', handleClearProgress as EventListener)
+    return () => {
+      window.removeEventListener('clear-content-progress', handleClearProgress as EventListener)
+    }
+  }, [])
+
   // Handler functions
   const handleFileUploadWithPath = useCallback((files: File[]) => {
     handleFileUpload(files, currentPathRef.current)
@@ -125,6 +156,55 @@ export const DrivePage: React.FC = () => {
       return newSet
     })
   }, [setExpandedNodes])
+
+  const handleClearContent = useCallback(async () => {
+    if (!params.driveId) return
+    
+    try {
+      // Show progress modal
+      setClearProgress({
+        isOpen: true,
+        currentItem: '',
+        deletedCount: 0,
+        totalItems: 0,
+        progress: 0
+      })
+      
+      // Navigate to root folder first
+      setTreeRoot('/')
+      updateState({
+        currentView: [],
+        breadcrumbPath: [],
+        navigationStack: [],
+        selectedNode: undefined
+      })
+      
+      // Clear the drive content
+      const result = await (window as any)?.api?.drives?.clearContent?.(params.driveId)
+      if (result?.success) {
+        // Reload the complete file system to reflect the changes
+        const allEntries = await DriveApiService.listFolder(params.driveId, '/', true)
+        const updatedCompleteTree = buildCompleteFileSystemTree(allEntries)
+        setCompleteFileSystem(updatedCompleteTree)
+        
+        // Reset expanded nodes since everything is cleared
+        setExpandedNodes(new Set())
+        
+        // Reload the current folder to reflect the changes
+        reloadCurrentFolder()
+        console.log(`Cleared ${result.deletedCount} items from drive`)
+      } else {
+        console.error('Failed to clear drive content:', result?.error)
+        throw new Error(result?.error || 'Failed to clear drive content')
+      }
+    } catch (error) {
+      console.error('Error clearing drive content:', error)
+      throw error // Re-throw to show error in UI
+    } finally {
+      // Hide progress modal
+      setClearProgress(prev => ({ ...prev, isOpen: false }))
+    }
+  }, [params.driveId, reloadCurrentFolder, setTreeRoot, updateState])
 
   const handleCreateFolderFromTree = useCallback((parentPath: string) => {
     const driveId = params.driveId as string
@@ -259,8 +339,8 @@ export const DrivePage: React.FC = () => {
   }, [setHoveredEllipsis, setHideTimeout])
 
   const handleOpenSettings = useCallback(() => {
-    // TODO: Implement drive settings
-  }, [])
+    setShowSettingsModal(true)
+  }, [setShowSettingsModal])
 
   const handleOpenProfileSettings = useCallback(() => {
     // TODO: Implement profile settings
@@ -408,9 +488,29 @@ export const DrivePage: React.FC = () => {
       />
       
       {/* Downloads Modal */}
-      <DownloadsModal
-        isOpen={state.showDownloadsModal}
-        onClose={() => setShowDownloadsModal(false)}
+      <div style={{ display: state.showDownloadsModal ? 'block' : 'none' }}>
+        <DownloadsModal
+          isOpen={true}
+          onClose={() => setShowDownloadsModal(false)}
+        />
+      </div>
+      
+      {/* Settings Modal */}
+      <div style={{ display: state.showSettingsModal ? 'block' : 'none' }}>
+        <SettingsModal
+          isOpen={true}
+          onClose={() => setShowSettingsModal(false)}
+          onClearContent={handleClearContent}
+        />
+      </div>
+      
+      {/* Clear Content Progress Modal */}
+      <ClearContentProgressModal
+        isOpen={clearProgress.isOpen}
+        currentItem={clearProgress.currentItem}
+        deletedCount={clearProgress.deletedCount}
+        totalItems={clearProgress.totalItems}
+        progress={clearProgress.progress}
       />
       
       {/* New Folder Modal */}

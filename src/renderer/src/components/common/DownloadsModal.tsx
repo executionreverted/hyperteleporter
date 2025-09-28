@@ -24,6 +24,15 @@ export function DownloadsModal({ isOpen, onClose }: DownloadsModalProps) {
   const [downloads, setDownloads] = useState<DownloadRecord[]>([])
   const [loading, setLoading] = useState(false)
   const api = useMemo(() => (window as any)?.api ?? null, [])
+  const { downloads: downloadStates } = useDownloadProgress()
+  
+  const activeDownloads = useMemo(() => {
+    const downloads = Object.values(downloadStates);
+    return downloads.filter(download => download.shouldShow);
+  }, [downloadStates])
+
+  // Early return after hooks to avoid "Rendered fewer hooks than expected" error
+  if (!isOpen) return null
 
   const loadDownloads = async () => {
     setLoading(true)
@@ -88,11 +97,9 @@ export function DownloadsModal({ isOpen, onClose }: DownloadsModalProps) {
     isEnabled: isOpen
   })
 
-  if (!isOpen) return null
-
   return (
     <div 
-      className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+      className="fixed inset-0 z-[100] bg-black/20 backdrop-blur-sm flex items-center justify-center p-4"
       onClick={onClose}
     >
       <div 
@@ -142,7 +149,13 @@ export function DownloadsModal({ isOpen, onClose }: DownloadsModalProps) {
           ) : (
             <div className="p-4 space-y-4">
               {/* Active Download Progress */}
-              <DownloadProgressItem onOpenFolder={handleOpenFolder} />
+              {activeDownloads.map((download) => (
+                <DownloadProgressItem 
+                  key={download.downloadId} 
+                  download={download} 
+                  onOpenFolder={handleOpenFolder} 
+                />
+              ))}
               
               {downloads.map((download) => (
                 <div

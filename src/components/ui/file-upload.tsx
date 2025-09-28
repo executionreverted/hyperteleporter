@@ -229,7 +229,6 @@ export const FileUpload = ({
           id="file-upload-handle"
           type="file"
           multiple
-          {...({ webkitdirectory: "" } as any)}
           onChange={(e) => handleFileChange(Array.from(e.target.files || []))}
           className="hidden"
         />

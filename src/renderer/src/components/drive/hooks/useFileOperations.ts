@@ -27,9 +27,11 @@ export function useFileOperations({
   // Listen for download progress events
   useEffect(() => {
     const handleDownloadProgress = (event: CustomEvent) => {
-      const { currentFile, downloadedFiles, totalFiles, folderName } = event.detail
-      console.log('[Download Progress]', { currentFile, downloadedFiles, totalFiles, folderName })
-      updateDownloadProgress(currentFile, downloadedFiles, totalFiles)
+      const { downloadId, currentFile, downloadedFiles, totalFiles, folderName } = event.detail
+      console.log('[Download Progress]', { downloadId, currentFile, downloadedFiles, totalFiles, folderName })
+      if (downloadId) {
+        updateDownloadProgress(downloadId, currentFile, downloadedFiles, totalFiles)
+      }
     }
 
     window.addEventListener('download-progress', handleDownloadProgress as EventListener)
@@ -201,7 +203,7 @@ export function useFileOperations({
         // Update download path before completing
         if (result.downloadPath) {
           console.log('[Download] Setting download path:', result.downloadPath);
-          updateDownloadPath(result.downloadPath);
+          updateDownloadPath(downloadId, result.downloadPath);
         }
         completeDownload(downloadId)
         toaster.showSuccess('Download Complete', `${result.fileCount} files saved to Downloads/HyperTeleporter/${currentDrive.name}/`, {
