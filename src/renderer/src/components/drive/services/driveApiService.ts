@@ -163,11 +163,12 @@ export class DriveApiService {
     driveId: string, 
     filePath: string, 
     fileName: string, 
-    driveName: string
-  ): Promise<{ success: boolean; downloadPath?: string; error?: string }> {
+    driveName: string,
+    downloadId?: string
+  ): Promise<{ success: boolean; downloadPath?: string; error?: string; downloadId?: string }> {
     const api = getApi()
     if (api?.drives?.downloadFile) {
-      return api.drives.downloadFile(driveId, filePath, fileName, driveName)
+      return api.drives.downloadFile(driveId, filePath, fileName, driveName, downloadId)
     }
     
     console.warn('[DriveApiService] downloadFile not available')

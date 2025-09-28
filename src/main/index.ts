@@ -330,15 +330,15 @@ app.whenReady().then(() => {
     return stats
   })
 
-  ipcMain.handle('drives:downloadFile', async (event, { driveId, filePath, fileName, driveName }: { driveId: string, filePath: string, fileName: string, driveName: string }) => {
-    console.log(`[ipc] drives:downloadFile request: driveId=${driveId}, filePath=${filePath}, fileName=${fileName}, driveName=${driveName}`)
+  ipcMain.handle('drives:downloadFile', async (event, { driveId, filePath, fileName, driveName, downloadId }: { driveId: string, filePath: string, fileName: string, driveName: string, downloadId?: string }) => {
+    console.log(`[ipc] drives:downloadFile request: driveId=${driveId}, filePath=${filePath}, fileName=${fileName}, driveName=${driveName}, downloadId=${downloadId}`)
     try {
-      const downloadId = `download-${Date.now()}`
+      const finalDownloadId = downloadId || `download-${Date.now()}`
       const result = await downloadFileToDownloads(driveId, filePath, fileName, driveName, (currentFile, downloadedFiles, totalFiles) => {
         // Send progress update to renderer
         console.log(`[ipc] Sending download progress: file=${currentFile}, downloaded=${downloadedFiles}, total=${totalFiles}`)
         event.sender.send('download-progress', {
-          downloadId,
+          downloadId: finalDownloadId,
           currentFile,
           downloadedFiles,
           totalFiles,
@@ -357,7 +357,7 @@ app.whenReady().then(() => {
       }
       await addDownload(downloadRecord)
       console.log(`[ipc] drives:downloadFile ${driveId} ${filePath}: downloaded to ${result.downloadPath}`)
-      return { success: true, downloadPath: result.downloadPath }
+      return { success: true, downloadPath: result.downloadPath, downloadId: finalDownloadId }
     } catch (error) {
       console.error(`[ipc] drives:downloadFile failed:`, error)
       return { success: false, error: String(error) }

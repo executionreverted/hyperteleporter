@@ -332,6 +332,7 @@ export async function listDrive(folderDriveId: string, folder: string, recursive
             console.log(`[hyperdrive] Creating pseudo-file for: ${originalPath} (from chunks: ${chunksPath})`)
             
             // Check if the original path is under the requested prefix
+            console.log(`[hyperdrive] Checking pseudo-file: ${originalPath} against prefix: ${prefix}`)
             if (originalPath.startsWith(prefix)) {
               const pseudoFile = {
                 key: originalPath,
@@ -1416,6 +1417,7 @@ async function downloadFileParallel(
         if (metadata.is_chunked && metadata.chunkFolder) {
           console.log(`[hyperdrive] Detected pseudo-file for chunked file: ${entry.key}`)
           return await downloadPseudoFile(drive, entry.key, targetDir, folderPath, metadata, config, (currentFile, downloadedFiles, totalFiles) => {
+            // For pseudo-files, report progress normally
             progressBatcher.addUpdate({
               currentFile,
               downloadedFiles,
@@ -1550,11 +1552,6 @@ async function downloadPseudoFile(
       const chunkPath = `${chunkFolder}/chunk.${i.toString().padStart(3, '0')}`
       console.log(`[hyperdrive] Downloading chunk ${i + 1}/${numChunks}: ${chunkPath}`)
       
-      // Report progress for each chunk
-      if (onProgress) {
-        onProgress(`chunk.${i.toString().padStart(3, '0')}`, i, numChunks)
-      }
-      
       const chunkData = await drive.get(chunkPath, { wait: true, timeout: config.streamTimeout })
       if (!chunkData) {
         throw new Error(`Failed to download chunk ${i}`)
@@ -1578,6 +1575,12 @@ async function downloadPseudoFile(
     })
     
     console.log(`[hyperdrive] Successfully reassembled chunked file: ${originalFileName}`)
+    
+    // Report completion to progress tracker
+    if (onProgress) {
+      onProgress(originalFileName, 1, 1)
+    }
+    
     return { success: true, filePath }
     
   } catch (err) {
@@ -1799,11 +1802,23 @@ async function performFolderDownload(
       console.warn(`[hyperdrive] Background download failed for ${normalizedFolderPath}:`, err)
     }
     
-    // Collect all files first
+    // Collect all files using listDrive to get pseudo-files
+    console.log(`[hyperdrive] Listing files in folder: ${normalizedFolderPath}`)
+    const allEntries = await listDrive(driveId, normalizedFolderPath, true)
+    console.log(`[hyperdrive] Found ${allEntries.length} entries in folder ${normalizedFolderPath}`)
+    
+    // Filter to only include files (not folders) and exclude .chunks folders
     const files: Array<{ key: string; value: any }> = []
-    for await (const entry of drive.list(normalizedFolderPath, { recursive: true })) {
+    for (const entry of allEntries) {
+      console.log(`[hyperdrive] Processing entry: ${entry.key}, hasBlob: ${!!entry?.value?.blob}, hasLinkname: ${!!entry?.value?.linkname}`)
       if (entry?.key && (!!entry?.value?.blob || !!entry?.value?.linkname)) {
+        // Skip .chunks folders and their contents
+        if (entry.key.includes('.chunks/') || entry.key.endsWith('.chunks')) {
+          console.log(`[hyperdrive] Skipping .chunks folder: ${entry.key}`)
+          continue
+        }
         files.push(entry)
+        console.log(`[hyperdrive] Added file for download: ${entry.key}`)
       }
     }
     

@@ -283,7 +283,7 @@ export function useFileOperations({
       
       toaster.showInfo('Download Started', `Downloading ${node.name}...`)
       
-      const result = await DriveApiService.downloadFile(driveId, node.id, node.name, currentDrive.name)
+      const result = await DriveApiService.downloadFile(driveId, node.id, node.name, currentDrive.name, downloadId)
       
       if (result?.success) {
         completeDownload(downloadId)

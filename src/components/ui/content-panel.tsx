@@ -1193,7 +1193,23 @@ export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavig
   const toaster = useToaster()
   const { isOpen, position, actions, openContextMenu, closeContextMenu } = useContextMenu()
   const { confirm, ConfirmDialog } = useConfirm()
-  const { startDownload, updateDownloadPath, completeDownload, failDownload } = useDownloadProgress()
+  const { startDownload, updateDownloadPath, completeDownload, failDownload, updateProgress } = useDownloadProgress()
+
+  // Listen for download progress events
+  React.useEffect(() => {
+    const handleDownloadProgress = (event: CustomEvent) => {
+      const { downloadId, currentFile, downloadedFiles, totalFiles, folderName } = event.detail
+      console.log('[ContentPanel Download Progress]', { downloadId, currentFile, downloadedFiles, totalFiles, folderName })
+      if (downloadId) {
+        updateProgress(downloadId, currentFile, downloadedFiles, totalFiles)
+      }
+    }
+
+    window.addEventListener('download-progress', handleDownloadProgress as EventListener)
+    return () => {
+      window.removeEventListener('download-progress', handleDownloadProgress as EventListener)
+    }
+  }, [updateProgress])
 
   // Preview modal state MUST be declared before any early returns to preserve hook order
   // Use external state if provided, otherwise use internal state
@@ -1361,7 +1377,7 @@ export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavig
       const fileName = currentPreviewNode.name
       const driveName = currentDrive.name
       
-      // Start download progress tracking
+      // Generate download ID for progress tracking
       const downloadId = `download-${Date.now()}`
       startDownload(fileName, 1, downloadId, '') // Single file download
       
@@ -1370,8 +1386,8 @@ export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavig
       
       toaster.showInfo('Download Started', `Downloading ${fileName}...`)
       
-      // Download file to Downloads folder
-      const result = await api?.drives?.downloadFile?.(driveId, path, fileName, driveName)
+      // Download file to Downloads folder - pass the download ID to the IPC handler
+      const result = await api?.drives?.downloadFile?.(driveId, path, fileName, driveName, downloadId)
       
       if (result?.success) {
         // Update download path and complete
