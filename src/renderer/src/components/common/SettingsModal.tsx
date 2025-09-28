@@ -46,6 +46,8 @@ export function SettingsModal({ isOpen, onClose, onClearContent }: SettingsModal
     downloadPath: 'Downloads/HyperTeleporter',
     concurrentDownloads: 5,
     autoOpenFolder: true,
+    enableAutoDownload: false,
+    maxBandwidth: 0,
     
     // Upload Settings
     autoCompress: false,
@@ -182,6 +184,30 @@ export function SettingsModal({ isOpen, onClose, onClearContent }: SettingsModal
           type: 'toggle',
           value: settings.autoOpenFolder,
           onChange: (value) => handleSettingChange('autoOpenFolder', value)
+        },
+        {
+          id: 'enableAutoDownload',
+          label: 'Auto Download',
+          description: 'Automatically download files for preview (saves bandwidth when disabled)',
+          type: 'toggle',
+          value: settings.enableAutoDownload,
+          onChange: (value) => handleSettingChange('enableAutoDownload', value)
+        },
+        {
+          id: 'maxBandwidth',
+          label: 'Max Bandwidth',
+          description: 'Maximum download speed in MB/s (0 = unlimited)',
+          type: 'select',
+          value: settings.maxBandwidth,
+          options: [
+            { label: 'Unlimited', value: 0 },
+            { label: '1 MB/s', value: 1024 * 1024 },
+            { label: '5 MB/s', value: 5 * 1024 * 1024 },
+            { label: '10 MB/s', value: 10 * 1024 * 1024 },
+            { label: '25 MB/s', value: 25 * 1024 * 1024 },
+            { label: '50 MB/s', value: 50 * 1024 * 1024 }
+          ],
+          onChange: (value) => handleSettingChange('maxBandwidth', value)
         }
       ]
     },

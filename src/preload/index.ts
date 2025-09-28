@@ -28,6 +28,7 @@ const api = {
     getStorageInfo: async (driveId: string) => ipcRenderer.invoke('drives:getStorageInfo', { driveId }),
     getFolderStats: async (driveId: string, folder: string) => ipcRenderer.invoke('drives:getFolderStats', { driveId, folder }),
     getFileStats: async (driveId: string, path: string) => ipcRenderer.invoke('drives:getFileStats', { driveId, path }),
+    getFile: async (driveId: string, path: string) => ipcRenderer.invoke('drives:getFile', { driveId, path }),
     downloadFile: async (driveId: string, filePath: string, fileName: string, driveName: string) => ipcRenderer.invoke('drives:downloadFile', { driveId, filePath, fileName, driveName }),
     downloadFolder: async (driveId: string, folder: string, folderName: string, driveName: string) => ipcRenderer.invoke('drives:downloadFolder', { driveId, folder, folderName, driveName }),
     checkSyncStatus: async (driveId: string) => ipcRenderer.invoke('drives:checkSyncStatus', { driveId }),
@@ -36,7 +37,10 @@ const api = {
   downloads: {
     list: async () => ipcRenderer.invoke('downloads:list'),
     remove: async (id: string) => ipcRenderer.invoke('downloads:remove', { id }),
-    openFolder: async (path: string) => ipcRenderer.invoke('downloads:openFolder', { path })
+    openFolder: async (path: string) => ipcRenderer.invoke('downloads:openFolder', { path }),
+    getActive: async () => ipcRenderer.invoke('downloads:getActive'),
+    isDownloading: async (driveId: string, filePath: string) => ipcRenderer.invoke('downloads:isDownloading', { driveId, filePath }),
+    cancel: async (id: string) => ipcRenderer.invoke('downloads:cancel', { id })
   },
   user: {
     getProfile: async () => ipcRenderer.invoke('user:getProfile'),
@@ -66,8 +70,20 @@ const api = {
     },
     getFileUrl: async (driveId: string, path: string) => {
       try {
-        const data: ArrayBuffer | null = await ipcRenderer.invoke('drives:getFile', { driveId, path })
-        if (!data) return null
+        const data: ArrayBuffer | string | null = await ipcRenderer.invoke('drives:getFile', { driveId, path })
+        
+        // Handle special indicators from the backend
+        if (data === 'FILE_TOO_LARGE') {
+          console.warn(`[preload] getFileUrl ${path}: file too large for preview`)
+          return 'FILE_TOO_LARGE'
+        }
+        
+        if (data === 'FILE_TOO_LARGE_CHUNKED') {
+          console.warn(`[preload] getFileUrl ${path}: chunked file too large for preview`)
+          return 'FILE_TOO_LARGE_CHUNKED'
+        }
+        
+        if (!data || typeof data === 'string') return null
         
         const extension = path.split('.').pop()?.toLowerCase()
         const isAudio = ['mp3', 'wav', 'ogg', 'm4a', 'aac'].includes(extension || '')
@@ -76,13 +92,6 @@ const api = {
         const isMedia = isAudio || isImage || isVideo
         
         console.log(`[preload] getFileUrl ${path}: extension=${extension}, isMedia=${isMedia}, size=${data.byteLength}`)
-        
-        // 50MB limit for media files
-        const MAX_MEDIA_SIZE = 50 * 1024 * 1024 // 50MB
-        if (isMedia && data.byteLength > MAX_MEDIA_SIZE) {
-          console.warn(`[preload] getFileUrl ${path}: file too large (${data.byteLength} bytes > ${MAX_MEDIA_SIZE} bytes). Preview disabled.`)
-          return 'FILE_TOO_LARGE' // Special indicator for oversized files
-        }
         
         if (isAudio) {
           // Use same logic as mp4/video: make a Blob without forcing MIME and return URL
@@ -114,8 +123,14 @@ const api = {
       }
     },
     getFileText: async (driveId: string, path: string) => {
-      const data: ArrayBuffer | null = await ipcRenderer.invoke('drives:getFile', { driveId, path })
-      if (!data) return null
+      const data: ArrayBuffer | string | null = await ipcRenderer.invoke('drives:getFile', { driveId, path })
+      
+      // Handle special indicators from the backend
+      if (data === 'FILE_TOO_LARGE' || data === 'FILE_TOO_LARGE_CHUNKED') {
+        return null
+      }
+      
+      if (!data || typeof data === 'string') return null
       try {
         if ((data as ArrayBuffer).byteLength > 1_000_000) return null
         return new TextDecoder().decode(new Uint8Array(data))

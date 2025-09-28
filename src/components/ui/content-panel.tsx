@@ -164,6 +164,7 @@ const FilePreview = ({ node, insideModal = false, onShowDownloads, onClosePrevie
   const [loadingImg, setLoadingImg] = React.useState(false)
   const [imgError, setImgError] = React.useState<string | null>(null)
   const [isFileTooLarge, setIsFileTooLarge] = React.useState(false)
+  const [fileTooLargeReason, setFileTooLargeReason] = React.useState<'regular' | 'chunked' | null>(null)
   const { startDownload, updateDownloadPath, completeDownload, failDownload } = useDownloadProgress()
   const toaster = useToaster()
   
@@ -271,65 +272,21 @@ const FilePreview = ({ node, insideModal = false, onShowDownloads, onClosePrevie
   const renderPreview = () => {
     // Check if file is too large for preview
     if (isFileTooLarge) {
+      const isChunked = fileTooLargeReason === 'chunked'
       return (
         <div className={insideModal ? "p-4" : "p-6"}>
           <div className="text-center">
             <div className="text-neutral-300 mb-4">
-              <div className="text-lg font-medium mb-2">File too large to preview</div>
-              <div className="text-sm">This file is larger than 50MB. Download to view the file.</div>
-            </div>
-            <MagicButton
-              onClick={async () => {
-                try {
-                  const match = window.location.hash.match(/#\/drive\/([^/]+)/)
-                  const driveId = match ? match[1] : null
-                  if (!driveId || !api?.drives?.downloadFile) return
-                  
-                  const path = node.id.startsWith('/') ? node.id : `/${node.id}`
-                  const fileName = node.name
-                  const driveName = currentDrive?.name || 'Unknown Drive'
-                  
-                  // Start download progress tracking
-                  const downloadId = `download-${Date.now()}`
-                  startDownload(fileName, 1, downloadId, '') // Single file download
-                  
-                  // Open downloads modal to show progress
-                  onShowDownloads?.()
-                  
-                  toaster.showInfo('Download Started', `Downloading ${fileName}...`)
-                  
-                  // Download file to Downloads folder
-                  const result = await api.drives.downloadFile(driveId, path, fileName, driveName)
-                  
-                  if (result?.success) {
-                    // Update download path and complete
-                    updateDownloadPath(downloadId, result.downloadPath)
-                    completeDownload(downloadId)
-                    
-                    toaster.showSuccess('Download Complete', `${fileName} saved to Downloads/HyperTeleporter/${driveName}/`, {
-                      label: 'Open Folder',
-                      onClick: () => api?.downloads?.openFolder?.(result.downloadPath)
-                    })
-                    
-                    // Close preview modal
-                    onClosePreview?.()
-                    
-                    // Dispatch event to refresh downloads modal
-                    window.dispatchEvent(new CustomEvent('download-completed'))
-                  } else {
-                    failDownload(downloadId, result?.error || 'Unknown error')
-                    toaster.showError('Download Failed', `Failed to download ${fileName}: ${result?.error || 'Unknown error'}`)
-                  }
-                } catch (error) {
-                  const downloadId = `download-${Date.now()}`
-                  failDownload(downloadId, 'Download failed. Please try again.')
-                  toaster.showError('Download Failed', 'Failed to download file. Please try again.')
-                  console.error('Failed to download file:', error)
+              <div className="text-lg font-medium mb-2">
+                {isChunked ? 'Chunked file too large to preview' : 'File too large to preview'}
+              </div>
+              <div className="text-sm">
+                {isChunked 
+                  ? 'This chunked file is larger than 50MB. Download to view the file.'
+                  : 'This file is larger than 50MB. Download to view the file.'
                 }
-              }}
-            >
-              Download File
-            </MagicButton>
+              </div>
+            </div>
           </div>
         </div>
       )
@@ -446,6 +403,12 @@ const FilePreview = ({ node, insideModal = false, onShowDownloads, onClosePrevie
         const url = await api.files.getFileUrl(driveId, path)
         if (url === 'FILE_TOO_LARGE') {
           setIsFileTooLarge(true)
+          setFileTooLargeReason('regular')
+          return
+        }
+        if (url === 'FILE_TOO_LARGE_CHUNKED') {
+          setIsFileTooLarge(true)
+          setFileTooLargeReason('chunked')
           return
         }
         if (!url) throw new Error('No data')
@@ -473,6 +436,8 @@ function MarkdownPreview({ node, insideModal = false }: { node: TreeNode; inside
   const [content, setContent] = React.useState<string | null>(null)
   const [loading, setLoading] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
+  const [isFileTooLarge, setIsFileTooLarge] = React.useState(false)
+  const [fileTooLargeReason, setFileTooLargeReason] = React.useState<'regular' | 'chunked' | null>(null)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const api: any = (window as any)?.api
 
@@ -481,6 +446,7 @@ function MarkdownPreview({ node, insideModal = false }: { node: TreeNode; inside
       try {
         setLoading(true)
         setError(null)
+        setIsFileTooLarge(false)
         const match = window.location.hash.match(/#\/drive\/([^/]+)/)
         const driveId = match ? match[1] : null
         if (!driveId || !api?.files?.getFileText) {
@@ -488,8 +454,28 @@ function MarkdownPreview({ node, insideModal = false }: { node: TreeNode; inside
           return
         }
         const path = node.id.startsWith('/') ? node.id : `/${node.id}`
+        
+        // Check file size first before trying to get text content
+        try {
+          const fileData = await api.drives.getFile(driveId, path)
+          if (fileData === 'FILE_TOO_LARGE') {
+            setIsFileTooLarge(true)
+            setFileTooLargeReason('regular')
+            return
+          }
+          if (fileData === 'FILE_TOO_LARGE_CHUNKED') {
+            setIsFileTooLarge(true)
+            setFileTooLargeReason('chunked')
+            return
+          }
+        } catch (e) {
+          // Ignore errors when checking file size, continue with text loading
+        }
+        
         const text = await api.files.getFileText(driveId, path)
-        if (!text) throw new Error('Empty')
+        if (!text) {
+          throw new Error('Empty')
+        }
         setContent(text)
       } catch (e: any) {
         setError(String(e?.message || e))
@@ -501,6 +487,26 @@ function MarkdownPreview({ node, insideModal = false }: { node: TreeNode; inside
   }, [node.id])
 
   if (loading) return <div className={insideModal ? "p-4" : "p-6"}><div className="text-neutral-300">Loading…</div></div>
+  if (isFileTooLarge) {
+    const isChunked = fileTooLargeReason === 'chunked'
+    return (
+      <div className={insideModal ? "p-4" : "p-6"}>
+        <div className="text-center">
+          <div className="text-neutral-300 mb-4">
+            <div className="text-lg font-medium mb-2">
+              {isChunked ? 'Chunked file too large to preview' : 'File too large to preview'}
+            </div>
+            <div className="text-sm">
+              {isChunked 
+                ? 'This chunked file is larger than 50MB. Download to view the file.'
+                : 'This file is larger than 50MB. Download to view the file.'
+              }
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
   if (error) return <div className={insideModal ? "p-4" : "p-6"}><div className="text-red-400">{error}</div></div>
   if (!content) return null
 
@@ -525,6 +531,8 @@ function TextPreview({ node, insideModal = false }: { node: TreeNode; insideModa
   const [content, setContent] = React.useState<string | null>(null)
   const [loading, setLoading] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
+  const [isFileTooLarge, setIsFileTooLarge] = React.useState(false)
+  const [fileTooLargeReason, setFileTooLargeReason] = React.useState<'regular' | 'chunked' | null>(null)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const api: any = (window as any)?.api
 
@@ -533,6 +541,7 @@ function TextPreview({ node, insideModal = false }: { node: TreeNode; insideModa
       try {
         setLoading(true)
         setError(null)
+        setIsFileTooLarge(false)
         const match = window.location.hash.match(/#\/drive\/([^/]+)/)
         const driveId = match ? match[1] : null
         if (!driveId || !api?.files?.getFileText) {
@@ -540,8 +549,29 @@ function TextPreview({ node, insideModal = false }: { node: TreeNode; insideModa
           return
         }
         const path = node.id.startsWith('/') ? node.id : `/${node.id}`
+        
+        // Check file size first before trying to get text content
+        try {
+          const fileData = await api.drives.getFile(driveId, path)
+          
+          if (fileData === 'FILE_TOO_LARGE') {
+            setIsFileTooLarge(true)
+            setFileTooLargeReason('regular')
+            return
+          }
+          if (fileData === 'FILE_TOO_LARGE_CHUNKED') {
+            setIsFileTooLarge(true)
+            setFileTooLargeReason('chunked')
+            return
+          }
+        } catch (e) {
+          // Ignore errors when checking file size, continue with text loading
+        }
+        
         const text = await api.files.getFileText(driveId, path)
-        if (!text) throw new Error('Empty')
+        if (!text) {
+          throw new Error('Empty')
+        }
         setContent(text)
       } catch (e: any) {
         setError(String(e?.message || e))
@@ -553,6 +583,26 @@ function TextPreview({ node, insideModal = false }: { node: TreeNode; insideModa
   }, [node.id])
 
   if (loading) return <div className={insideModal ? "p-4" : "p-6"}><div className="text-neutral-300">Loading…</div></div>
+  if (isFileTooLarge) {
+    const isChunked = fileTooLargeReason === 'chunked'
+    return (
+      <div className={insideModal ? "p-4" : "p-6"}>
+        <div className="text-center">
+          <div className="text-neutral-300 mb-4">
+            <div className="text-lg font-medium mb-2">
+              {isChunked ? 'Chunked file too large to preview' : 'File too large to preview'}
+            </div>
+            <div className="text-sm">
+              {isChunked 
+                ? 'This chunked file is larger than 50MB. Download to view the file.'
+                : 'This file is larger than 50MB. Download to view the file.'
+              }
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
   if (error) return <div className={insideModal ? "p-4" : "p-6"}><div className="text-red-400">{error}</div></div>
   if (!content) return null
 
@@ -578,6 +628,7 @@ function MediaPreview({ node, type, onShowDownloads, onClosePreview, currentDriv
   const [loading, setLoading] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
   const [isFileTooLarge, setIsFileTooLarge] = React.useState(false)
+  const [fileTooLargeReason, setFileTooLargeReason] = React.useState<'regular' | 'chunked' | null>(null)
   const { startDownload, updateDownloadPath, completeDownload, failDownload } = useDownloadProgress()
   const toaster = useToaster()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -611,6 +662,12 @@ function MediaPreview({ node, type, onShowDownloads, onClosePreview, currentDriv
         const blobUrl = await api.files.getFileUrl(driveId, path)
         if (blobUrl === 'FILE_TOO_LARGE') {
           setIsFileTooLarge(true)
+          setFileTooLargeReason('regular')
+          return
+        }
+        if (blobUrl === 'FILE_TOO_LARGE_CHUNKED') {
+          setIsFileTooLarge(true)
+          setFileTooLargeReason('chunked')
           return
         }
         if (!blobUrl) throw new Error('Empty')
@@ -628,64 +685,20 @@ function MediaPreview({ node, type, onShowDownloads, onClosePreview, currentDriv
   if (loading) return <div className="p-6 text-neutral-300">Loading…</div>
   if (error) return <div className="p-6 text-red-400">{error}</div>
   if (isFileTooLarge) {
+    const isChunked = fileTooLargeReason === 'chunked'
     return (
       <div className="p-6 text-center">
         <div className="text-neutral-300 mb-4">
-          <div className="text-lg font-medium mb-2">File too large to preview</div>
-          <div className="text-sm">This file is larger than 50MB. Download to view the file.</div>
-        </div>
-        <MagicButton
-          onClick={async () => {
-            try {
-              const match = window.location.hash.match(/#\/drive\/([^/]+)/)
-              const driveId = match ? match[1] : null
-              if (!driveId || !api?.drives?.downloadFile) return
-              
-              const path = node.id.startsWith('/') ? node.id : `/${node.id}`
-              const fileName = node.name
-              const driveName = currentDrive?.name || 'Unknown Drive'
-              
-              // Start download progress tracking
-              const downloadId = `download-${Date.now()}`
-              startDownload(fileName, 1, downloadId, '') // Single file download
-              
-              // Open downloads modal to show progress
-              onShowDownloads?.()
-              
-              toaster.showInfo('Download Started', `Downloading ${fileName}...`)
-              
-              // Download file to Downloads folder
-              const result = await api.drives.downloadFile(driveId, path, fileName, driveName)
-              
-              if (result?.success) {
-                // Update download path and complete
-                updateDownloadPath(downloadId, result.downloadPath)
-                completeDownload(downloadId)
-                
-                toaster.showSuccess('Download Complete', `${fileName} saved to Downloads/HyperTeleporter/${driveName}/`, {
-                  label: 'Open Folder',
-                  onClick: () => api?.downloads?.openFolder?.(result.downloadPath)
-                })
-                
-                // Close preview modal
-                onClosePreview?.()
-                
-                // Dispatch event to refresh downloads modal
-                window.dispatchEvent(new CustomEvent('download-completed'))
-              } else {
-                failDownload(downloadId, result?.error || 'Unknown error')
-                toaster.showError('Download Failed', `Failed to download ${fileName}: ${result?.error || 'Unknown error'}`)
-              }
-            } catch (error) {
-              const downloadId = `download-${Date.now()}`
-              failDownload(downloadId, 'Download failed. Please try again.')
-              toaster.showError('Download Failed', 'Failed to download file. Please try again.')
-              console.error('Failed to download file:', error)
+          <div className="text-lg font-medium mb-2">
+            {isChunked ? 'Chunked file too large to preview' : 'File too large to preview'}
+          </div>
+          <div className="text-sm">
+            {isChunked 
+              ? 'This chunked file is larger than 50MB. Download to view the file.'
+              : 'This file is larger than 50MB. Download to view the file.'
             }
-          }}
-        >
-          Download File
-        </MagicButton>
+          </div>
+        </div>
       </div>
     )
   }
@@ -1180,6 +1193,7 @@ export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavig
   const toaster = useToaster()
   const { isOpen, position, actions, openContextMenu, closeContextMenu } = useContextMenu()
   const { confirm, ConfirmDialog } = useConfirm()
+  const { startDownload, updateDownloadPath, completeDownload, failDownload } = useDownloadProgress()
 
   // Preview modal state MUST be declared before any early returns to preserve hook order
   // Use external state if provided, otherwise use internal state
@@ -1343,24 +1357,43 @@ export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavig
     if (!currentPreviewNode || currentPreviewNode.type !== 'file' || !driveId || !currentDrive) return
     
     try {
-      toaster.showInfo('Download Started', `Downloading ${currentPreviewNode.name}...`)
+      const path = currentPreviewNode.id.startsWith('/') ? currentPreviewNode.id : `/${currentPreviewNode.id}`
+      const fileName = currentPreviewNode.name
+      const driveName = currentDrive.name
       
-      const result = await api?.drives?.downloadFile?.(driveId, currentPreviewNode.id, currentPreviewNode.name, currentDrive.name)
+      // Start download progress tracking
+      const downloadId = `download-${Date.now()}`
+      startDownload(fileName, 1, downloadId, '') // Single file download
+      
+      // Open downloads modal to show progress
+      onShowDownloads?.()
+      
+      toaster.showInfo('Download Started', `Downloading ${fileName}...`)
+      
+      // Download file to Downloads folder
+      const result = await api?.drives?.downloadFile?.(driveId, path, fileName, driveName)
       
       if (result?.success) {
-        toaster.showSuccess('Download Complete', `${currentPreviewNode.name} saved to Downloads/HyperTeleporter/${currentDrive.name}/`, {
+        // Update download path and complete
+        updateDownloadPath(downloadId, result.downloadPath)
+        completeDownload(downloadId)
+        
+        toaster.showSuccess('Download Complete', `${fileName} saved to Downloads/HyperTeleporter/${driveName}/`, {
           label: 'Open Folder',
           onClick: () => api?.downloads?.openFolder?.(result.downloadPath)
         })
+        
         // Dispatch event to refresh downloads modal
         window.dispatchEvent(new CustomEvent('download-completed'))
       } else {
-        console.error('[ContentPanel] Download failed:', result?.error)
-        toaster.showError('Download Failed', `Failed to download file: ${result?.error || 'Unknown error'}`)
+        failDownload(downloadId, result?.error || 'Unknown error')
+        toaster.showError('Download Failed', `Failed to download ${fileName}: ${result?.error || 'Unknown error'}`)
       }
     } catch (e) {
-      console.error('[ContentPanel] Preview download error:', e)
+      const downloadId = `download-${Date.now()}`
+      failDownload(downloadId, 'Download failed. Please try again.')
       toaster.showError('Download Failed', 'Failed to download file. Please try again.')
+      console.error('[ContentPanel] Preview download error:', e)
     }
   }
 

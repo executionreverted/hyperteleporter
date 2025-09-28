@@ -4,6 +4,7 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 const icon = join(__dirname, '../../build/icon.png')
 import { initializeAllDrives, closeAllDrives, createDrive, listActiveDrives, listDrive, createFolder, uploadFiles, uploadFileStream, uploadFolder, getFileBuffer, deleteFile, getDriveStorageInfo, joinDrive, stopAllDriveWatchers, getFolderStats, getFileStats, downloadFolderToDownloads, downloadFileToDownloads, checkDriveSyncStatus, getDriveSyncStatus, clearDriveContent, getActiveDrive, downloadFile } from './services/hyperdriveManager'
 import { addDownload, readDownloads, removeDownload } from './services/downloads'
+import { downloadTracker, ActiveDownload } from './services/downloadTracker'
 import { readUserProfile, writeUserProfile } from './services/userProfile'
 import { removeDrive, getDriveRecordById } from './services/driveRegistry'
 import { promises as fs } from 'fs'
@@ -255,14 +256,15 @@ app.whenReady().then(() => {
     if (pseudoFile?.value?.metadata) {
       try {
         const metadata = JSON.parse(pseudoFile.value.metadata)
+        
         if (metadata.is_chunked) {
           // Check if the chunked file is under the preview size limit
           const PREVIEW_SIZE_LIMIT = 50 * 1024 * 1024 // 50MB limit for previews
           const fileSize = metadata.totalSize || 0
           
           if (fileSize > PREVIEW_SIZE_LIMIT) {
-            console.log(`[ipc] drives:getFile ${path}: file is chunked and too large (${fileSize} bytes > ${PREVIEW_SIZE_LIMIT} bytes), returning null to disable preview`)
-            return null // Return null for large chunked files to disable preview
+            console.log(`[ipc] drives:getFile ${path}: file is chunked and too large (${fileSize} bytes > ${PREVIEW_SIZE_LIMIT} bytes), returning special indicator`)
+            return 'FILE_TOO_LARGE_CHUNKED' // Special indicator for large chunked files
           } else {
             console.log(`[ipc] drives:getFile ${path}: file is chunked but under preview limit (${fileSize} bytes), allowing preview`)
             // Allow preview for chunked files under the size limit
@@ -279,6 +281,14 @@ app.whenReady().then(() => {
       console.log(`[ipc] drives:getFile ${path}: file not found or null`)
       return null
     }
+    
+    // Check if regular file is too large for preview
+    const PREVIEW_SIZE_LIMIT = 50 * 1024 * 1024 // 50MB limit for previews
+    if (buf.length > PREVIEW_SIZE_LIMIT) {
+      console.log(`[ipc] drives:getFile ${path}: file is too large (${buf.length} bytes > ${PREVIEW_SIZE_LIMIT} bytes), returning special indicator`)
+      return 'FILE_TOO_LARGE' // Special indicator for large regular files
+    }
+    
     // Create a completely new ArrayBuffer to avoid any offset issues
     const newBuffer = new ArrayBuffer(buf.length)
     const view = new Uint8Array(newBuffer)
@@ -437,6 +447,23 @@ app.whenReady().then(() => {
       console.error(`[ipc] downloads:openFolder failed:`, error)
       return { success: false, error: String(error) }
     }
+  })
+
+  // Download tracking handlers
+  ipcMain.handle('downloads:getActive', async () => {
+    console.log('[ipc] downloads:getActive called')
+    return downloadTracker.getActiveDownloads()
+  })
+
+  ipcMain.handle('downloads:isDownloading', async (_evt, { driveId, filePath }: { driveId: string, filePath: string }) => {
+    console.log(`[ipc] downloads:isDownloading called for driveId=${driveId}, filePath=${filePath}`)
+    return downloadTracker.isDownloading(driveId, filePath)
+  })
+
+  ipcMain.handle('downloads:cancel', async (_evt, { id }: { id: string }) => {
+    console.log(`[ipc] downloads:cancel called for id=${id}`)
+    downloadTracker.cancelDownload(id)
+    return true
   })
 
   ipcMain.handle('drive:clearContent', async (event, { driveId }: { driveId: string }) => {

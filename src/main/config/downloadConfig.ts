@@ -15,6 +15,10 @@ export interface DownloadConfig {
   enableStreaming: boolean
   streamTimeout: number // ms
   
+  // Bandwidth control
+  enableAutoDownload: boolean
+  maxBandwidth: number // bytes per second, 0 = unlimited
+  
   // Retry settings
   maxRetries: number
   retryDelay: number // ms
@@ -35,6 +39,10 @@ export const DEFAULT_DOWNLOAD_CONFIG: DownloadConfig = {
   // Streaming settings
   enableStreaming: true,
   streamTimeout: 30000, // 30 seconds
+  
+  // Bandwidth control
+  enableAutoDownload: false, // Disabled by default to save bandwidth
+  maxBandwidth: 0, // 0 = unlimited bandwidth
   
   // Retry settings
   maxRetries: 3,
@@ -60,6 +68,14 @@ export function getDownloadConfig(): DownloadConfig {
   
   if (process.env.DOWNLOAD_STREAMING === 'false') {
     config.enableStreaming = false
+  }
+  
+  if (process.env.DOWNLOAD_AUTO === 'true') {
+    config.enableAutoDownload = true
+  }
+  
+  if (process.env.DOWNLOAD_MAX_BANDWIDTH) {
+    config.maxBandwidth = parseInt(process.env.DOWNLOAD_MAX_BANDWIDTH, 10) || config.maxBandwidth
   }
   
   return config

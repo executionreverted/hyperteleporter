@@ -444,16 +444,16 @@ export const DrivePage: React.FC = () => {
               syncStatus={state.syncStatus}
               isDriveSyncing={state.isDriveSyncing}
             />
-            
-            {/* Bottom Connecting Indicator */}
-            {state.isInitialSync && (
-              <div className="mt-auto flex items-center justify-center gap-2 px-4 py-3 bg-amber-500/10 border-t border-amber-500/20">
-                <div className="w-3 h-3 border-2 border-amber-400 border-t-transparent rounded-full animate-spin"></div>
-                <span className="text-amber-400 text-sm font-medium">Connecting to drive...</span>
-                <span className="text-neutral-500 text-xs">Browsing previously synced data</span>
-              </div>
-            )}
           </div>
+          
+          {/* Bottom Connecting Indicator - positioned at bottom of main content area */}
+          {state.isInitialSync && (
+            <div className="flex-shrink-0 flex items-center justify-center gap-2 px-4 py-3 bg-amber-500/10 border-t border-amber-500/20">
+              <div className="w-3 h-3 border-2 border-amber-400 border-t-transparent rounded-full animate-spin"></div>
+              <span className="text-amber-400 text-sm font-medium">Connecting to drive...</span>
+              <span className="text-neutral-500 text-xs">Browsing previously synced data</span>
+            </div>
+          )}
           
           {/* Dropzone - always at bottom, takes only space it needs */}
           {canWrite && (

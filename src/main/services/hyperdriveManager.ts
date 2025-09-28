@@ -665,6 +665,8 @@ export async function downloadFile(driveId: string, path: string): Promise<boole
   if (!drive) throw new Error('Drive not found')
   const normalized = path.startsWith('/') ? path : `/${path}`
   
+  const config = getDownloadConfig()
+  
   try {
     // Check if file exists
     const exists = await drive.exists(normalized)
@@ -678,6 +680,12 @@ export async function downloadFile(driveId: string, path: string): Promise<boole
     if (isDownloaded) {
       console.log(`[hyperdrive] File already downloaded: ${normalized}`)
       return true
+    }
+
+    // Check if autodownload is disabled
+    if (!config.enableAutoDownload) {
+      console.log(`[hyperdrive] Autodownload disabled, skipping background download for: ${normalized}`)
+      return false
     }
 
     // Start background download (non-blocking)
@@ -1152,6 +1160,103 @@ export async function getFileStats(driveId: string, path: string): Promise<{ cre
 import { writeFile, mkdir } from 'fs/promises'
 import { homedir } from 'os'
 import { getDownloadConfig, DownloadConfig } from '../config/downloadConfig'
+import { downloadTracker, ActiveDownload } from './downloadTracker'
+
+// Extract file download logic for tracking
+async function performFileDownload(
+  drive: any,
+  driveId: string,
+  normalizedPath: string,
+  filePath: string,
+  fileName: string,
+  downloadsDir: string,
+  config: DownloadConfig,
+  onProgress?: (currentFile: string, downloadedFiles: number, totalFiles: number) => void
+): Promise<{ success: boolean; downloadPath: string }> {
+  // Create directory structure
+  const pathParts = filePath.split('/').filter(Boolean)
+  const dirPath = pathParts.slice(0, -1).join('/')
+  const finalDir = dirPath ? join(downloadsDir, dirPath) : downloadsDir
+
+  if (dirPath) {
+    await mkdir(finalDir, { recursive: true })
+  }
+
+  const targetPath = join(finalDir, fileName)
+  
+  // Check if it's a pseudo-file with chunked metadata FIRST
+  const entries = await listDrive(driveId, '/', true)
+  const pseudoFile = entries.find(entry => entry.key === normalizedPath)
+  
+  let isChunkedFile = false
+  let chunkFolder = null
+  
+  if (pseudoFile?.value?.metadata) {
+    try {
+      const metadata = JSON.parse(pseudoFile.value.metadata)
+      if (metadata.is_chunked && metadata.chunkFolder) {
+        isChunkedFile = true
+        chunkFolder = metadata.chunkFolder
+        console.log(`[hyperdrive] Detected pseudo-file for chunked download: ${normalizedPath} -> ${chunkFolder}`)
+      }
+    } catch (e) {
+      // Not a pseudo-file, continue with normal processing
+    }
+  }
+  
+  // Legacy check: look for pseudo-folder
+  if (!isChunkedFile) {
+    const pseudoFolderPath = `${normalizedPath}.chunks`
+    const manifestPath = `${pseudoFolderPath}/manifest.json`
+    const manifestExists = await drive.exists(manifestPath)
+
+    if (manifestExists) {
+      isChunkedFile = true
+      chunkFolder = pseudoFolderPath
+      console.log(`[hyperdrive] Detected legacy pseudo-folder for chunked download: ${normalizedPath} -> ${chunkFolder}`)
+    }
+  }
+
+  if (isChunkedFile) {
+    console.log(`[hyperdrive] Downloading chunked file: ${fileName}`)
+    await downloadChunkedFileToDownloads(drive, chunkFolder, targetPath, config, onProgress)
+  } else {
+    // For regular files, check if they exist
+    const exists = await drive.exists(normalizedPath)
+    if (!exists) {
+      throw new Error('File does not exist')
+    }
+    // Try streaming first for better performance and memory efficiency
+    try {
+      const stream = drive.createReadStream(normalizedPath, { wait: true, timeout: config.streamTimeout })
+      const writeStream = require('fs').createWriteStream(targetPath)
+
+      await new Promise((resolve, reject) => {
+        stream.pipe(writeStream)
+        writeStream.on('finish', resolve)
+        writeStream.on('error', reject)
+        stream.on('error', reject)
+      })
+
+      console.log(`[hyperdrive] Downloaded file (stream): ${fileName} to ${targetPath}`)
+    } catch (streamError) {
+      console.warn(`[hyperdrive] Streaming failed for ${normalizedPath}, falling back to buffer method:`, streamError)
+
+      // Fallback to buffer method
+      const data = await drive.get(normalizedPath, { wait: true, timeout: config.streamTimeout })
+
+      if (!data) {
+        throw new Error('File is empty or could not be read')
+      }
+
+      await writeFile(targetPath, data)
+      console.log(`[hyperdrive] Downloaded file (buffer): ${fileName} to ${targetPath}`)
+    }
+  }
+
+  console.log(`[hyperdrive] Downloaded file: ${fileName} to ${targetPath}`)
+  return { success: true, downloadPath: targetPath }
+}
 
 // Single file download using proper Hyperdrive API
 export async function downloadFileToDownloads(driveId: string, filePath: string, fileName: string, driveName: string, onProgress?: (currentFile: string, downloadedFiles: number, totalFiles: number) => void): Promise<{ success: boolean; downloadPath: string }> {
@@ -1162,94 +1267,27 @@ export async function downloadFileToDownloads(driveId: string, filePath: string,
   const downloadsDir = join(homedir(), 'Downloads', 'HyperTeleporter', driveName)
   const normalizedPath = filePath.startsWith('/') ? filePath : `/${filePath}`
   
+  // Check if this file is already being downloaded
+  if (downloadTracker.isDownloading(driveId, normalizedPath)) {
+    const existingDownload = downloadTracker.getDownloadByPath(driveId, normalizedPath)
+    throw new Error(`File "${fileName}" is already being downloaded (started ${new Date(existingDownload?.startTime || 0).toLocaleTimeString()})`)
+  }
+  
+  const downloadId = `file-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+  
   try {
     await mkdir(downloadsDir, { recursive: true })
 
     console.log(`[hyperdrive] Downloading file: ${normalizedPath}`)
     
-    // Create directory structure
-    const pathParts = filePath.split('/').filter(Boolean)
-    const dirPath = pathParts.slice(0, -1).join('/')
-    const finalDir = dirPath ? join(downloadsDir, dirPath) : downloadsDir
-
-    if (dirPath) {
-      await mkdir(finalDir, { recursive: true })
-    }
-
-    const targetPath = join(finalDir, fileName)
+    // Create download promise
+    const downloadPromise = performFileDownload(drive, driveId, normalizedPath, filePath, fileName, downloadsDir, config, onProgress)
     
-    // Check if it's a pseudo-file with chunked metadata FIRST
-    const entries = await listDrive(driveId, '/', true)
-    const pseudoFile = entries.find(entry => entry.key === normalizedPath)
+    // Start tracking
+    downloadTracker.startDownload(downloadId, driveId, normalizedPath, fileName, 'file', downloadPromise)
     
-    let isChunkedFile = false
-    let chunkFolder = null
-    
-    if (pseudoFile?.value?.metadata) {
-      try {
-        const metadata = JSON.parse(pseudoFile.value.metadata)
-        if (metadata.is_chunked && metadata.chunkFolder) {
-          isChunkedFile = true
-          chunkFolder = metadata.chunkFolder
-          console.log(`[hyperdrive] Detected pseudo-file for chunked download: ${normalizedPath} -> ${chunkFolder}`)
-        }
-      } catch (e) {
-        // Not a pseudo-file, continue with normal processing
-      }
-    }
-    
-    // Legacy check: look for pseudo-folder
-    if (!isChunkedFile) {
-      const pseudoFolderPath = `${normalizedPath}.chunks`
-      const manifestPath = `${pseudoFolderPath}/manifest.json`
-      const manifestExists = await drive.exists(manifestPath)
-      
-      if (manifestExists) {
-        isChunkedFile = true
-        chunkFolder = pseudoFolderPath
-        console.log(`[hyperdrive] Detected legacy pseudo-folder for chunked download: ${normalizedPath} -> ${chunkFolder}`)
-      }
-    }
-    
-    if (isChunkedFile) {
-      console.log(`[hyperdrive] Downloading chunked file: ${fileName}`)
-      await downloadChunkedFileToDownloads(drive, chunkFolder, targetPath, config, onProgress)
-    } else {
-      // For regular files, check if they exist
-      const exists = await drive.exists(normalizedPath)
-      if (!exists) {
-        throw new Error('File does not exist')
-      }
-      // Try streaming first for better performance and memory efficiency
-      try {
-        const stream = drive.createReadStream(normalizedPath, { wait: true, timeout: config.streamTimeout })
-        const writeStream = require('fs').createWriteStream(targetPath)
-        
-        await new Promise((resolve, reject) => {
-          stream.pipe(writeStream)
-          writeStream.on('finish', resolve)
-          writeStream.on('error', reject)
-          stream.on('error', reject)
-        })
-        
-        console.log(`[hyperdrive] Downloaded file (stream): ${fileName} to ${targetPath}`)
-      } catch (streamError) {
-        console.warn(`[hyperdrive] Streaming failed for ${normalizedPath}, falling back to buffer method:`, streamError)
-        
-        // Fallback to buffer method
-        const data = await drive.get(normalizedPath, { wait: true, timeout: config.streamTimeout })
-        
-        if (!data) {
-          throw new Error('File is empty or could not be read')
-        }
-
-        await writeFile(targetPath, data)
-        console.log(`[hyperdrive] Downloaded file (buffer): ${fileName} to ${targetPath}`)
-      }
-    }
-
-    console.log(`[hyperdrive] Downloaded file: ${fileName} to ${targetPath}`)
-    return { success: true, downloadPath: targetPath }
+    const result = await downloadPromise
+    return result
   } catch (err) {
     console.error(`[hyperdrive] downloadFileToDownloads failed for ${driveId} ${filePath}:`, err)
     throw err
@@ -1689,26 +1727,58 @@ class SmartPrefetcher {
 export async function downloadFolderToDownloads(driveId: string, folder: string, _folderName: string, driveName: string, onProgress?: (currentFile: string, downloadedFiles: number, totalFiles: number) => void): Promise<{ success: boolean; downloadPath: string; fileCount: number }> {
   const drive = activeDrives.get(driveId)?.hyperdrive
   if (!drive) throw new Error('Drive not found')
-
+  
   const config = getDownloadConfig()
   const downloadsDir = join(homedir(), 'Downloads', 'HyperTeleporter', driveName)
+  const folderPath = folder.startsWith('/') ? folder : `/${folder}`
   
-  // Handle virtual-root and root folder cases
-  let folderPath = folder
-  if (folder === 'virtual-root' || folder === '/' || folder === '') {
-    folderPath = '/'
-  } else {
-    folderPath = folder.replace(/^\//, '')
+  // Check if this folder is already being downloaded
+  if (downloadTracker.isDownloading(driveId, folderPath)) {
+    const existingDownload = downloadTracker.getDownloadByPath(driveId, folderPath)
+    throw new Error(`Folder "${_folderName}" is already being downloaded (started ${new Date(existingDownload?.startTime || 0).toLocaleTimeString()})`)
   }
   
-  const targetDir = join(downloadsDir, folderPath === '/' ? '' : folderPath)
+  const downloadId = `folder-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+  
+  try {
+    const result = await performFolderDownload(drive, driveId, folderPath, _folderName, downloadsDir, config, onProgress)
+    
+    // Start tracking
+    downloadTracker.startDownload(downloadId, driveId, folderPath, _folderName, 'folder', Promise.resolve(result))
+    
+    return result
+  } catch (err) {
+    console.error(`[hyperdrive] downloadFolderToDownloads failed for ${driveId} ${folder}:`, err)
+    throw err
+  }
+}
+
+// Extract folder download logic for tracking
+async function performFolderDownload(
+  drive: any,
+  driveId: string,
+  folderPath: string,
+  folderName: string,
+  downloadsDir: string,
+  config: DownloadConfig,
+  onProgress?: (currentFile: string, downloadedFiles: number, totalFiles: number) => void
+): Promise<{ success: boolean; downloadPath: string; fileCount: number }> {
+  // Handle virtual-root and root folder cases
+  let normalizedFolderPath = folderPath
+  if (folderPath === 'virtual-root' || folderPath === '/' || folderPath === '') {
+    normalizedFolderPath = '/'
+  } else {
+    normalizedFolderPath = folderPath.replace(/^\//, '')
+  }
+  
+  const targetDir = join(downloadsDir, normalizedFolderPath === '/' ? '' : normalizedFolderPath)
 
   try {
     await mkdir(downloadsDir, { recursive: true })
     await mkdir(targetDir, { recursive: true })
     
-    console.log(`[hyperdrive] Starting parallel folder download: ${folder}`)
-    console.log(`[hyperdrive] Normalized folder path: ${folderPath}`)
+    console.log(`[hyperdrive] Starting parallel folder download: ${folderName}`)
+    console.log(`[hyperdrive] Normalized folder path: ${normalizedFolderPath}`)
     console.log(`[hyperdrive] Using config:`, {
       concurrentDownloads: config.concurrentDownloads,
       enablePrefetching: config.enablePrefetching,
@@ -1720,18 +1790,18 @@ export async function downloadFolderToDownloads(driveId: string, folder: string,
     const prefetcher = new SmartPrefetcher(drive, config.enablePrefetching, config.prefetchBatchSize)
     
     // First, download all blobs for the folder using the proper Hyperdrive API
-    console.log(`[hyperdrive] Downloading all blobs for folder: ${folderPath}`)
+    console.log(`[hyperdrive] Downloading all blobs for folder: ${normalizedFolderPath}`)
     try {
-      const download = await drive.download(folderPath, { recursive: true, wait: false })
+      const download = await drive.download(normalizedFolderPath, { recursive: true, wait: false })
       // Don't wait for completion - let it download in background
-      console.log(`[hyperdrive] Started background download for folder: ${folderPath}`)
+      console.log(`[hyperdrive] Started background download for folder: ${normalizedFolderPath}`)
     } catch (err) {
-      console.warn(`[hyperdrive] Background download failed for ${folderPath}:`, err)
+      console.warn(`[hyperdrive] Background download failed for ${normalizedFolderPath}:`, err)
     }
     
     // Collect all files first
     const files: Array<{ key: string; value: any }> = []
-    for await (const entry of drive.list(folderPath, { recursive: true })) {
+    for await (const entry of drive.list(normalizedFolderPath, { recursive: true })) {
       if (entry?.key && (!!entry?.value?.blob || !!entry?.value?.linkname)) {
         files.push(entry)
       }
@@ -1741,7 +1811,7 @@ export async function downloadFolderToDownloads(driveId: string, folder: string,
     console.log(`[hyperdrive] Total files to download: ${totalFiles}`)
     
     if (totalFiles === 0) {
-      throw new Error(`Folder "${folderPath}" is empty or does not exist`)
+      throw new Error(`Folder "${normalizedFolderPath}" is empty or does not exist`)
     }
     
     // Process files in parallel batches
@@ -1763,7 +1833,7 @@ export async function downloadFolderToDownloads(driveId: string, folder: string,
         // Wait for prefetch if available
         await prefetcher.waitForPrefetch(entry.key)
         
-        const result = await downloadFileParallel(drive, entry, targetDir, folderPath, progressBatcher!, totalFiles, config)
+        const result = await downloadFileParallel(drive, entry, targetDir, normalizedFolderPath, progressBatcher!, totalFiles, config)
         
         processedFiles++
         
@@ -1802,12 +1872,12 @@ export async function downloadFolderToDownloads(driveId: string, folder: string,
     console.log(`[hyperdrive] Parallel folder download completed. Files processed: ${processedFiles}, Files downloaded: ${fileCount}`)
 
     if (fileCount === 0) {
-      throw new Error(`No downloadable files found in folder "${folderPath}"`)
+      throw new Error(`No downloadable files found in folder "${normalizedFolderPath}"`)
     }
 
     return { success: true, downloadPath: targetDir, fileCount }
   } catch (err) {
-    console.error(`[hyperdrive] downloadFolderToDownloads failed for ${driveId} ${folder}:`, err)
+    console.error(`[hyperdrive] downloadFolderToDownloads failed for ${driveId} ${folderPath}:`, err)
     throw err
   }
 }
