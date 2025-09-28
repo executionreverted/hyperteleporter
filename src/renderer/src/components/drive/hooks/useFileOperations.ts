@@ -224,11 +224,20 @@ export function useFileOperations({
     if (!driveId || node.type !== 'file' || !currentDrive) return
     
     try {
+      const downloadId = `download-${Date.now()}`
+      
+      // Start download progress tracking
+      startDownload(node.name, 0, downloadId, '') // We'll update totalFiles when we get the first progress update
+      
+      // Open downloads modal to show progress
+      onShowDownloads?.()
+      
       toaster.showInfo('Download Started', `Downloading ${node.name}...`)
       
       const result = await DriveApiService.downloadFile(driveId, node.id, node.name, currentDrive.name)
       
       if (result?.success) {
+        completeDownload(downloadId)
         toaster.showSuccess('Download Complete', `${node.name} saved to Downloads/HyperTeleporter/${currentDrive.name}/`, {
           label: 'Open Folder',
           onClick: () => DriveApiService.openDownloadsFolder(result.downloadPath!)
@@ -236,12 +245,15 @@ export function useFileOperations({
         // Dispatch event to refresh downloads modal
         window.dispatchEvent(new CustomEvent('download-completed'))
       } else {
+        failDownload(downloadId, result?.error || 'Unknown error')
         toaster.showError('Download Failed', `Failed to download file: ${result?.error || 'Unknown error'}`)
       }
     } catch (error) {
+      const downloadId = `download-${Date.now()}`
+      failDownload(downloadId, String(error))
       toaster.showError('Download Failed', 'Failed to download file. Please try again.')
     }
-  }, [driveId, currentDrive, toaster])
+  }, [driveId, currentDrive, toaster, startDownload, completeDownload, failDownload, onShowDownloads])
 
   const handleDownloadFolder = useCallback(async (node: TreeNode) => {
     if (!driveId || node.type !== 'folder' || !currentDrive) return

@@ -310,10 +310,21 @@ app.whenReady().then(() => {
     return stats
   })
 
-  ipcMain.handle('drives:downloadFile', async (_evt, { driveId, filePath, fileName, driveName }: { driveId: string, filePath: string, fileName: string, driveName: string }) => {
+  ipcMain.handle('drives:downloadFile', async (event, { driveId, filePath, fileName, driveName }: { driveId: string, filePath: string, fileName: string, driveName: string }) => {
     console.log(`[ipc] drives:downloadFile request: driveId=${driveId}, filePath=${filePath}, fileName=${fileName}, driveName=${driveName}`)
     try {
-      const result = await downloadFileToDownloads(driveId, filePath, fileName, driveName)
+      const downloadId = `download-${Date.now()}`
+      const result = await downloadFileToDownloads(driveId, filePath, fileName, driveName, (currentFile, downloadedFiles, totalFiles) => {
+        // Send progress update to renderer
+        console.log(`[ipc] Sending download progress: file=${currentFile}, downloaded=${downloadedFiles}, total=${totalFiles}`)
+        event.sender.send('download-progress', {
+          downloadId,
+          currentFile,
+          downloadedFiles,
+          totalFiles,
+          folderName: fileName
+        })
+      })
       const downloadRecord = {
         id: Date.now().toString(),
         driveId,

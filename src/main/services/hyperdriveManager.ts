@@ -1144,7 +1144,7 @@ import { homedir } from 'os'
 import { getDownloadConfig, DownloadConfig } from '../config/downloadConfig'
 
 // Single file download using proper Hyperdrive API
-export async function downloadFileToDownloads(driveId: string, filePath: string, fileName: string, driveName: string): Promise<{ success: boolean; downloadPath: string }> {
+export async function downloadFileToDownloads(driveId: string, filePath: string, fileName: string, driveName: string, onProgress?: (currentFile: string, downloadedFiles: number, totalFiles: number) => void): Promise<{ success: boolean; downloadPath: string }> {
   const drive = activeDrives.get(driveId)?.hyperdrive
   if (!drive) throw new Error('Drive not found')
   
@@ -1203,7 +1203,7 @@ export async function downloadFileToDownloads(driveId: string, filePath: string,
     
     if (isChunkedFile) {
       console.log(`[hyperdrive] Downloading chunked file: ${fileName}`)
-      await downloadChunkedFileToDownloads(drive, chunkFolder, targetPath, config)
+      await downloadChunkedFileToDownloads(drive, chunkFolder, targetPath, config, onProgress)
     } else {
       // For regular files, check if they exist
       const exists = await drive.exists(normalizedPath)
@@ -1251,7 +1251,8 @@ async function downloadChunkedFileToDownloads(
   drive: any, 
   pseudoFolderPath: string, 
   targetPath: string, 
-  config: any
+  config: any,
+  onProgress?: (currentFile: string, downloadedFiles: number, totalFiles: number) => void
 ): Promise<void> {
   try {
     // Read manifest
@@ -1270,6 +1271,11 @@ async function downloadChunkedFileToDownloads(
     for (let i = 0; i < manifest.numChunks; i++) {
       const chunkPath = `${pseudoFolderPath}/chunk.${i.toString().padStart(3, '0')}`
       console.log(`[hyperdrive] Downloading chunk ${i + 1}/${manifest.numChunks}: ${chunkPath}`)
+      
+      // Report progress for each chunk
+      if (onProgress) {
+        onProgress(`chunk.${i.toString().padStart(3, '0')}`, i, manifest.numChunks)
+      }
       
       const chunkData = await drive.get(chunkPath, { wait: true, timeout: config.streamTimeout })
       if (!chunkData) {
@@ -1361,7 +1367,13 @@ async function downloadFileParallel(
         const metadata = JSON.parse(entry.value.metadata)
         if (metadata.is_chunked && metadata.chunkFolder) {
           console.log(`[hyperdrive] Detected pseudo-file for chunked file: ${entry.key}`)
-          return await downloadPseudoFile(drive, entry.key, targetDir, folderPath, metadata, config)
+          return await downloadPseudoFile(drive, entry.key, targetDir, folderPath, metadata, config, (currentFile, downloadedFiles, totalFiles) => {
+            progressBatcher.addUpdate({
+              currentFile,
+              downloadedFiles,
+              totalFiles
+            })
+          })
         }
       } catch (e) {
         // Not a pseudo-file, continue with normal processing
@@ -1460,7 +1472,8 @@ async function downloadPseudoFile(
   targetDir: string,
   folderPath: string,
   metadata: any,
-  config: DownloadConfig
+  config: DownloadConfig,
+  onProgress?: (currentFile: string, downloadedFiles: number, totalFiles: number) => void
 ): Promise<{ success: boolean; filePath?: string; error?: string }> {
   try {
     const originalFileName = metadata.originalFileName
@@ -1488,6 +1501,11 @@ async function downloadPseudoFile(
     for (let i = 0; i < numChunks; i++) {
       const chunkPath = `${chunkFolder}/chunk.${i.toString().padStart(3, '0')}`
       console.log(`[hyperdrive] Downloading chunk ${i + 1}/${numChunks}: ${chunkPath}`)
+      
+      // Report progress for each chunk
+      if (onProgress) {
+        onProgress(`chunk.${i.toString().padStart(3, '0')}`, i, numChunks)
+      }
       
       const chunkData = await drive.get(chunkPath, { wait: true, timeout: config.streamTimeout })
       if (!chunkData) {
