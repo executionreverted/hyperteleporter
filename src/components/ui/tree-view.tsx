@@ -290,7 +290,7 @@ const TreeNodeComponent = ({ node, level, onNodeSelect, onNodeToggle, selectedNo
           isSelected && "bg-blue-900/30 text-blue-400",
           "group"
         )}
-        style={{ paddingLeft: `${level * 16 + 8}px` }}
+        style={{ paddingLeft: `${level * 8 + 2}px` }}
         onClick={(e) => handleClick(e)}
         onDoubleClick={handleDoubleClick}
         onContextMenu={handleContextMenu}
@@ -330,7 +330,7 @@ const TreeNodeComponent = ({ node, level, onNodeSelect, onNodeToggle, selectedNo
             );
           })()}
           
-          <span className={`truncate text-sm ${
+          <span className={`truncate text-sm flex-1 ${
             node.name === '...' && node.id.includes('__more__') 
               ? 'text-blue-400 italic font-medium' 
               : 'text-neutral-300'
@@ -338,11 +338,13 @@ const TreeNodeComponent = ({ node, level, onNodeSelect, onNodeToggle, selectedNo
             {node.name}
           </span>
           
-          {node.size && (
-            <span className="text-xs text-neutral-500 ml-auto">
-              {node.size}
-            </span>
-          )}
+          <div className="w-16 text-right">
+            {node.size && (
+              <span className="text-xs text-neutral-500">
+                {node.size}
+              </span>
+            )}
+          </div>
         </div>
       </motion.div>
 
