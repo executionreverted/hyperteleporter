@@ -307,17 +307,78 @@ export async function listDrive(folderDriveId: string, folder: string, recursive
   const drive = activeDrives.get(folderDriveId)?.hyperdrive
   if (!drive) return []
   const results: Array<{ key: string, value: any }> = []
+  const pseudoFiles: Array<{ key: string, value: any }> = []
   const listFolder = folder || '/'
   // Ensure folder starts with '/'
   const prefix = listFolder.startsWith('/') ? listFolder : `/${listFolder}`
+  
   // console.log(`[hyperdrive] listDrive driveId=${folderDriveId} prefix=${prefix} recursive=${recursive}`)
   for await (const file of drive.list('/', { recursive: true })) {
     const isFile = !!file?.value?.blob || !!file?.value?.linkname
-    // console.log(`[hyperdrive] entry key=${file.key} type=${isFile ? 'file' : 'folder'}`)
+    console.log(`[hyperdrive] Processing file: ${file.key}, isFile: ${isFile}`)
+    
+    // Check if this is a pseudo-folder marker for a chunked file FIRST
+    if (file.key.endsWith('/.keep')) {
+      try {
+        const metadata = file.value?.metadata
+        if (metadata) {
+          const parsedMetadata = JSON.parse(metadata)
+          console.log(`[hyperdrive] Found .keep file: ${file.key}, metadata:`, parsedMetadata)
+          if (parsedMetadata.isPseudoFolder && parsedMetadata.originalFileName) {
+            // Create a pseudo-file entry for the chunked file
+            // The original path should be the actual file path, not the .chunks path
+            const chunksPath = file.key.replace('/.keep', '')
+            const originalPath = chunksPath.replace('.chunks', '')
+            console.log(`[hyperdrive] Creating pseudo-file for: ${originalPath} (from chunks: ${chunksPath})`)
+            
+            // Check if the original path is under the requested prefix
+            if (originalPath.startsWith(prefix)) {
+              const pseudoFile = {
+                key: originalPath,
+                value: {
+                  blob: { byteLength: parsedMetadata.totalSize },
+                  metadata: JSON.stringify({
+                    ...parsedMetadata,
+                    is_chunked: true,
+                    chunkFolder: chunksPath,
+                    createdAt: parsedMetadata.createdAt,
+                    modifiedAt: parsedMetadata.modifiedAt
+                  })
+                }
+              }
+              pseudoFiles.push(pseudoFile)
+              console.log(`[hyperdrive] Added pseudo-file: ${originalPath}`)
+            } else {
+              console.log(`[hyperdrive] Pseudo-file ${originalPath} not under prefix ${prefix}`)
+            }
+            continue
+          }
+        }
+      } catch (e) {
+        console.log(`[hyperdrive] Error parsing .keep metadata for ${file.key}:`, e)
+        // Not a pseudo-folder, continue with normal processing
+      }
+    }
+    
+    // Skip .chunks folders and their contents (but not .keep files)
+    if (file.key.includes('.chunks/') || (file.key.endsWith('.chunks') && !file.key.endsWith('/.keep'))) {
+      console.log(`[hyperdrive] Skipping .chunks file: ${file.key}`)
+      continue
+    }
+    
     // Only include items under prefix
-    if (file.key.startsWith(prefix)) results.push({ key: file.key, value: file.value })
+    if (file.key.startsWith(prefix)) {
+      results.push({ key: file.key, value: file.value })
+    }
   }
-  // console.log(`[hyperdrive] listDrive done: ${results.length} entries`)
+  
+  // Add pseudo-files to results
+  results.push(...pseudoFiles)
+  
+  console.log(`[hyperdrive] listDrive done: ${results.length} entries (${pseudoFiles.length} pseudo-files)`)
+  if (pseudoFiles.length > 0) {
+    console.log(`[hyperdrive] Pseudo-files created:`, pseudoFiles.map(pf => pf.key))
+  }
   return results
 }
 
@@ -421,6 +482,99 @@ export async function uploadFiles(
   } catch {}
   broadcastDriveChanged(driveId)
   return { uploaded }
+}
+
+// Streaming upload for large files with chunking
+export async function uploadFileStream(
+  driveId: string,
+  folderPath: string,
+  fileName: string,
+  fileData: Uint8Array
+): Promise<{ success: boolean; error?: string }> {
+  const drive = activeDrives.get(driveId)?.hyperdrive
+  if (!drive) throw new Error('Drive not found')
+  
+  const base = (folderPath && folderPath !== '/') ? (folderPath.startsWith('/') ? folderPath : `/${folderPath}`) : '/'
+  const normalized = base === '/' ? `/${fileName}` : `${base.replace(/\/$/, '')}/${fileName}`
+  const now = new Date().toISOString()
+  const metadata = JSON.stringify({ createdAt: now, modifiedAt: now })
+  
+  try {
+    console.log(`[hyperdrive] Starting chunked upload: ${normalized} (${fileData.length} bytes)`)
+    logMemoryUsage('before chunked upload')
+    
+    // Hypercore has a maximum block size limit (typically 15MB)
+    // We need to chunk large files to stay under this limit
+    const MAX_BLOCK_SIZE = 10 * 1024 * 1024 // 10MB chunks to be safe
+    const totalSize = fileData.length
+    const numChunks = Math.ceil(totalSize / MAX_BLOCK_SIZE)
+    
+    console.log(`[hyperdrive] File will be split into ${numChunks} chunks of max ${MAX_BLOCK_SIZE} bytes each`)
+    
+    // Create a pseudo-folder for the chunked file
+    const pseudoFolderPath = `${normalized}.chunks`
+    const folderMetadata = JSON.stringify({ 
+      createdAt: now, 
+      modifiedAt: now,
+      isPseudoFolder: true,
+      originalFileName: fileName,
+      totalSize,
+      numChunks
+    })
+    
+    // Create the pseudo-folder marker
+    await drive.put(`${pseudoFolderPath}/.keep`, Buffer.alloc(0), { metadata: folderMetadata })
+    
+    // Upload file in chunks within the pseudo-folder
+    for (let i = 0; i < numChunks; i++) {
+      const start = i * MAX_BLOCK_SIZE
+      const end = Math.min(start + MAX_BLOCK_SIZE, totalSize)
+      const chunk = fileData.slice(start, end)
+      const chunkPath = `${pseudoFolderPath}/chunk.${i.toString().padStart(3, '0')}`
+      
+      console.log(`[hyperdrive] Uploading chunk ${i + 1}/${numChunks}: ${chunkPath} (${chunk.length} bytes)`)
+      
+      await drive.put(chunkPath, Buffer.from(chunk), { metadata })
+      
+      // Force GC after each chunk to manage memory
+      if (i % 5 === 0 || i === numChunks - 1) {
+        forceGarbageCollection()
+      }
+    }
+    
+    // Create a manifest file within the pseudo-folder
+    const manifest = {
+      fileName,
+      totalSize,
+      numChunks,
+      chunks: Array.from({ length: numChunks }, (_, i) => `chunk.${i.toString().padStart(3, '0')}`),
+      createdAt: now,
+      modifiedAt: now,
+      isChunkedFile: true
+    }
+    
+    const manifestPath = `${pseudoFolderPath}/manifest.json`
+    await drive.put(manifestPath, Buffer.from(JSON.stringify(manifest, null, 2)), { metadata })
+    
+    console.log(`[hyperdrive] Successfully uploaded chunked file: ${normalized} (${numChunks} chunks)`)
+    logMemoryUsage('after chunked upload')
+    
+    // Force garbage collection after large file upload
+    forceGarbageCollection()
+    
+    try {
+      // Hint replication layer we expect updates soon
+      // @ts-ignore - update exists at runtime
+      await (drive as any).update({ wait: false })
+    } catch {}
+    
+    broadcastDriveChanged(driveId)
+    return { success: true }
+    
+  } catch (err) {
+    console.error(`[hyperdrive] Failed to upload file (chunked) ${normalized}:`, err)
+    return { success: false, error: err instanceof Error ? err.message : 'Unknown error' }
+  }
 }
 
 export async function uploadFolder(
@@ -537,6 +691,100 @@ export async function downloadFile(driveId: string, path: string): Promise<boole
   }
 }
 
+// Get file data, handling both regular files and chunked files
+export async function getFileData(driveId: string, path: string): Promise<Buffer | null> {
+  const drive = activeDrives.get(driveId)?.hyperdrive
+  if (!drive) throw new Error('Drive not found')
+  const normalized = path.startsWith('/') ? path : `/${path}`
+  
+  try {
+    // First check if it's a regular file
+    const exists = await drive.exists(normalized)
+    if (exists) {
+      const data = await drive.get(normalized)
+      if (data) {
+        return data
+      }
+    }
+    
+    // Check if it's a pseudo-file with chunked metadata
+    // We need to check the file listing to see if this is a pseudo-file
+    const entries = await listDrive(driveId, '/', true)
+    const pseudoFile = entries.find(entry => entry.key === normalized)
+    
+    if (pseudoFile?.value?.metadata) {
+      try {
+        const metadata = JSON.parse(pseudoFile.value.metadata)
+        if (metadata.is_chunked && metadata.chunkFolder) {
+          console.log(`[hyperdrive] Detected pseudo-file with chunked data: ${normalized}`)
+          return await getChunkedFileData(drive, metadata.chunkFolder, metadata.numChunks)
+        }
+      } catch (e) {
+        // Not a pseudo-file, continue with normal processing
+      }
+    }
+    
+    // Legacy check: look for pseudo-folder (for backward compatibility)
+    const pseudoFolderPath = `${normalized}.chunks`
+    const manifestPath = `${pseudoFolderPath}/manifest.json`
+    const manifestExists = await drive.exists(manifestPath)
+    
+    if (manifestExists) {
+      console.log(`[hyperdrive] Detected legacy chunked file: ${normalized}`)
+      const manifestData = await drive.get(manifestPath)
+      if (!manifestData) {
+        console.error(`[hyperdrive] Failed to read manifest for ${normalized}`)
+        return null
+      }
+      
+      const manifest = JSON.parse(manifestData.toString())
+      return await getChunkedFileData(drive, pseudoFolderPath, manifest.numChunks)
+    }
+    
+    console.log(`[hyperdrive] File not found: ${normalized}`)
+    return null
+    
+  } catch (err) {
+    console.error(`[hyperdrive] Failed to get file data for ${normalized}:`, err)
+    return null
+  }
+}
+
+// Helper function to get chunked file data
+async function getChunkedFileData(drive: any, chunkFolder: string, numChunks: number): Promise<Buffer | null> {
+  try {
+    console.log(`[hyperdrive] Reassembling ${numChunks} chunks from ${chunkFolder}`)
+    
+    // Download all chunks from chunk folder
+    const chunks: Buffer[] = []
+    for (let i = 0; i < numChunks; i++) {
+      const chunkPath = `${chunkFolder}/chunk.${i.toString().padStart(3, '0')}`
+      const chunkData = await drive.get(chunkPath)
+      if (!chunkData) {
+        console.error(`[hyperdrive] Failed to read chunk ${i} from ${chunkPath}`)
+        return null
+      }
+      chunks.push(chunkData)
+    }
+    
+    // Combine chunks
+    const totalSize = chunks.reduce((sum, chunk) => sum + chunk.length, 0)
+    const combined = Buffer.alloc(totalSize)
+    let offset = 0
+    for (const chunk of chunks) {
+      chunk.copy(combined, offset)
+      offset += chunk.length
+    }
+    
+    console.log(`[hyperdrive] Successfully reassembled chunked file: ${totalSize} bytes`)
+    return combined
+    
+  } catch (err) {
+    console.error(`[hyperdrive] Failed to reassemble chunked file:`, err)
+    return null
+  }
+}
+
 export async function getFileBuffer(driveId: string, path: string): Promise<Buffer | null> {
   const drive = activeDrives.get(driveId)?.hyperdrive
   if (!drive) throw new Error('Drive not found')
@@ -546,24 +794,17 @@ export async function getFileBuffer(driveId: string, path: string): Promise<Buff
   if (normalized.endsWith('/.keep')) return null
 
   try {
-    // Check if file exists
-    const exists = await drive.exists(normalized)
-    if (!exists) {
-      console.log(`[hyperdrive] File does not exist: ${normalized}`)
-      return null
-    }
-
-    // Get file data using drive.get() with proper options
+    // Use getFileData which handles both regular and chunked files
     console.log(`[hyperdrive] Reading file: ${normalized}`)
-    const data = await drive.get(normalized, { wait: true, timeout: 30000 })
+    const data = await getFileData(driveId, normalized)
     
     if (!data) {
-      console.log(`[hyperdrive] File is empty: ${normalized}`)
+      console.log(`[hyperdrive] File not found or empty: ${normalized}`)
       return null
     }
 
     console.log(`[hyperdrive] Successfully read file: ${normalized}, bytes=${data.length}`)
-    return Buffer.isBuffer(data) ? data : Buffer.from(data)
+    return data
   } catch (err) {
     console.error(`[hyperdrive] Failed to read file ${normalized}:`, err)
     return null
@@ -649,6 +890,25 @@ export async function deleteFile(driveId: string, path: string): Promise<boolean
   const normalized = path.startsWith('/') ? path : `/${path}`
   
   try {
+    // First check if this is a pseudo-file (chunked file)
+    const entries = await listDrive(driveId, '/', true)
+    const pseudoFile = entries.find(entry => entry.key === normalized)
+    
+    if (pseudoFile?.value?.metadata) {
+      try {
+        const metadata = JSON.parse(pseudoFile.value.metadata)
+        if (metadata.is_chunked && metadata.chunkFolder) {
+          console.log(`[hyperdrive] deleteFile ${normalized}: deleting pseudo-file, targeting chunks folder: ${metadata.chunkFolder}`)
+          // Delete the entire .chunks folder
+          await deleteFolderContents(drive, metadata.chunkFolder)
+          console.log(`[hyperdrive] deleteFile ${normalized}: successfully deleted chunked file`)
+          return true
+        }
+      } catch (e) {
+        // Not a pseudo-file, continue with normal processing
+      }
+    }
+    
     // Check if it's a folder or file
     const isFolderPath = await isFolder(drive, normalized)
     console.log(`[hyperdrive] deleteFile ${normalized}: isFolder=${isFolderPath}`)
@@ -805,6 +1065,26 @@ export async function getFileStats(driveId: string, path: string): Promise<{ cre
   const normalized = path.startsWith('/') ? path : `/${path}`
   
   try {
+    // First check if this is a pseudo-file (chunked file)
+    const entries = await listDrive(driveId, '/', true)
+    const pseudoFile = entries.find(entry => entry.key === normalized)
+    
+    if (pseudoFile?.value?.metadata) {
+      try {
+        const metadata = JSON.parse(pseudoFile.value.metadata)
+        if (metadata.is_chunked) {
+          console.log(`[hyperdrive] getFileStats: Found pseudo-file ${normalized}`)
+          return {
+            size: metadata.totalSize || 0,
+            createdAt: metadata.createdAt,
+            modifiedAt: metadata.modifiedAt
+          }
+        }
+      } catch (e) {
+        // Not a pseudo-file, continue with normal processing
+      }
+    }
+    
     // Get file entry using hyperdrive's entry method
     const entry = await drive.entry(normalized)
     
@@ -875,12 +1155,6 @@ export async function downloadFileToDownloads(driveId: string, filePath: string,
   try {
     await mkdir(downloadsDir, { recursive: true })
 
-    // Check if file exists
-    const exists = await drive.exists(normalizedPath)
-    if (!exists) {
-      throw new Error('File does not exist')
-    }
-
     console.log(`[hyperdrive] Downloading file: ${normalizedPath}`)
     
     // Create directory structure
@@ -894,37 +1168,135 @@ export async function downloadFileToDownloads(driveId: string, filePath: string,
 
     const targetPath = join(finalDir, fileName)
     
-    // Try streaming first for better performance and memory efficiency
-    try {
-      const stream = drive.createReadStream(normalizedPath, { wait: true, timeout: config.streamTimeout })
-      const writeStream = require('fs').createWriteStream(targetPath)
-      
-      await new Promise((resolve, reject) => {
-        stream.pipe(writeStream)
-        writeStream.on('finish', resolve)
-        writeStream.on('error', reject)
-        stream.on('error', reject)
-      })
-      
-      console.log(`[hyperdrive] Downloaded file (stream): ${fileName} to ${targetPath}`)
-    } catch (streamError) {
-      console.warn(`[hyperdrive] Streaming failed for ${normalizedPath}, falling back to buffer method:`, streamError)
-      
-      // Fallback to buffer method
-      const data = await drive.get(normalizedPath, { wait: true, timeout: config.streamTimeout })
-      
-      if (!data) {
-        throw new Error('File is empty or could not be read')
+    // Check if it's a pseudo-file with chunked metadata FIRST
+    const entries = await listDrive(driveId, '/', true)
+    const pseudoFile = entries.find(entry => entry.key === normalizedPath)
+    
+    let isChunkedFile = false
+    let chunkFolder = null
+    
+    if (pseudoFile?.value?.metadata) {
+      try {
+        const metadata = JSON.parse(pseudoFile.value.metadata)
+        if (metadata.is_chunked && metadata.chunkFolder) {
+          isChunkedFile = true
+          chunkFolder = metadata.chunkFolder
+          console.log(`[hyperdrive] Detected pseudo-file for chunked download: ${normalizedPath} -> ${chunkFolder}`)
+        }
+      } catch (e) {
+        // Not a pseudo-file, continue with normal processing
       }
+    }
+    
+    // Legacy check: look for pseudo-folder
+    if (!isChunkedFile) {
+      const pseudoFolderPath = `${normalizedPath}.chunks`
+      const manifestPath = `${pseudoFolderPath}/manifest.json`
+      const manifestExists = await drive.exists(manifestPath)
+      
+      if (manifestExists) {
+        isChunkedFile = true
+        chunkFolder = pseudoFolderPath
+        console.log(`[hyperdrive] Detected legacy pseudo-folder for chunked download: ${normalizedPath} -> ${chunkFolder}`)
+      }
+    }
+    
+    if (isChunkedFile) {
+      console.log(`[hyperdrive] Downloading chunked file: ${fileName}`)
+      await downloadChunkedFileToDownloads(drive, chunkFolder, targetPath, config)
+    } else {
+      // For regular files, check if they exist
+      const exists = await drive.exists(normalizedPath)
+      if (!exists) {
+        throw new Error('File does not exist')
+      }
+      // Try streaming first for better performance and memory efficiency
+      try {
+        const stream = drive.createReadStream(normalizedPath, { wait: true, timeout: config.streamTimeout })
+        const writeStream = require('fs').createWriteStream(targetPath)
+        
+        await new Promise((resolve, reject) => {
+          stream.pipe(writeStream)
+          writeStream.on('finish', resolve)
+          writeStream.on('error', reject)
+          stream.on('error', reject)
+        })
+        
+        console.log(`[hyperdrive] Downloaded file (stream): ${fileName} to ${targetPath}`)
+      } catch (streamError) {
+        console.warn(`[hyperdrive] Streaming failed for ${normalizedPath}, falling back to buffer method:`, streamError)
+        
+        // Fallback to buffer method
+        const data = await drive.get(normalizedPath, { wait: true, timeout: config.streamTimeout })
+        
+        if (!data) {
+          throw new Error('File is empty or could not be read')
+        }
 
-      await writeFile(targetPath, data)
-      console.log(`[hyperdrive] Downloaded file (buffer): ${fileName} to ${targetPath}`)
+        await writeFile(targetPath, data)
+        console.log(`[hyperdrive] Downloaded file (buffer): ${fileName} to ${targetPath}`)
+      }
     }
 
     console.log(`[hyperdrive] Downloaded file: ${fileName} to ${targetPath}`)
     return { success: true, downloadPath: targetPath }
   } catch (err) {
     console.error(`[hyperdrive] downloadFileToDownloads failed for ${driveId} ${filePath}:`, err)
+    throw err
+  }
+}
+
+// Download chunked file by reassembling chunks
+async function downloadChunkedFileToDownloads(
+  drive: any, 
+  pseudoFolderPath: string, 
+  targetPath: string, 
+  config: any
+): Promise<void> {
+  try {
+    // Read manifest
+    const manifestData = await drive.get(`${pseudoFolderPath}/manifest.json`)
+    if (!manifestData) {
+      throw new Error('Manifest not found for chunked file')
+    }
+    
+    const manifest = JSON.parse(manifestData.toString())
+    console.log(`[hyperdrive] Reassembling ${manifest.numChunks} chunks for ${manifest.fileName}`)
+    
+    // Create write stream for the target file
+    const writeStream = require('fs').createWriteStream(targetPath)
+    
+    // Download and write chunks in order
+    for (let i = 0; i < manifest.numChunks; i++) {
+      const chunkPath = `${pseudoFolderPath}/chunk.${i.toString().padStart(3, '0')}`
+      console.log(`[hyperdrive] Downloading chunk ${i + 1}/${manifest.numChunks}: ${chunkPath}`)
+      
+      const chunkData = await drive.get(chunkPath, { wait: true, timeout: config.streamTimeout })
+      if (!chunkData) {
+        throw new Error(`Failed to download chunk ${i}`)
+      }
+      
+      // Write chunk to file
+      writeStream.write(chunkData)
+      
+      // Force GC periodically to manage memory
+      if (i % 10 === 0) {
+        forceGarbageCollection()
+      }
+    }
+    
+    writeStream.end()
+    
+    // Wait for write stream to finish
+    await new Promise((resolve, reject) => {
+      writeStream.on('finish', resolve)
+      writeStream.on('error', reject)
+    })
+    
+    console.log(`[hyperdrive] Successfully reassembled and downloaded chunked file: ${targetPath}`)
+    
+  } catch (err) {
+    console.error(`[hyperdrive] Failed to download chunked file:`, err)
     throw err
   }
 }
@@ -982,6 +1354,35 @@ async function downloadFileParallel(
 ): Promise<{ success: boolean; filePath?: string; error?: string }> {
   try {
     console.log(`[hyperdrive] Downloading file: ${entry.key}`)
+    
+    // Check if this is a pseudo-file with chunked metadata
+    if (entry.value?.metadata) {
+      try {
+        const metadata = JSON.parse(entry.value.metadata)
+        if (metadata.is_chunked && metadata.chunkFolder) {
+          console.log(`[hyperdrive] Detected pseudo-file for chunked file: ${entry.key}`)
+          return await downloadPseudoFile(drive, entry.key, targetDir, folderPath, metadata, config)
+        }
+      } catch (e) {
+        // Not a pseudo-file, continue with normal processing
+      }
+    }
+    
+    // Legacy check: pseudo-folder (.keep file with chunked file metadata)
+    if (entry.key.endsWith('/.keep')) {
+      const metadata = entry.value?.metadata
+      if (metadata) {
+        try {
+          const parsedMetadata = JSON.parse(metadata)
+          if (parsedMetadata.isPseudoFolder && parsedMetadata.originalFileName) {
+            console.log(`[hyperdrive] Detected legacy pseudo-folder for chunked file: ${parsedMetadata.originalFileName}`)
+            return await downloadPseudoFolder(drive, entry.key, targetDir, folderPath, parsedMetadata, config)
+          }
+        } catch (e) {
+          // Not a pseudo-folder, continue with normal processing
+        }
+      }
+    }
     
     // Use streaming for better memory efficiency
     const relativePath = entry.key.startsWith(folderPath) 
@@ -1048,6 +1449,139 @@ async function downloadFileParallel(
     }
   } catch (err) {
     console.error(`[hyperdrive] Failed to download file ${entry.key}:`, err)
+    return { success: false, error: String(err) }
+  }
+}
+
+// Download pseudo-file by reassembling chunks
+async function downloadPseudoFile(
+  drive: Hyperdrive,
+  pseudoFilePath: string,
+  targetDir: string,
+  folderPath: string,
+  metadata: any,
+  config: DownloadConfig
+): Promise<{ success: boolean; filePath?: string; error?: string }> {
+  try {
+    const originalFileName = metadata.originalFileName
+    const numChunks = metadata.numChunks
+    const chunkFolder = metadata.chunkFolder
+    
+    console.log(`[hyperdrive] Reassembling ${numChunks} chunks for ${originalFileName}`)
+    
+    // Create relative path for the reassembled file
+    const relativePath = pseudoFilePath.startsWith(folderPath) 
+      ? pseudoFilePath.slice(folderPath.length).replace(/^\//, '')
+      : pseudoFilePath.replace(/^\//, '')
+    
+    const filePath = join(targetDir, relativePath)
+    const fileDir = join(targetDir, relativePath.split('/').slice(0, -1).join('/'))
+    
+    if (fileDir !== targetDir) {
+      await mkdir(fileDir, { recursive: true })
+    }
+    
+    // Create write stream for the reassembled file
+    const writeStream = require('fs').createWriteStream(filePath)
+    
+    // Download and write chunks in order
+    for (let i = 0; i < numChunks; i++) {
+      const chunkPath = `${chunkFolder}/chunk.${i.toString().padStart(3, '0')}`
+      console.log(`[hyperdrive] Downloading chunk ${i + 1}/${numChunks}: ${chunkPath}`)
+      
+      const chunkData = await drive.get(chunkPath, { wait: true, timeout: config.streamTimeout })
+      if (!chunkData) {
+        throw new Error(`Failed to download chunk ${i}`)
+      }
+      
+      // Write chunk to file
+      writeStream.write(chunkData)
+      
+      // Force GC periodically to manage memory
+      if (i % 10 === 0) {
+        forceGarbageCollection()
+      }
+    }
+    
+    writeStream.end()
+    
+    // Wait for write stream to finish
+    await new Promise((resolve, reject) => {
+      writeStream.on('finish', resolve)
+      writeStream.on('error', reject)
+    })
+    
+    console.log(`[hyperdrive] Successfully reassembled chunked file: ${originalFileName}`)
+    return { success: true, filePath }
+    
+  } catch (err) {
+    console.error(`[hyperdrive] Failed to download pseudo-file:`, err)
+    return { success: false, error: String(err) }
+  }
+}
+
+// Download pseudo-folder by reassembling chunks (legacy)
+async function downloadPseudoFolder(
+  drive: Hyperdrive,
+  pseudoFolderPath: string,
+  targetDir: string,
+  folderPath: string,
+  metadata: any,
+  config: DownloadConfig
+): Promise<{ success: boolean; filePath?: string; error?: string }> {
+  try {
+    const originalFileName = metadata.originalFileName
+    const numChunks = metadata.numChunks
+    
+    console.log(`[hyperdrive] Reassembling ${numChunks} chunks for ${originalFileName}`)
+    
+    // Create relative path for the reassembled file
+    const relativePath = pseudoFolderPath.startsWith(folderPath) 
+      ? pseudoFolderPath.slice(folderPath.length).replace(/^\//, '').replace('.chunks', '')
+      : pseudoFolderPath.replace(/^\//, '').replace('.chunks', '')
+    
+    const filePath = join(targetDir, relativePath)
+    const fileDir = join(targetDir, relativePath.split('/').slice(0, -1).join('/'))
+    
+    if (fileDir !== targetDir) {
+      await mkdir(fileDir, { recursive: true })
+    }
+    
+    // Create write stream for the reassembled file
+    const writeStream = require('fs').createWriteStream(filePath)
+    
+    // Download and write chunks in order
+    for (let i = 0; i < numChunks; i++) {
+      const chunkPath = `${pseudoFolderPath}/chunk.${i.toString().padStart(3, '0')}`
+      console.log(`[hyperdrive] Downloading chunk ${i + 1}/${numChunks}: ${chunkPath}`)
+      
+      const chunkData = await drive.get(chunkPath, { wait: true, timeout: config.streamTimeout })
+      if (!chunkData) {
+        throw new Error(`Failed to download chunk ${i}`)
+      }
+      
+      // Write chunk to file
+      writeStream.write(chunkData)
+      
+      // Force GC periodically to manage memory
+      if (i % 10 === 0) {
+        forceGarbageCollection()
+      }
+    }
+    
+    writeStream.end()
+    
+    // Wait for write stream to finish
+    await new Promise((resolve, reject) => {
+      writeStream.on('finish', resolve)
+      writeStream.on('error', reject)
+    })
+    
+    console.log(`[hyperdrive] Successfully reassembled chunked file: ${originalFileName}`)
+    return { success: true, filePath }
+    
+  } catch (err) {
+    console.error(`[hyperdrive] Failed to download pseudo-folder:`, err)
     return { success: false, error: String(err) }
   }
 }

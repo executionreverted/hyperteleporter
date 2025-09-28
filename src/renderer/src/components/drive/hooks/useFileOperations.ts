@@ -80,27 +80,58 @@ export function useFileOperations({
       toaster.showInfo('Upload Started', `Uploading ${individualFiles.length} file(s)...`)
       
       try {
-        const payload = await Promise.all(individualFiles.map(async (f, index) => {
-          console.log(`[Upload Debug] Processing individual file ${index + 1}/${individualFiles.length}:`, f.name);
-          updateProgress(f.name, index + 1);
+        const LARGE_FILE_THRESHOLD = 100 * 1024 * 1024 // 100MB threshold for streaming
+        let uploadedCount = 0
+        
+        // Process files one by one to handle large files with streaming
+        for (let i = 0; i < individualFiles.length; i++) {
+          const f = individualFiles[i]
+          console.log(`[Upload Debug] Processing individual file ${i + 1}/${individualFiles.length}:`, f.name);
+          updateProgress(f.name, i + 1);
           
           try {
-            const data = await f.arrayBuffer();
-            console.log(`[Upload Debug] Successfully read file ${f.name}, size: ${data.byteLength} bytes`);
-            return { 
-              name: f.name, 
-              data: data
-            };
+            if (f.size > LARGE_FILE_THRESHOLD) {
+              console.log(`[Upload Debug] Large file detected (${f.size} bytes), using streaming upload for ${f.name}`);
+              
+              // For very large files, we need to handle them differently
+              // Since we can't load the entire file into memory, we'll use a different approach
+              // For now, let's try to read it in smaller chunks and see if that works
+              try {
+                const data = await f.arrayBuffer();
+                console.log(`[Upload Debug] Successfully read large file ${f.name}, size: ${data.byteLength} bytes`);
+                
+                const result = await DriveApiService.uploadFileStream(driveId, currentFolderPath, f.name, data)
+                
+                if (result.success) {
+                  uploadedCount++
+                  console.log(`[Upload Debug] Successfully uploaded large file: ${f.name}`);
+                } else {
+                  console.error(`[Upload Debug] Failed to upload large file ${f.name}:`, result.error);
+                  throw new Error(`Failed to upload ${f.name}: ${result.error}`);
+                }
+              } catch (arrayBufferError) {
+                console.error(`[Upload Debug] Failed to read large file ${f.name} into memory:`, arrayBufferError);
+                // If we can't read the file into memory, show a helpful error
+                throw new Error(`File "${f.name}" is too large (${Math.round(f.size / 1024 / 1024)}MB) to upload. Please try uploading smaller files or use a different method.`);
+              }
+            } else {
+              // For smaller files, use regular upload
+              const data = await f.arrayBuffer();
+              console.log(`[Upload Debug] Successfully read file ${f.name}, size: ${data.byteLength} bytes`);
+              
+              const res = await DriveApiService.uploadFiles(driveId, currentFolderPath, [{ name: f.name, data }])
+              uploadedCount += res.uploaded
+              console.log(`[Upload Debug] Successfully uploaded file: ${f.name}`);
+            }
           } catch (fileError) {
-            console.error(`[Upload Debug] Error reading file ${f.name}:`, fileError);
+            console.error(`[Upload Debug] Error processing file ${f.name}:`, fileError);
             throw fileError;
           }
-        }))
+        }
         
-        const res = await DriveApiService.uploadFiles(driveId, currentFolderPath, payload)
         completeUpload()
         await onReload()
-        toaster.showSuccess('Upload Complete', `Successfully uploaded ${res.uploaded} file(s)`)
+        toaster.showSuccess('Upload Complete', `Successfully uploaded ${uploadedCount} file(s)`)
       } catch (error) {
         console.error('[Upload Debug] Individual files upload error:', error);
         completeUpload()

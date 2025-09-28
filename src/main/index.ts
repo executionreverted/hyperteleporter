@@ -2,7 +2,7 @@ import { app, shell, BrowserWindow, ipcMain, screen } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 const icon = join(__dirname, '../../build/icon.png')
-import { initializeAllDrives, closeAllDrives, createDrive, listActiveDrives, listDrive, createFolder, uploadFiles, uploadFolder, getFileBuffer, deleteFile, getDriveStorageInfo, joinDrive, stopAllDriveWatchers, getFolderStats, getFileStats, downloadFolderToDownloads, downloadFileToDownloads, checkDriveSyncStatus, getDriveSyncStatus, clearDriveContent, getActiveDrive, downloadFile } from './services/hyperdriveManager'
+import { initializeAllDrives, closeAllDrives, createDrive, listActiveDrives, listDrive, createFolder, uploadFiles, uploadFileStream, uploadFolder, getFileBuffer, deleteFile, getDriveStorageInfo, joinDrive, stopAllDriveWatchers, getFolderStats, getFileStats, downloadFolderToDownloads, downloadFileToDownloads, checkDriveSyncStatus, getDriveSyncStatus, clearDriveContent, getActiveDrive, downloadFile } from './services/hyperdriveManager'
 import { addDownload, readDownloads, removeDownload } from './services/downloads'
 import { readUserProfile, writeUserProfile } from './services/userProfile'
 import { removeDrive, getDriveRecordById } from './services/driveRegistry'
@@ -208,6 +208,18 @@ app.whenReady().then(() => {
     return res
   })
 
+  ipcMain.handle('drives:uploadFileStream', async (_evt, { driveId, folderPath, fileName, fileData }: { driveId: string, folderPath: string, fileName: string, fileData: Uint8Array }) => {
+    console.log(`[ipc] drives:uploadFileStream: ${fileName} (${fileData.length} bytes)`)
+    try {
+      // Pass Uint8Array directly to the chunked upload function
+      const result = await uploadFileStream(driveId, folderPath, fileName, fileData)
+      return result
+    } catch (error) {
+      console.error(`[ipc] drives:uploadFileStream failed:`, error)
+      return { success: false, error: String(error) }
+    }
+  })
+
   ipcMain.handle('drives:uploadFolder', async (_evt, { driveId, folderPath, files }: { driveId: string, folderPath: string, files: Array<{ name: string; data: any; relativePath: string }> }) => {
     console.log('[ipc] drives:uploadFolder', {
       driveId,
@@ -235,6 +247,23 @@ app.whenReady().then(() => {
 
   ipcMain.handle('drives:getFile', async (_evt, { driveId, path }: { driveId: string, path: string }) => {
     console.log(`[ipc] drives:getFile request: driveId=${driveId}, path=${path}`)
+    
+    // Check if this is a chunked file first
+    const entries = await listDrive(driveId, '/', true)
+    const pseudoFile = entries.find(entry => entry.key === path)
+    
+    if (pseudoFile?.value?.metadata) {
+      try {
+        const metadata = JSON.parse(pseudoFile.value.metadata)
+        if (metadata.is_chunked) {
+          console.log(`[ipc] drives:getFile ${path}: file is chunked, returning null to disable preview`)
+          return null // Return null for chunked files to disable preview
+        }
+      } catch (e) {
+        // Not a pseudo-file, continue with normal processing
+      }
+    }
+    
     const buf = await getFileBuffer(driveId, path)
     if (!buf) {
       console.log(`[ipc] drives:getFile ${path}: file not found or null`)

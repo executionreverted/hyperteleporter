@@ -14,6 +14,10 @@ const api = {
       const payload = files.map(f => ({ name: f.name, data: new Uint8Array(f.data) }))
       return ipcRenderer.invoke('drives:uploadFiles', { driveId, folderPath, files: payload })
     },
+    uploadFileStream: async (driveId: string, folderPath: string, fileName: string, fileData: ArrayBuffer) => {
+      // Convert ArrayBuffer to Uint8Array for streaming upload
+      return ipcRenderer.invoke('drives:uploadFileStream', { driveId, folderPath, fileName, fileData: new Uint8Array(fileData) })
+    },
     uploadFolder: async (driveId: string, folderPath: string, files: Array<{ name: string; data: ArrayBuffer; relativePath: string }>) => {
       // Convert ArrayBuffer to Uint8Array (safer across IPC)
       const payload = files.map(f => ({ name: f.name, data: new Uint8Array(f.data), relativePath: f.relativePath }))

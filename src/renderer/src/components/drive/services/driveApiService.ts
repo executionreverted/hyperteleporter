@@ -78,6 +78,36 @@ export class DriveApiService {
   }
 
   /**
+   * Uploads a single large file using streaming
+   */
+  static async uploadFileStream(
+    driveId: string, 
+    folderPath: string, 
+    fileName: string,
+    fileData: ArrayBuffer
+  ): Promise<{ success: boolean; error?: string }> {
+    const api = getApi()
+    if (api?.drives?.uploadFileStream) {
+      return api.drives.uploadFileStream(driveId, folderPath, fileName, fileData)
+    }
+    
+    // Fallback to direct IPC
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const electron = (window as any)?.electron
+    if (electron?.ipcRenderer?.invoke) {
+      return electron.ipcRenderer.invoke('drives:uploadFileStream', {
+        driveId,
+        folderPath,
+        fileName,
+        fileData
+      })
+    }
+    
+    console.warn('[DriveApiService] uploadFileStream not available (no preload + no ipc)')
+    return { success: false, error: 'Upload service not available' }
+  }
+
+  /**
    * Uploads a folder with hierarchy
    */
   static async uploadFolder(
