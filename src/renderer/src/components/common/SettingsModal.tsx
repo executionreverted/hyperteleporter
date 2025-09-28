@@ -98,7 +98,7 @@ export function SettingsModal({ isOpen, onClose, onClearContent }: SettingsModal
         {
           id: 'autoSync',
           label: 'Auto Sync',
-          description: 'Automatically sync files when changes are detected',
+          description: 'Automatically sync files when changes are detected (Coming Soon)',
           type: 'toggle',
           value: settings.autoSync,
           onChange: (value) => handleSettingChange('autoSync', value)
@@ -106,7 +106,7 @@ export function SettingsModal({ isOpen, onClose, onClearContent }: SettingsModal
         {
           id: 'notifications',
           label: 'Notifications',
-          description: 'Show notifications for downloads and uploads',
+          description: 'Show notifications for downloads and uploads (Coming Soon)',
           type: 'toggle',
           value: settings.notifications,
           onChange: (value) => handleSettingChange('notifications', value)
@@ -114,7 +114,7 @@ export function SettingsModal({ isOpen, onClose, onClearContent }: SettingsModal
         {
           id: 'theme',
           label: 'Theme',
-          description: 'Choose your preferred theme',
+          description: 'Choose your preferred theme (Coming Soon)',
           type: 'select',
           value: settings.theme,
           options: [
@@ -127,7 +127,7 @@ export function SettingsModal({ isOpen, onClose, onClearContent }: SettingsModal
         {
           id: 'language',
           label: 'Language',
-          description: 'Select your preferred language',
+          description: 'Select your preferred language (Coming Soon)',
           type: 'select',
           value: settings.language,
           options: [
@@ -148,7 +148,7 @@ export function SettingsModal({ isOpen, onClose, onClearContent }: SettingsModal
         {
           id: 'downloadPath',
           label: 'Download Path',
-          description: 'Default folder for downloaded files',
+          description: 'Default folder for downloaded files (Coming Soon)',
           type: 'input',
           value: settings.downloadPath,
           onChange: (value) => handleSettingChange('downloadPath', value)
@@ -156,7 +156,7 @@ export function SettingsModal({ isOpen, onClose, onClearContent }: SettingsModal
         {
           id: 'concurrentDownloads',
           label: 'Concurrent Downloads',
-          description: 'Number of simultaneous downloads',
+          description: 'Number of simultaneous downloads (Coming Soon)',
           type: 'select',
           value: settings.concurrentDownloads,
           options: [
@@ -170,7 +170,7 @@ export function SettingsModal({ isOpen, onClose, onClearContent }: SettingsModal
         {
           id: 'autoOpenFolder',
           label: 'Auto Open Folder',
-          description: 'Automatically open download folder when complete',
+          description: 'Automatically open download folder when complete (Coming Soon)',
           type: 'toggle',
           value: settings.autoOpenFolder,
           onChange: (value) => handleSettingChange('autoOpenFolder', value)
@@ -185,7 +185,7 @@ export function SettingsModal({ isOpen, onClose, onClearContent }: SettingsModal
         {
           id: 'autoCompress',
           label: 'Auto Compress',
-          description: 'Automatically compress large files before upload',
+          description: 'Automatically compress large files before upload (Coming Soon)',
           type: 'toggle',
           value: settings.autoCompress,
           onChange: (value) => handleSettingChange('autoCompress', value)
@@ -193,7 +193,7 @@ export function SettingsModal({ isOpen, onClose, onClearContent }: SettingsModal
         {
           id: 'maxFileSize',
           label: 'Max File Size',
-          description: 'Maximum file size for uploads',
+          description: 'Maximum file size for uploads (Coming Soon)',
           type: 'select',
           value: settings.maxFileSize,
           options: [
@@ -215,7 +215,7 @@ export function SettingsModal({ isOpen, onClose, onClearContent }: SettingsModal
         {
           id: 'encryptFiles',
           label: 'Encrypt Files',
-          description: 'Encrypt files before uploading to drive',
+          description: 'Encrypt files before uploading to drive (Coming Soon)',
           type: 'toggle',
           value: settings.encryptFiles,
           onChange: (value) => handleSettingChange('encryptFiles', value)
@@ -223,7 +223,7 @@ export function SettingsModal({ isOpen, onClose, onClearContent }: SettingsModal
         {
           id: 'requirePassword',
           label: 'Require Password',
-          description: 'Require password for sensitive operations',
+          description: 'Require password for sensitive operations (Coming Soon)',
           type: 'toggle',
           value: settings.requirePassword,
           onChange: (value) => handleSettingChange('requirePassword', value)
@@ -238,7 +238,7 @@ export function SettingsModal({ isOpen, onClose, onClearContent }: SettingsModal
         {
           id: 'debugMode',
           label: 'Debug Mode',
-          description: 'Enable debug logging and additional information',
+          description: 'Enable debug logging and additional information (Coming Soon)',
           type: 'toggle',
           value: settings.debugMode,
           onChange: (value) => handleSettingChange('debugMode', value)
@@ -246,7 +246,7 @@ export function SettingsModal({ isOpen, onClose, onClearContent }: SettingsModal
         {
           id: 'logLevel',
           label: 'Log Level',
-          description: 'Set the logging verbosity level',
+          description: 'Set the logging verbosity level (Coming Soon)',
           type: 'select',
           value: settings.logLevel,
           options: [
@@ -260,7 +260,7 @@ export function SettingsModal({ isOpen, onClose, onClearContent }: SettingsModal
         {
           id: 'cacheSize',
           label: 'Cache Size',
-          description: 'Maximum cache size for temporary files',
+          description: 'Maximum cache size for temporary files (Coming Soon)',
           type: 'select',
           value: settings.cacheSize,
           options: [
@@ -286,7 +286,8 @@ export function SettingsModal({ isOpen, onClose, onClearContent }: SettingsModal
             </div>
             <button
               onClick={() => setting.onChange?.(!setting.value)}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+              disabled
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors opacity-50 cursor-not-allowed ${
                 setting.value ? 'bg-blue-600' : 'bg-neutral-600'
               }`}
             >
@@ -309,7 +310,8 @@ export function SettingsModal({ isOpen, onClose, onClearContent }: SettingsModal
             <select
               value={setting.value}
               onChange={(e) => setting.onChange?.(e.target.value)}
-              className="w-full px-3 py-2 bg-neutral-700 border border-neutral-600 rounded-md text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              disabled
+              className="w-full px-3 py-2 bg-neutral-700 border border-neutral-600 rounded-md text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent opacity-50 cursor-not-allowed"
             >
               {setting.options?.map((option) => (
                 <option key={option.value} value={option.value}>
@@ -331,7 +333,8 @@ export function SettingsModal({ isOpen, onClose, onClearContent }: SettingsModal
               type="text"
               value={setting.value}
               onChange={(e) => setting.onChange?.(e.target.value)}
-              className="w-full px-3 py-2 bg-neutral-700 border border-neutral-600 rounded-md text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              disabled
+              className="w-full px-3 py-2 bg-neutral-700 border border-neutral-600 rounded-md text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent opacity-50 cursor-not-allowed"
             />
           </div>
         )
@@ -346,6 +349,7 @@ export function SettingsModal({ isOpen, onClose, onClearContent }: SettingsModal
             <MagicButton
               onClick={setting.onClick}
               variant={setting.danger ? 'red' : 'blue'}
+              disabled
             >
               {setting.label}
             </MagicButton>
@@ -439,16 +443,7 @@ export function SettingsModal({ isOpen, onClose, onClearContent }: SettingsModal
             onClick={onClose}
             variant="default"
           >
-            Cancel
-          </MagicButton>
-          <MagicButton
-            onClick={() => {
-              // Save settings logic would go here
-              onClose()
-            }}
-            variant="blue"
-          >
-            Save Settings
+            Close
           </MagicButton>
         </div>
       </div>
