@@ -18,22 +18,6 @@ nsis:
   shortcutName: ${productName}
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always
-  runAfterFinish: true
-  allowToChangeInstallationDirectory: true
-  oneClick: false
-  perMachine: false
-  allowElevation: true
-  installerIcon: build/icon.ico
-  uninstallerIcon: build/icon.ico
-  installerHeaderIcon: build/icon.ico
-  createStartMenuShortcut: true
-  menuCategory: false
-  shortcutName: ${productName}
-  include: build/installer.nsh
-squirrelWindows:
-  iconUrl: https://github.com/executionreverted/hyperteleporter/raw/main/build/icon.ico
-  loadingGif: build/install-spinner.gif
-  remoteReleases: false
 mac:
   entitlementsInherit: build/entitlements.mac.plist
   entitlementsLoginHelper: build/entitlements.mac.plist
