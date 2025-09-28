@@ -254,23 +254,17 @@ app.whenReady().then(() => {
   })
 
   ipcMain.handle('drives:getStorageInfo', async (_evt, { driveId }: { driveId: string }) => {
-    console.log(`[ipc] drives:getStorageInfo request: driveId=${driveId}`)
     const info = await getDriveStorageInfo(driveId)
-    console.log(`[ipc] drives:getStorageInfo ${driveId}: blobsLength=${info.blobsLength}, version=${info.version}`)
     return info
   })
 
   ipcMain.handle('drives:getFolderStats', async (_evt, { driveId, folder }: { driveId: string, folder: string }) => {
-    console.log(`[ipc] drives:getFolderStats request: driveId=${driveId}, folder=${folder}`)
     const stats = await getFolderStats(driveId, folder)
-    console.log(`[ipc] drives:getFolderStats ${driveId} ${folder}:`, stats)
     return stats
   })
 
   ipcMain.handle('drives:getFileStats', async (_evt, { driveId, path }: { driveId: string, path: string }) => {
-    console.log(`[ipc] drives:getFileStats request: driveId=${driveId}, path=${path}`)
     const stats = await getFileStats(driveId, path)
-    console.log(`[ipc] drives:getFileStats ${driveId} ${path}:`, stats)
     return stats
   })
 

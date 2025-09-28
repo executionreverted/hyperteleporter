@@ -446,7 +446,7 @@ export const DrivePage: React.FC = () => {
             
             {/* Bottom Connecting Indicator */}
             {state.isInitialSync && (
-              <div className="flex items-center justify-center gap-2 px-4 py-3 bg-amber-500/10 border-t border-amber-500/20">
+              <div className="mt-auto flex items-center justify-center gap-2 px-4 py-3 bg-amber-500/10 border-t border-amber-500/20">
                 <div className="w-3 h-3 border-2 border-amber-400 border-t-transparent rounded-full animate-spin"></div>
                 <span className="text-amber-400 text-sm font-medium">Connecting to drive...</span>
                 <span className="text-neutral-500 text-xs">Browsing previously synced data</span>

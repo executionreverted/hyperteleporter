@@ -177,7 +177,7 @@ export function listActiveDrives(): InitializedDrive[] {
   return Array.from(activeDrives.values())
 }
 
-export async function checkDriveSyncStatus(driveId: string): Promise<{ isSyncing: boolean; version: number; peers: number; isFindingPeers: boolean }> {
+export async function checkDriveSyncStatus(driveId: string): Promise<{ isSyncing: boolean; version: number; peers: number; isFindingPeers: boolean; isDownloading: boolean }> {
   const drive = activeDrives.get(driveId)
   if (!drive) throw new Error('Drive not found')
   
@@ -197,8 +197,7 @@ export async function checkDriveSyncStatus(driveId: string): Promise<{ isSyncing
         activeDrives.set(driveId, currentDrive)
       }
       
-      // console.log(`[hyperdrive] Owned drive ${driveId}: syncing=false, version=${currentVersion}, peers=${peers}`)
-      return { isSyncing: false, version: currentVersion, peers, isFindingPeers: false }
+      return { isSyncing: false, version: currentVersion, peers, isFindingPeers: false, isDownloading: false }
     }
     
     // For joined drives, check sync status
@@ -206,9 +205,40 @@ export async function checkDriveSyncStatus(driveId: string): Promise<{ isSyncing
     const currentVersion = hyperdrive.version
     const peers = hyperdrive.core.peers?.length || 0
     
-    // A drive is considered "connected" if it has peers
-    // We only show "syncing" if we have no peers at all
-    const isSyncing = peers === 0
+    // Check if drive is actively downloading blobs by sampling a few files
+    let isDownloading = false
+    try {
+      // Sample a few files from the root to check if they're downloaded
+      const sampleFiles: string[] = []
+      let fileCount = 0
+      const maxSample = 5 // Sample up to 5 files
+      
+      for await (const entry of hyperdrive.list('/', { recursive: true })) {
+        if (entry?.value?.blob && fileCount < maxSample) {
+          sampleFiles.push(entry.key)
+          fileCount++
+        }
+      }
+      
+      // Check if any of the sample files are not yet downloaded locally
+      for (const filePath of sampleFiles) {
+        const hasFile = await hyperdrive.has(filePath)
+        if (!hasFile) {
+          isDownloading = true
+          break
+        }
+      }
+    } catch (err) {
+      console.warn(`[hyperdrive] Error checking blob download status for ${driveId}:`, err)
+      // If we can't check, assume not downloading
+      isDownloading = false
+    }
+    
+    // A drive is considered "syncing" if:
+    // 1. It has no peers (can't connect), OR
+    // 2. It's finding peers, OR  
+    // 3. It's actively downloading blobs
+    const isSyncing = peers === 0 || isFindingPeers || isDownloading
     
     // Update the sync status in our map
     if (activeDrives.has(driveId)) {
@@ -217,18 +247,47 @@ export async function checkDriveSyncStatus(driveId: string): Promise<{ isSyncing
       activeDrives.set(driveId, currentDrive)
     }
     
-    console.log(`[hyperdrive] Joined drive ${driveId}: syncing=${isSyncing}, version=${currentVersion}, peers=${peers}, findingPeers=${isFindingPeers}`)
+    console.log(`[hyperdrive] Joined drive ${driveId}: syncing=${isSyncing}, version=${currentVersion}, peers=${peers}, findingPeers=${isFindingPeers}, downloading=${isDownloading}`)
     
-    return { isSyncing, version: currentVersion, peers, isFindingPeers }
+    return { isSyncing, version: currentVersion, peers, isFindingPeers, isDownloading }
   } catch (err) {
     console.warn(`[hyperdrive] Failed to check sync status for ${driveId}:`, err)
-    return { isSyncing: false, version: 0, peers: 0, isFindingPeers: false }
+    return { isSyncing: false, version: 0, peers: 0, isFindingPeers: false, isDownloading: false }
   }
 }
 
 export function getDriveSyncStatus(driveId: string): boolean {
   const drive = activeDrives.get(driveId)
   return drive?.isSyncing || false
+}
+
+// Helper function to trigger download of all blobs for a drive
+export async function triggerDriveDownload(driveId: string): Promise<void> {
+  const drive = activeDrives.get(driveId)?.hyperdrive
+  if (!drive) throw new Error('Drive not found')
+  
+  try {
+    console.log(`[hyperdrive] Triggering download for drive ${driveId}`)
+    // Download all blobs for the root directory
+    await drive.download('/', { recursive: true, wait: false })
+    console.log(`[hyperdrive] Download started for drive ${driveId}`)
+    // Don't wait for completion - let it download in background
+  } catch (err) {
+    console.warn(`[hyperdrive] Failed to trigger download for drive ${driveId}:`, err)
+  }
+}
+
+// Helper function to check if a specific file is downloaded locally
+export async function isFileDownloaded(driveId: string, filePath: string): Promise<boolean> {
+  const drive = activeDrives.get(driveId)?.hyperdrive
+  if (!drive) throw new Error('Drive not found')
+  
+  try {
+    return await drive.has(filePath)
+  } catch (err) {
+    console.warn(`[hyperdrive] Failed to check if file is downloaded ${filePath}:`, err)
+    return false
+  }
 }
 
 export async function closeAllDrives(): Promise<void> {
@@ -278,6 +337,34 @@ export async function createFolder(driveId: string, folderPath: string): Promise
   broadcastDriveChanged(driveId)
 }
 
+// Helper function to force garbage collection asynchronously
+function forceGarbageCollection(): void {
+  if (global.gc) {
+    // Use setImmediate to make GC non-blocking
+    setImmediate(() => {
+      global.gc()
+      console.log(`[hyperdrive] Forced garbage collection`)
+    })
+  } else {
+    console.log(`[hyperdrive] Garbage collection not available (run with --expose-gc)`)
+  }
+}
+
+// Helper function to get memory usage info
+function getMemoryUsage(): { used: number; total: number; percentage: number } {
+  const usage = process.memoryUsage()
+  const used = usage.heapUsed
+  const total = usage.heapTotal
+  const percentage = Math.round((used / total) * 100)
+  return { used, total, percentage }
+}
+
+// Helper function to log memory usage
+function logMemoryUsage(context: string): void {
+  const mem = getMemoryUsage()
+  console.log(`[hyperdrive] Memory usage ${context}: ${Math.round(mem.used / 1024 / 1024)}MB / ${Math.round(mem.total / 1024 / 1024)}MB (${mem.percentage}%)`)
+}
+
 export async function uploadFiles(
   driveId: string,
   folderPath: string,
@@ -288,15 +375,45 @@ export async function uploadFiles(
   const base = (folderPath && folderPath !== '/') ? (folderPath.startsWith('/') ? folderPath : `/${folderPath}`) : '/'
   let uploaded = 0
   const now = new Date().toISOString()
-  for (const f of files) {
+  
+  logMemoryUsage('before upload start')
+  console.log(`[hyperdrive] Starting sequential upload of ${files.length} files`)
+  
+  // Process files one by one to avoid memory issues
+  for (let i = 0; i < files.length; i++) {
+    const f = files[i]
     const normalized = base === '/' ? `/${f.name}` : `${base.replace(/\/$/, '')}/${f.name}`
-    console.log(`[hyperdrive] upload put -> ${normalized} (${f.data?.byteLength ?? f.data?.length ?? 0} bytes)`)
+    const fileSize = f.data?.byteLength ?? f.data?.length ?? 0
+    
+    console.log(`[hyperdrive] Uploading file ${i + 1}/${files.length}: ${normalized} (${fileSize} bytes)`)
+    logMemoryUsage(`before file ${i + 1} upload`)
+    
     const metadata = JSON.stringify({ createdAt: now, modifiedAt: now })
-    console.log(`[hyperdrive] upload metadata:`, metadata)
-    await drive.put(normalized, f.data, { metadata })
-    uploaded += 1
+    
+    try {
+      await drive.put(normalized, f.data, { metadata })
+      uploaded += 1
+      console.log(`[hyperdrive] Successfully uploaded: ${normalized}`)
+      
+      // Only force GC for large files or every 5 files to reduce freezing
+      const LARGE_FILE_THRESHOLD = 5 * 1024 * 1024 // 5MB
+      if (fileSize >= LARGE_FILE_THRESHOLD || (i + 1) % 5 === 0) {
+        forceGarbageCollection()
+      }
+      logMemoryUsage(`after file ${i + 1} upload`)
+      
+    } catch (err) {
+      console.error(`[hyperdrive] Failed to upload file ${normalized}:`, err)
+      // Continue with other files even if one fails
+    }
   }
-  console.log(`[hyperdrive] upload complete count=${uploaded}`)
+  
+  logMemoryUsage('after upload complete')
+  console.log(`[hyperdrive] Upload complete: ${uploaded}/${files.length} files uploaded`)
+  
+  // Final garbage collection after all uploads
+  forceGarbageCollection()
+  
   try {
     // Hint replication layer we expect updates soon
     // @ts-ignore - update exists at runtime
@@ -315,6 +432,9 @@ export async function uploadFolder(
   if (!drive) throw new Error('Drive not found')
   const base = (folderPath && folderPath !== '/') ? (folderPath.startsWith('/') ? folderPath : `/${folderPath}`) : '/'
   let uploaded = 0
+  
+  logMemoryUsage('before folder upload start')
+  console.log(`[hyperdrive] Starting sequential folder upload of ${files.length} files`)
   
   // Create the main folder first
   const mainFolderPath = base.replace(/\/$/, '') + '/.keep'
@@ -341,13 +461,40 @@ export async function uploadFolder(
     await drive.put(dirMarkerPath, Buffer.alloc(0), { metadata })
   }
   
-  for (const f of files) {
-    // Use the relativePath for proper folder structure
+  // Process files one by one to avoid memory issues
+  for (let i = 0; i < files.length; i++) {
+    const f = files[i]
     const normalized = base === '/' ? `/${f.relativePath}` : `${base.replace(/\/$/, '')}/${f.relativePath}`
+    const fileSize = f.data?.byteLength ?? f.data?.length ?? 0
+    
+    console.log(`[hyperdrive] Uploading folder file ${i + 1}/${files.length}: ${normalized} (${fileSize} bytes)`)
+    logMemoryUsage(`before folder file ${i + 1} upload`)
+    
     const fileMetadata = JSON.stringify({ createdAt: now, modifiedAt: now })
-    await drive.put(normalized, f.data, { metadata: fileMetadata })
-    uploaded += 1
+    
+    try {
+      await drive.put(normalized, f.data, { metadata: fileMetadata })
+      uploaded += 1
+      console.log(`[hyperdrive] Successfully uploaded folder file: ${normalized}`)
+      
+      // Only force GC for large files or every 5 files to reduce freezing
+      const LARGE_FILE_THRESHOLD = 5 * 1024 * 1024 // 5MB
+      if (fileSize >= LARGE_FILE_THRESHOLD || (i + 1) % 5 === 0) {
+        forceGarbageCollection()
+      }
+      logMemoryUsage(`after folder file ${i + 1} upload`)
+      
+    } catch (err) {
+      console.error(`[hyperdrive] Failed to upload folder file ${normalized}:`, err)
+      // Continue with other files even if one fails
+    }
   }
+  
+  logMemoryUsage('after folder upload complete')
+  console.log(`[hyperdrive] Folder upload complete: ${uploaded}/${files.length} files uploaded`)
+  
+  // Final garbage collection after all uploads
+  forceGarbageCollection()
   
   try {
     // Hint replication layer we expect updates soon
@@ -628,9 +775,7 @@ export async function getFileStats(driveId: string, path: string): Promise<{ cre
   
   try {
     // Get file entry using hyperdrive's entry method
-    console.log(`[hyperdrive] getFileStats: ${driveId} ${normalized}`)
     const entry = await drive.entry(normalized)
-    console.log(`[hyperdrive] getFileStats entry result:`, entry)
     
     if (!entry) {
       console.log(`[hyperdrive] getFileStats: No entry found for ${normalized}`)
@@ -647,14 +792,12 @@ export async function getFileStats(driveId: string, path: string): Promise<{ cre
     let createdAt: string | undefined
     let modifiedAt: string | undefined
     
-    console.log(`[hyperdrive] getFileStats metadata:`, entry.value?.metadata)
     
     if (entry.value?.metadata) {
       try {
         const metadata = typeof entry.value.metadata === 'string' 
           ? JSON.parse(entry.value.metadata) 
           : entry.value.metadata
-        console.log(`[hyperdrive] getFileStats parsed metadata:`, metadata)
         createdAt = metadata?.createdAt
         modifiedAt = metadata?.modifiedAt
       } catch (err) {
