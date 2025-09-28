@@ -37,6 +37,7 @@ export interface TreeNode {
   children?: TreeNode[];
   size?: string;
   modified?: string;
+  createdAt?: string;
   icon?: React.ReactNode;
   isSelected?: boolean;
 }
@@ -227,12 +228,23 @@ const TreeNodeComponent = ({ node, level, onNodeSelect, onNodeToggle, selectedNo
       icon: <IconInfoCircle size={16} />,
       onClick: () => {
         // Show folder/file info preview
-        const targetEl = e.currentTarget as HTMLDivElement;
-        const rect = targetEl.getBoundingClientRect();
+        // Create a fake rect for the preview modal (centered on screen)
+        const fakeRect = {
+          left: window.innerWidth / 2 - 100,
+          top: window.innerHeight / 2 - 100,
+          width: 200,
+          height: 200,
+          right: window.innerWidth / 2 + 100,
+          bottom: window.innerHeight / 2 + 100,
+          x: window.innerWidth / 2 - 100,
+          y: window.innerHeight / 2 - 100,
+          toJSON: () => fakeRect,
+        } as DOMRect;
+        
         if (onPreviewAnchor) {
-          onPreviewAnchor(rect, node);
+          onPreviewAnchor(fakeRect, node);
         } else {
-          const detail = { rect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height }, node };
+          const detail = { rect: fakeRect, node };
           window.dispatchEvent(new CustomEvent('open-preview', { detail }));
         }
       },

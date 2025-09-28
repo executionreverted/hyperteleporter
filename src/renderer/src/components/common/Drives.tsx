@@ -8,7 +8,7 @@ import { StaticDriveGrid } from "../../../../components/ui/static-drive-grid";
 import { Drive } from "../../contexts/DrivesContext";
 import Prism from "../../../../components/ui/prism";
 import { DriveSearchInput } from "../../../../components/ui/drive-search-input";
-import { memo, useMemo, useState, useRef } from "react";
+import { memo, useMemo, useState, useRef, useCallback } from "react";
 import GradualBlur from "../../../../components/ui/GradualBlur";
 import { ShareModal } from "./ShareModal";
 import { useGlobalSearch } from "../../hooks/useGlobalSearch";
@@ -37,7 +37,6 @@ const DrivesList = memo(function DrivesList() {
   const navigate = useNavigate();
   const { confirm, ConfirmDialog } = useConfirm();
   const [searchQuery, setSearchQuery] = useState("");
-  const [filteredDrives, setFilteredDrives] = useState<Drive[]>(drives);
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [selectedDrive, setSelectedDrive] = useState<Drive | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -70,34 +69,23 @@ const DrivesList = memo(function DrivesList() {
   }, [confirm, removeDrive]);
 
   // Search handlers
-  const handleSearch = useMemo(() => (query: string) => {
+  const handleSearch = useCallback((query: string) => {
     setSearchQuery(query);
-    if (query.trim()) {
-      const filtered = drives.filter(drive =>
-        drive.title.toLowerCase().includes(query.toLowerCase()) ||
-        drive.description?.toLowerCase().includes(query.toLowerCase())
-      );
-      setFilteredDrives(filtered);
-    } else {
-      setFilteredDrives(drives);
-    }
-  }, [drives]);
+  }, []);
 
-  const handleSelectDrive = useMemo(() => (drive: Drive) => {
+  const handleSelectDrive = useCallback((drive: Drive) => {
     navigate(drive.link);
   }, [navigate]);
 
-  // Update filtered drives when drives change
-  useMemo(() => {
+  // Update filtered drives when drives or search query change
+  const filteredDrives = useMemo(() => {
     if (searchQuery.trim()) {
-      const filtered = drives.filter(drive =>
+      return drives.filter(drive =>
         drive.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
         drive.description?.toLowerCase().includes(searchQuery.toLowerCase())
       );
-      setFilteredDrives(filtered);
-    } else {
-      setFilteredDrives(drives);
     }
+    return drives;
   }, [drives, searchQuery]);
 
   if (drives.length === 0 && !isLoading) {

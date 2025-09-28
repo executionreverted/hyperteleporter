@@ -88,7 +88,7 @@ export function useDriveData({
         const entries = await DriveApiService.listFolder(driveId, '/', false)
         if (!mounted) return
         
-        const rootChildren = buildNodesForFolder('/', entries)
+        const rootChildren = await buildNodesForFolder('/', entries, driveId)
         onSetFileSystemRef.current(rootChildren)
         onUpdateStateRef.current({ 
           currentView: rootChildren,
@@ -150,7 +150,7 @@ export function useDriveData({
     
     try {
       const entries = await DriveApiService.listFolder(driveId, treeRoot, false)
-      const children = buildNodesForFolder(treeRoot, entries)
+      const children = await buildNodesForFolder(treeRoot, entries, driveId)
       onSetFileSystemRef.current(children)
       
       // Reload complete file system for search

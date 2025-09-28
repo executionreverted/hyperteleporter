@@ -1,12 +1,56 @@
 import { TreeNode, FileEntry } from '../types'
 
+// Helper function to calculate file size from blob data
+function calculateFileSize(entryValue: any): string {
+  if (!entryValue) return '0 B'
+  
+  // Try to get size from blob metadata first
+  const reported = Number(entryValue?.blob?.byteLength || entryValue?.blob?.length || 0)
+  if (reported > 0) {
+    return formatBytes(reported)
+  }
+  
+  // If no metadata, return unknown size
+  return 'Unknown'
+}
+
+// Helper function to extract creation time from .keep files
+async function getFolderCreationTime(driveId: string, folderPath: string): Promise<string | undefined> {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const api: any = (window as any)?.api
+    if (!api?.drives?.getFileStats) return undefined
+    
+    // Get creation time from the .keep file
+    const keepFilePath = folderPath.endsWith('/') ? `${folderPath}.keep` : `${folderPath}/.keep`
+    const stats = await api.drives.getFileStats(driveId, keepFilePath)
+    
+    return stats?.createdAt
+  } catch (err) {
+    console.warn('Failed to get folder creation time:', err)
+    return undefined
+  }
+}
+
+// Helper function to format bytes into human readable format
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return '0 B'
+  
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  
+  return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`
+}
+
 /**
  * Builds tree nodes for a specific folder from file entries
  */
-export function buildNodesForFolder(
+export async function buildNodesForFolder(
   currentFolderPath: string, 
-  entries: FileEntry[]
-): TreeNode[] {
+  entries: FileEntry[],
+  driveId?: string
+): Promise<TreeNode[]> {
   const normalized = currentFolderPath.endsWith('/') ? currentFolderPath : currentFolderPath + '/'
   const folderNames = new Set<string>()
   const files: TreeNode[] = []
@@ -27,19 +71,34 @@ export function buildNodesForFolder(
       if (baseName === '.keep') continue // hide marker
       const isFile = !!e.value?.blob || !!e.value?.linkname
       if (isFile) {
-        files.push({ id: e.key, name: baseName, type: 'file' })
+        // Calculate file size
+        const fileSize = calculateFileSize(e.value)
+        files.push({ 
+          id: e.key, 
+          name: baseName, 
+          type: 'file',
+          size: fileSize
+        })
       } else {
         folderNames.add(baseName)
       }
     }
   }
   
-  const folders: TreeNode[] = Array.from(folderNames).map((name) => ({ 
-    id: normalized + name, 
-    name, 
-    type: 'folder', 
-    children: [] 
-  }))
+  // Build folders with creation times
+  const folders: TreeNode[] = []
+  for (const name of folderNames) {
+    const folderId = normalized + name
+    const createdAt = driveId ? await getFolderCreationTime(driveId, folderId) : undefined
+    
+    folders.push({ 
+      id: folderId, 
+      name, 
+      type: 'folder', 
+      children: [],
+      createdAt
+    })
+  }
   
   // Stable sort: folders first, then files, both A→Z
   folders.sort((a, b) => a.name.localeCompare(b.name))
@@ -84,7 +143,8 @@ export function buildCompleteFileSystemTree(entries: FileEntry[]): TreeNode[] {
       id: key,
       name: segments[segments.length - 1],
       type: isFile ? 'file' : 'folder',
-      children: isFile ? undefined : []
+      children: isFile ? undefined : [],
+      size: isFile ? calculateFileSize(entry.value) : undefined
     }
     
     tree[key] = node

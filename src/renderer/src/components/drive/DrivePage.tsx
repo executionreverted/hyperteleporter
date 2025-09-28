@@ -421,7 +421,7 @@ export const DrivePage: React.FC = () => {
           />
 
           {/* Content Panel - takes remaining space */}
-          <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-600 scrollbar-track-neutral-800 hover:scrollbar-thumb-neutral-500">
+          <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-600 hover:scrollbar-thumb-neutral-500">
             <ContentPanel 
               selectedNode={state.selectedNode} 
               onFileClick={handleFileClick}

@@ -23,6 +23,7 @@ const api = {
     clearContent: async (driveId: string) => ipcRenderer.invoke('drive:clearContent', { driveId }),
     getStorageInfo: async (driveId: string) => ipcRenderer.invoke('drives:getStorageInfo', { driveId }),
     getFolderStats: async (driveId: string, folder: string) => ipcRenderer.invoke('drives:getFolderStats', { driveId, folder }),
+    getFileStats: async (driveId: string, path: string) => ipcRenderer.invoke('drives:getFileStats', { driveId, path }),
     downloadFile: async (driveId: string, filePath: string, fileName: string, driveName: string) => ipcRenderer.invoke('drives:downloadFile', { driveId, filePath, fileName, driveName }),
     downloadFolder: async (driveId: string, folder: string, folderName: string, driveName: string) => ipcRenderer.invoke('drives:downloadFolder', { driveId, folder, folderName, driveName }),
     checkSyncStatus: async (driveId: string) => ipcRenderer.invoke('drives:checkSyncStatus', { driveId }),

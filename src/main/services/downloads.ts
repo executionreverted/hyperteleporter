@@ -66,19 +66,3 @@ export async function removeDownload(id: string): Promise<void> {
   await writeDownloads(filtered)
 }
 
-export async function cleanupOldDownloads(daysOld: number = 15): Promise<void> {
-  const downloads = await readDownloads()
-  const cutoffDate = new Date()
-  cutoffDate.setDate(cutoffDate.getDate() - daysOld)
-  
-  const recentDownloads = downloads.filter(download => {
-    const downloadDate = new Date(download.downloadedAt)
-    return downloadDate > cutoffDate
-  })
-  
-  if (recentDownloads.length !== downloads.length) {
-    await writeDownloads(recentDownloads)
-    const removedCount = downloads.length - recentDownloads.length
-    console.log(`[downloads] Cleaned up ${removedCount} downloads older than ${daysOld} days`)
-  }
-}

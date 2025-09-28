@@ -2,11 +2,9 @@ import { app, shell, BrowserWindow, ipcMain, screen } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 const icon = join(__dirname, '../../build/icon.png')
-import { initializeAllDrives, closeAllDrives, createDrive, listActiveDrives, listDrive, createFolder, uploadFiles, uploadFolder, getFileBuffer, deleteFile, getDriveStorageInfo, joinDrive, stopAllDriveWatchers, getFolderStats, downloadFolderToDownloads, downloadFileToDownloads, checkDriveSyncStatus, getDriveSyncStatus, clearDriveContent } from './services/hyperdriveManager'
+import { initializeAllDrives, closeAllDrives, createDrive, listActiveDrives, listDrive, createFolder, uploadFiles, uploadFolder, getFileBuffer, deleteFile, getDriveStorageInfo, joinDrive, stopAllDriveWatchers, getFolderStats, getFileStats, downloadFolderToDownloads, downloadFileToDownloads, checkDriveSyncStatus, getDriveSyncStatus, clearDriveContent } from './services/hyperdriveManager'
 import { addDownload, readDownloads, removeDownload } from './services/downloads'
-// Swarm management is now handled by hyperdriveManager
 import { readUserProfile, writeUserProfile } from './services/userProfile'
-import { autoUpdater } from 'electron-updater'
 import { 
   isAutolaunchEnabled, 
   enableAutolaunch, 
@@ -266,6 +264,13 @@ app.whenReady().then(() => {
     console.log(`[ipc] drives:getFolderStats request: driveId=${driveId}, folder=${folder}`)
     const stats = await getFolderStats(driveId, folder)
     console.log(`[ipc] drives:getFolderStats ${driveId} ${folder}:`, stats)
+    return stats
+  })
+
+  ipcMain.handle('drives:getFileStats', async (_evt, { driveId, path }: { driveId: string, path: string }) => {
+    console.log(`[ipc] drives:getFileStats request: driveId=${driveId}, path=${path}`)
+    const stats = await getFileStats(driveId, path)
+    console.log(`[ipc] drives:getFileStats ${driveId} ${path}:`, stats)
     return stats
   })
 

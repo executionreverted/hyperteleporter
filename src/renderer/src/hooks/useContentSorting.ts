@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback } from 'react'
 import { TreeNode } from '../../../components/ui/tree-view'
 
-export type SortCriteria = 'name' | 'size' | 'type' | 'modified'
+export type SortCriteria = 'name' | 'size' | 'type' | 'modified' | 'created'
 export type SortDirection = 'asc' | 'desc'
 
 export interface SortConfig {
@@ -23,15 +23,28 @@ export function useContentSorting(initialSort: SortConfig = { criteria: 'name', 
           comparison = a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
           break
         case 'size':
-          // For folders, we'll sort by type first, then by name
-          if (a.type !== b.type) {
-            comparison = a.type === 'folder' ? -1 : 1
-          } else if (a.type === 'file' && b.type === 'file') {
-            // Parse file sizes for comparison
-            const sizeA = parseFileSize(a.size || '0')
-            const sizeB = parseFileSize(b.size || '0')
+          // For size sorting, sort all items by their actual size
+          // If sizes are equal or unavailable, fall back to name sorting
+          const sizeA = parseFileSize(a.size || '0')
+          const sizeB = parseFileSize(b.size || '0')
+          
+          // If both items have no size info, sort by name
+          if (sizeA === 0 && sizeB === 0) {
+            comparison = a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
+          }
+          // If one has size and other doesn't, prioritize the one with size
+          else if (sizeA === 0 && sizeB > 0) {
+            comparison = 1 // No size comes after actual size
+          }
+          else if (sizeA > 0 && sizeB === 0) {
+            comparison = -1 // Actual size comes before no size
+          }
+          // If both have sizes, sort by size
+          else if (sizeA !== sizeB) {
             comparison = sizeA - sizeB
-          } else {
+          }
+          // If sizes are equal, sort by name
+          else {
             comparison = a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
           }
           break
@@ -46,9 +59,21 @@ export function useContentSorting(initialSort: SortConfig = { criteria: 'name', 
           }
           break
         case 'modified':
-          // For now, we'll sort by name since we don't have modified dates
-          // In the future, this could be enhanced with actual file timestamps
+          // Since we don't have modified dates available, sort by name
+          // This maintains consistent behavior until timestamp data is available
           comparison = a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
+          break
+        case 'created':
+          // Sort by creation time
+          const createdA = a.createdAt ? new Date(a.createdAt).getTime() : 0
+          const createdB = b.createdAt ? new Date(b.createdAt).getTime() : 0
+          
+          if (createdA === createdB) {
+            // If creation times are equal, sort by name
+            comparison = a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
+          } else {
+            comparison = createdA - createdB
+          }
           break
         default:
           comparison = a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })

@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useMemo, useState, useCallback, type ReactNode } from 'react';
 
 export interface Drive {
   id: string;
@@ -31,37 +31,43 @@ export function DrivesProvider({ children }: { children: ReactNode }) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const api = useMemo(() => (window as any)?.api ?? null, []);
 
+  // Helper function to map drive data
+  const mapDriveData = useCallback((d: any): Drive => ({
+    id: d.id,
+    title: d.name,
+    description: '',
+    link: `/drive/${d.id}`,
+    createdAt: new Date(d.createdAt),
+    status: 'active',
+    driveKey: d.publicKeyHex,
+    type: d.type ?? 'owned',
+    isWritable: (d.type ?? 'owned') === 'owned'
+  }), []);
+
+  // Load drives function
+  const loadDrives = useCallback(async () => {
+    try {
+      if (api?.drives?.list) {
+        const list = await api.drives.list();
+        const mapped: Drive[] = list.map(mapDriveData);
+        setDrives(mapped);
+        setIsLoading(false);
+      }
+    } catch (err) {
+      console.error('[DrivesContext] Failed to load drives:', err);
+      setIsLoading(false);
+    }
+  }, [api, mapDriveData]);
+
   useEffect(() => {
     let mounted = true;
     
-    async function load() {
-      try {
-        if (api?.drives?.list) {
-          const list = await api.drives.list();
-          if (!mounted) return;
-          
-          const mapped: Drive[] = list.map((d: any) => ({
-            id: d.id,
-            title: d.name,
-            description: '',
-            link: `/drive/${d.id}`,
-            createdAt: new Date(d.createdAt),
-            status: 'active',
-            driveKey: d.publicKeyHex,
-            type: d.type ?? 'owned',
-            isWritable: (d.type ?? 'owned') === 'owned'
-          }));
-          setDrives(mapped);
-          setIsLoading(false);
-        }
-      } catch (err) {
-        console.error('[DrivesContext] Failed to load drives:', err);
-        setIsLoading(false);
-      }
-    }
-    load();
+    loadDrives().then(() => {
+      if (!mounted) return;
+    });
+    
     return () => { mounted = false };
-  }, [api]);
+  }, [loadDrives]);
 
   // Listen for drives initialization completion
   useEffect(() => {
@@ -69,27 +75,7 @@ export function DrivesProvider({ children }: { children: ReactNode }) {
     if (!ipcRenderer) return;
 
     const handleDrivesInitialized = () => {
-      // Force a refresh of drives
-      if (api?.drives?.list) {
-        api.drives.list().then((list: any) => {
-          const mapped: Drive[] = list.map((d: any) => ({
-            id: d.id,
-            title: d.name,
-            description: '',
-            link: `/drive/${d.id}`,
-            createdAt: new Date(d.createdAt),
-            status: 'active',
-            driveKey: d.publicKeyHex,
-            type: d.type ?? 'owned',
-            isWritable: (d.type ?? 'owned') === 'owned'
-          }));
-          setDrives(mapped);
-          setIsLoading(false);
-        }).catch((err: any) => {
-          console.error('[DrivesContext] Failed to refresh drives:', err);
-          setIsLoading(false);
-        });
-      }
+      loadDrives();
     };
 
     ipcRenderer.on('drives:initialized', handleDrivesInitialized);
@@ -98,9 +84,9 @@ export function DrivesProvider({ children }: { children: ReactNode }) {
         ipcRenderer.removeListener('drives:initialized', handleDrivesInitialized);
       } catch {}
     };
-  }, [api]);
+  }, [loadDrives]);
 
-  const addDrive = async (driveData: Omit<Drive, 'id' | 'createdAt'>) => {
+  const addDrive = useCallback(async (driveData: Omit<Drive, 'id' | 'createdAt'>) => {
     try {
       if (api?.drives?.create) {
         const created = await api.drives.create(driveData.title);
@@ -120,10 +106,10 @@ export function DrivesProvider({ children }: { children: ReactNode }) {
     // Fallback local add if API missing
     const fallback: Drive = { ...driveData, id: Date.now().toString(), createdAt: new Date() };
     setDrives(prev => [...prev, fallback]);
-  };
+  }, [api]);
 
   // Join an existing drive by key
-  const joinReadOnlyDrive = async (name: string, publicKeyHex: string) => {
+  const joinReadOnlyDrive = useCallback(async (name: string, publicKeyHex: string) => {
     if (!api?.drives?.join) return
     const created = await api.drives.join(name, publicKeyHex)
     const newDrive: Drive = {
@@ -139,22 +125,31 @@ export function DrivesProvider({ children }: { children: ReactNode }) {
     }
     setDrives(prev => [...prev, newDrive])
     return newDrive
-  }
+  }, [api]);
 
-  const removeDrive = (id: string) => {
+  const removeDrive = useCallback((id: string) => {
     setDrives(prev => prev.filter(drive => drive.id !== id));
-  };
+  }, []);
 
-  const updateDrive = (id: string, updates: Partial<Drive>) => {
+  const updateDrive = useCallback((id: string, updates: Partial<Drive>) => {
     setDrives(prev => 
       prev.map(drive => 
         drive.id === id ? { ...drive, ...updates } : drive
       )
     );
-  };
+  }, []);
+
+  const contextValue = useMemo(() => ({
+    drives,
+    isLoading,
+    addDrive,
+    removeDrive,
+    updateDrive,
+    joinReadOnlyDrive
+  }), [drives, isLoading, addDrive, removeDrive, updateDrive, joinReadOnlyDrive]);
 
   return (
-    <DrivesContext.Provider value={{ drives, isLoading, addDrive, removeDrive, updateDrive, joinReadOnlyDrive }}>
+    <DrivesContext.Provider value={contextValue}>
       {children}
     </DrivesContext.Provider>
   );

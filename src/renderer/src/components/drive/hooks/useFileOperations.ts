@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react'
+import { useCallback, useEffect, useMemo } from 'react'
 import { useToaster } from '../../../contexts/ToasterContext'
 import { useUploadProgress } from '../../../contexts/UploadProgressContext'
 import { useDownloadProgress } from '../../../contexts/DownloadProgressContext'
@@ -218,10 +218,15 @@ export function useFileOperations({
     }
   }, [driveId, currentDrive, toaster, startDownload, updateDownloadPath, completeDownload, failDownload, onShowDownloads])
 
-  return {
+  return useMemo(() => ({
     handleFileUpload,
     handleDeleteNode,
     handleDownloadFile,
     handleDownloadFolder,
-  }
+  }), [
+    handleFileUpload,
+    handleDeleteNode,
+    handleDownloadFile,
+    handleDownloadFolder,
+  ])
 }

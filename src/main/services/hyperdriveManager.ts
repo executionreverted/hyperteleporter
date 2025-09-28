@@ -268,7 +268,12 @@ export async function createFolder(driveId: string, folderPath: string): Promise
   const base = folderPath.startsWith('/') ? folderPath : `/${folderPath}`
   // Create a directory marker file so the folder appears even when empty
   const markerPath = `${base.replace(/\/$/, '')}/.keep`
-  await drive.put(markerPath, Buffer.alloc(0))
+  
+  // Store creation time in metadata
+  const now = new Date().toISOString()
+  const metadata = JSON.stringify({ createdAt: now, modifiedAt: now })
+  
+  await drive.put(markerPath, Buffer.alloc(0), { metadata })
   try { await (drive as any).update({ wait: false }) } catch {}
   broadcastDriveChanged(driveId)
 }
@@ -282,10 +287,13 @@ export async function uploadFiles(
   if (!drive) throw new Error('Drive not found')
   const base = (folderPath && folderPath !== '/') ? (folderPath.startsWith('/') ? folderPath : `/${folderPath}`) : '/'
   let uploaded = 0
+  const now = new Date().toISOString()
   for (const f of files) {
     const normalized = base === '/' ? `/${f.name}` : `${base.replace(/\/$/, '')}/${f.name}`
     console.log(`[hyperdrive] upload put -> ${normalized} (${f.data?.byteLength ?? f.data?.length ?? 0} bytes)`)
-    await drive.put(normalized, f.data)
+    const metadata = JSON.stringify({ createdAt: now, modifiedAt: now })
+    console.log(`[hyperdrive] upload metadata:`, metadata)
+    await drive.put(normalized, f.data, { metadata })
     uploaded += 1
   }
   console.log(`[hyperdrive] upload complete count=${uploaded}`)
@@ -310,7 +318,9 @@ export async function uploadFolder(
   
   // Create the main folder first
   const mainFolderPath = base.replace(/\/$/, '') + '/.keep'
-  await drive.put(mainFolderPath, Buffer.alloc(0))
+  const now = new Date().toISOString()
+  const metadata = JSON.stringify({ createdAt: now, modifiedAt: now })
+  await drive.put(mainFolderPath, Buffer.alloc(0), { metadata })
   
   // Collect all unique directory paths that need to be created
   const directoryPaths = new Set<string>()
@@ -328,13 +338,14 @@ export async function uploadFolder(
   // Create all necessary directories
   for (const dirPath of directoryPaths) {
     const dirMarkerPath = dirPath + '/.keep'
-    await drive.put(dirMarkerPath, Buffer.alloc(0))
+    await drive.put(dirMarkerPath, Buffer.alloc(0), { metadata })
   }
   
   for (const f of files) {
     // Use the relativePath for proper folder structure
     const normalized = base === '/' ? `/${f.relativePath}` : `${base.replace(/\/$/, '')}/${f.relativePath}`
-    await drive.put(normalized, f.data)
+    const fileMetadata = JSON.stringify({ createdAt: now, modifiedAt: now })
+    await drive.put(normalized, f.data, { metadata: fileMetadata })
     uploaded += 1
   }
   
@@ -564,10 +575,19 @@ export async function getFolderStats(driveId: string, folder: string): Promise<{
   let files = 0
   let folders = 0
   let sizeBytes = 0
+  
+  // Track unique folder paths to avoid double counting
+  const folderPaths = new Set<string>()
+  
   try {
     for await (const entry of (drive as any).list('/', { recursive: true })) {
       if (!entry?.key || !entry.key.startsWith(prefix)) continue
+      
+      // Skip .keep files
+      if (entry.key.endsWith('/.keep')) continue
+      
       const isFile = !!entry?.value?.blob || !!entry?.value?.linkname
+      
       if (isFile) {
         files += 1
         // Try best: read entry blob length; if missing, stream bytes
@@ -586,13 +606,83 @@ export async function getFolderStats(driveId: string, folder: string): Promise<{
           } catch {}
         }
       } else {
-        folders += 1
+        // This is a folder - count it only once
+        const folderPath = entry.key
+        if (!folderPaths.has(folderPath)) {
+          folderPaths.add(folderPath)
+          folders += 1
+        }
       }
     }
   } catch (err) {
     console.warn(`[hyperdrive] getFolderStats failed for ${driveId} ${prefix}`, err)
   }
   return { files, folders, sizeBytes }
+}
+
+export async function getFileStats(driveId: string, path: string): Promise<{ createdAt?: string; modifiedAt?: string; size?: number }> {
+  const drive = activeDrives.get(driveId)?.hyperdrive
+  if (!drive) throw new Error('Drive not found')
+  
+  const normalized = path.startsWith('/') ? path : `/${path}`
+  
+  try {
+    // Get file entry using hyperdrive's entry method
+    console.log(`[hyperdrive] getFileStats: ${driveId} ${normalized}`)
+    const entry = await drive.entry(normalized)
+    console.log(`[hyperdrive] getFileStats entry result:`, entry)
+    
+    if (!entry) {
+      console.log(`[hyperdrive] getFileStats: No entry found for ${normalized}`)
+      return {}
+    }
+    
+    // Extract size from blob metadata
+    let size = 0
+    if (entry.value?.blob) {
+      size = entry.value.blob.byteLength || 0
+    }
+    
+    // Check if metadata contains timestamps
+    let createdAt: string | undefined
+    let modifiedAt: string | undefined
+    
+    console.log(`[hyperdrive] getFileStats metadata:`, entry.value?.metadata)
+    
+    if (entry.value?.metadata) {
+      try {
+        const metadata = typeof entry.value.metadata === 'string' 
+          ? JSON.parse(entry.value.metadata) 
+          : entry.value.metadata
+        console.log(`[hyperdrive] getFileStats parsed metadata:`, metadata)
+        createdAt = metadata?.createdAt
+        modifiedAt = metadata?.modifiedAt
+      } catch (err) {
+        console.warn(`[hyperdrive] Failed to parse metadata for ${normalized}:`, err)
+      }
+    } else {
+      console.log(`[hyperdrive] getFileStats: No metadata found for ${normalized}`)
+    }
+    
+    // Always provide timestamps - use metadata if available, otherwise use current time
+    if (!createdAt) {
+      console.log(`[hyperdrive] getFileStats: Using fallback creation time for ${normalized}`)
+      createdAt = new Date().toISOString()
+    }
+    if (!modifiedAt) {
+      modifiedAt = new Date().toISOString()
+    }
+    
+    // Ensure we always return valid timestamps
+    createdAt = createdAt || new Date().toISOString()
+    modifiedAt = modifiedAt || new Date().toISOString()
+    
+    console.log(`[hyperdrive] getFileStats parsed:`, { createdAt, modifiedAt, size })
+    return { createdAt, modifiedAt, size }
+  } catch (err) {
+    console.warn(`[hyperdrive] getFileStats failed for ${driveId} ${normalized}`, err)
+    return {}
+  }
 }
 
 import { writeFile, mkdir } from 'fs/promises'

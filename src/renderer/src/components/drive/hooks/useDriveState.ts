@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useMemo } from 'react'
 import { DrivePageState, TreeNode, SyncStatus, DriveInfo } from '../types'
 
 const initialState: DrivePageState = {
@@ -101,7 +101,7 @@ export function useDriveState() {
     currentPathRef.current = '/'
   }, [])
 
-  return {
+  return useMemo(() => ({
     state,
     currentPathRef,
     updateState,
@@ -121,5 +121,24 @@ export function useDriveState() {
     setHoveredEllipsis,
     setHideTimeout,
     resetState,
-  }
+  }), [
+    state,
+    updateState,
+    setSelectedNode,
+    setFileSystem,
+    setCompleteFileSystem,
+    setTreeRoot,
+    setExpandedNodes,
+    setCurrentDrive,
+    setSyncStatus,
+    setIsDriveSyncing,
+    setIsInitialSync,
+    setShowNewFolderModal,
+    setTargetFolderForNewFolder,
+    setShowDownloadsModal,
+    setShowSettingsModal,
+    setHoveredEllipsis,
+    setHideTimeout,
+    resetState,
+  ])
 }

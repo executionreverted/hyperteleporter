@@ -3,6 +3,9 @@ export interface TreeNode {
   name: string
   type: 'file' | 'folder'
   children?: TreeNode[]
+  size?: string
+  modified?: string
+  createdAt?: string
 }
 
 export interface DriveInfo {

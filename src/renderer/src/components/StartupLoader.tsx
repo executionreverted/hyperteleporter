@@ -15,6 +15,7 @@ export function StartupLoader() {
   useEffect(() => {
     let mounted = true;
     let stepTimeouts: NodeJS.Timeout[] = [];
+    let fallbackTimeout: NodeJS.Timeout;
     
     // Start the step progression
     const startSteps = () => {
@@ -28,12 +29,7 @@ export function StartupLoader() {
     // Listen for drives initialization completion
     const checkDrivesReady = () => {
       const { ipcRenderer } = (window as any).electron || {};
-      if (!ipcRenderer) {
-        // Fallback to timeout if IPC not available
-        setTimeout(() => mounted && setLoading(false), 3200);
-        return;
-      }
-
+      
       const handleDrivesInitialized = () => {
         if (mounted) {
           setCurrentStep(3); // Ensure we're on the last step
@@ -45,32 +41,42 @@ export function StartupLoader() {
         }
       };
 
-      // Listen for the drives initialization event
-      ipcRenderer.on('drives:initialized', handleDrivesInitialized);
-      
-      // Fallback timeout in case event doesn't fire
-      const fallbackTimeout = setTimeout(() => {
-        if (mounted) {
-          setCurrentStep(3);
-          setLoading(false);
-        }
-      }, 10000); // 10 second fallback
-
-      return () => {
-        try {
-          ipcRenderer.removeListener('drives:initialized', handleDrivesInitialized);
-        } catch {}
-        clearTimeout(fallbackTimeout);
-      };
+      if (ipcRenderer) {
+        // Listen for the drives initialization event
+        ipcRenderer.on('drives:initialized', handleDrivesInitialized);
+        
+        // Fallback timeout in case event doesn't fire
+        fallbackTimeout = setTimeout(() => {
+          if (mounted) {
+            setCurrentStep(3);
+            setLoading(false);
+          }
+        }, 10000); // 10 second fallback
+      } else {
+        // Fallback to timeout if IPC not available
+        fallbackTimeout = setTimeout(() => {
+          if (mounted) {
+            setCurrentStep(3);
+            setLoading(false);
+          }
+        }, 3200);
+      }
     };
 
     startSteps();
-    const cleanup = checkDrivesReady();
+    checkDrivesReady();
 
     return () => {
       mounted = false;
       stepTimeouts.forEach(clearTimeout);
-      if (cleanup) cleanup();
+      if (fallbackTimeout) clearTimeout(fallbackTimeout);
+      
+      const { ipcRenderer } = (window as any).electron || {};
+      if (ipcRenderer) {
+        try {
+          ipcRenderer.removeListener('drives:initialized', () => {});
+        } catch {}
+      }
     };
   }, [])
 

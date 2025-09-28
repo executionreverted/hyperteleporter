@@ -1,6 +1,6 @@
 import { useCallback } from 'react'
 import { TreeNode } from '../types'
-import { findNodeById, findNodeByPath } from '../utils/fileSystemUtils'
+import { findNodeById, findNodeByPath, buildNodesForFolder } from '../utils/fileSystemUtils'
 import { DriveApiService } from '../services/driveApiService'
 
 interface UseNavigationProps {
@@ -92,7 +92,7 @@ export function useNavigation({
         try {
           const folderPath = node.id.startsWith('/') ? node.id : `/${node.id}`
           const entries = await DriveApiService.listFolder(driveId, folderPath, false)
-          const children = buildNodesForFolder(folderPath, entries)
+          const children = await buildNodesForFolder(folderPath, entries, driveId)
           
           // Build the correct breadcrumb path from the node's ID
           const pathSegments = node.id.split('/').filter(Boolean)
@@ -177,7 +177,7 @@ export function useNavigation({
     try {
       const folderPath = node.id.startsWith('/') ? node.id : `/${node.id}`
       const entries = await DriveApiService.listFolder(driveId, folderPath, false)
-      const children = buildNodesForFolder(folderPath, entries)
+      const children = await buildNodesForFolder(folderPath, entries, driveId)
       onUpdateState({
         navigationDirection: 'forward',
         navigationStack: [...navigationStack, currentView],
@@ -288,44 +288,3 @@ export function useNavigation({
   }
 }
 
-// Helper function to build nodes for folder
-function buildNodesForFolder(currentFolderPath: string, entries: any[]): TreeNode[] {
-  const normalized = currentFolderPath.endsWith('/') ? currentFolderPath : currentFolderPath + '/'
-  const folderNames = new Set<string>()
-  const files: TreeNode[] = []
-  
-  for (const e of entries) {
-    if (!e.key.startsWith(normalized)) continue
-    const rel = e.key.slice(normalized.length)
-    if (!rel) continue
-    const segments = rel.split('/').filter(Boolean)
-    if (segments.length === 0) continue
-    
-    if (segments.length > 1) {
-      // child inside a subfolder ⇒ show top-level folder name only
-      folderNames.add(segments[0])
-    } else {
-      // direct child
-      const baseName = segments[0]
-      if (baseName === '.keep') continue // hide marker
-      const isFile = !!e.value?.blob || !!e.value?.linkname
-      if (isFile) {
-        files.push({ id: e.key, name: baseName, type: 'file' })
-      } else {
-        folderNames.add(baseName)
-      }
-    }
-  }
-  
-  const folders: TreeNode[] = Array.from(folderNames).map((name) => ({ 
-    id: normalized + name, 
-    name, 
-    type: 'folder', 
-    children: [] 
-  }))
-  
-  // Stable sort: folders first, then files, both A→Z
-  folders.sort((a, b) => a.name.localeCompare(b.name))
-  files.sort((a, b) => a.name.localeCompare(b.name))
-  return [...folders, ...files]
-}

@@ -1,5 +1,5 @@
 import React from 'react'
-import { IconShare, IconDownload } from '@tabler/icons-react'
+import { IconShare, IconDownload, IconSearch, IconRefresh, IconFolderPlus } from '@tabler/icons-react'
 import { DriveInfo, SyncStatus } from './types'
 import { FileSearchModal } from '../common/FileSearchModal'
 import { ShareModal } from '../common/ShareModal'
@@ -76,10 +76,7 @@ export const DriveHeader: React.FC<DriveHeaderProps> = ({
                   className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-neutral-400 hover:bg-black/20 hover:text-white transition-colors rounded-lg"
                   title="Search Files"
                 >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="11" cy="11" r="8"></circle>
-                    <path d="m21 21-4.3-4.3"></path>
-                  </svg>
+                  <IconSearch size={16} />
                   <span>Search</span>
                 </button>
               }
@@ -90,10 +87,7 @@ export const DriveHeader: React.FC<DriveHeaderProps> = ({
               className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-neutral-400 hover:bg-black/20 hover:text-white transition-colors rounded-lg"
               title="Refresh"
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 12a9 9 0 1 1-3-6.708"/>
-                <path d="M21 3v6h-6"/>
-              </svg>
+              <IconRefresh size={16} />
               <span>Refresh</span>
             </button>
             
@@ -146,11 +140,7 @@ export const DriveHeader: React.FC<DriveHeaderProps> = ({
                 className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-neutral-400 hover:bg-black/20 hover:text-white transition-colors rounded-lg"
                 title="Create New Folder"
               >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M3 8l4-4h4l2 2h6v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-                  <path d="M12 11v6" />
-                  <path d="M9 14h6" />
-                </svg>
+                <IconFolderPlus size={16} />
                 <span>New Folder</span>
               </button>
             )}

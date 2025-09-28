@@ -1,15 +1,14 @@
 "use client";
 import { cn } from "../../renderer/lib/utils";
 import * as React from "react";
-import { useMemo } from "react";
+import { useMemo, useState, useCallback } from "react";
 import { TreeNode } from "./tree-view";
 import { motion } from "motion/react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { MagicButton } from "../../renderer/src/components/common/MagicButton";
-import { IconDownload, IconShare, IconTrash, IconEye, IconCopy, IconFolderPlus, IconArrowUp, IconFileTypePdf, IconLoader2 } from "@tabler/icons-react";
+import { IconDownload, IconShare, IconTrash, IconEye, IconCopy, IconFolderPlus, IconArrowUp, IconFileTypePdf, IconLoader2, IconInfoCircle } from "@tabler/icons-react";
 import FolderIcon from "../../renderer/src/assets/folder.svg";
-import FolderOpenIcon from "../../renderer/src/assets/folder-open.svg";
 import { ContextMenu, useContextMenu, type ContextMenuAction } from "./context-menu";
 import GlareHover from "./glare-hover";
 import { AnimatePresence } from "motion/react";
@@ -17,6 +16,118 @@ import { useToaster } from "../../renderer/src/contexts/ToasterContext";
 import { useConfirm } from "./confirm-modal";
 import { useContentSorting } from "../../renderer/src/hooks/useContentSorting";
 import { ContentSortControls } from "../../renderer/src/components/common/ContentSortControls";
+import { useFolderSize } from "../../renderer/src/hooks/useFolderSize";
+import { useFolderCreationTime } from "../../renderer/src/hooks/useFolderCreationTime";
+
+// Component for individual folder/file items with size display
+const FolderItem = ({ 
+  child, 
+  driveId, 
+  onFileClick, 
+  onPreviewAnchor, 
+  onChildRightClick,
+  onFolderSizeUpdate,
+  onFolderCreationTimeUpdate
+}: { 
+  child: TreeNode
+  driveId?: string
+  onFileClick?: (node: TreeNode) => void
+  onPreviewAnchor?: (rect: DOMRect, node: TreeNode) => void
+  onChildRightClick: (e: React.MouseEvent, childNode: TreeNode) => void
+  onFolderSizeUpdate?: (folderId: string, size: string) => void
+  onFolderCreationTimeUpdate?: (folderId: string, createdAt: string) => void
+}) => {
+  const { size: folderSize, loading: sizeLoading } = useFolderSize(
+    driveId, 
+    child.type === 'folder' ? child.id : undefined
+  )
+
+  const { createdAt: folderCreatedAt, loading: creationTimeLoading } = useFolderCreationTime(
+    driveId,
+    child.type === 'folder' ? child.id : undefined
+  )
+
+  // Update parent with folder size when it's calculated
+  React.useEffect(() => {
+    if (child.type === 'folder' && folderSize && onFolderSizeUpdate) {
+      onFolderSizeUpdate(child.id, folderSize)
+    }
+  }, [child.id, child.type, folderSize, onFolderSizeUpdate])
+
+  // Update parent with folder creation time when it's calculated
+  React.useEffect(() => {
+    if (child.type === 'folder' && folderCreatedAt && onFolderCreationTimeUpdate) {
+      onFolderCreationTimeUpdate(child.id, folderCreatedAt)
+    }
+  }, [child.id, child.type, folderCreatedAt, onFolderCreationTimeUpdate])
+
+
+  return (
+    <div
+      key={child.id}
+      className="flex flex-col items-center p-4 cursor-pointer group"
+      onClick={(e) => {
+        if (child.type === 'file') {
+          try {
+            const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect()
+            onPreviewAnchor?.(rect, child)
+          } catch {}
+          // Do not change selection/view; just open modal
+          return
+        }
+        onFileClick?.(child)
+      }}
+      onContextMenu={(e) => onChildRightClick(e, child)}
+    >
+      <GlareHover
+        width="80px"
+        height="80px"
+        background="rgba(0, 0, 0, 0.2)"
+        borderRadius="12px"
+        borderColor="transparent"
+        glareColor="#ffffff"
+        glareOpacity={0.3}
+        glareAngle={-30}
+        glareSize={300}
+        transitionDuration={800}
+        playOnce={false}
+        className="mb-3"
+      >
+        <div className="w-full h-full flex items-center justify-center">
+          {child.type === 'folder' ? (
+            <img src={FolderIcon} alt="Folder" className="w-8 h-8" />
+          ) : (() => {
+            // Check if it's an image file by extension
+            const extension = child.name.split('.').pop()?.toLowerCase();
+            const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico'].includes(extension || '');
+            
+            return isImage ? (
+              <ImagePreviewIcon node={child} driveId={driveId} size="folder" />
+            ) : (
+              <FileIcon node={child} />
+            );
+          })()}
+        </div>
+      </GlareHover>
+      <span className="text-sm text-white text-center truncate w-full px-1">
+        {child.name}
+      </span>
+      {/* Size display for both files and folders */}
+      {(child.size || folderSize || sizeLoading) && (
+        <span className="text-xs text-neutral-400 text-center mt-1">
+          {sizeLoading ? (
+            <span className="inline-flex items-center gap-1">
+              <div className="w-2 h-2 border border-neutral-400 border-t-transparent rounded-full animate-spin"></div>
+              <span>Loading...</span>
+            </span>
+          ) : (
+            child.size || folderSize
+          )}
+        </span>
+      )}
+    </div>
+  )
+}
 
 interface ContentPanelProps {
   selectedNode?: TreeNode;
@@ -481,7 +592,7 @@ const FileMetadata = ({ node }: { node: TreeNode }) => {
           <div className="flex justify-between">
             <span className="text-neutral-400">Created:</span>
             <span className="text-white font-medium">
-              {new Date().toLocaleDateString()}
+              {node.createdAt ? new Date(node.createdAt).toLocaleDateString() : new Date().toLocaleDateString()}
             </span>
           </div>
         </div>
@@ -503,11 +614,39 @@ const FolderContents = ({ node, onFileClick, onNavigateUp, canNavigateUp, driveI
   // Sorting functionality
   const { sortConfig, sortFiles, setSortCriteria, setSortDirection } = useContentSorting()
   
+  // Track folder sizes and creation times for re-sorting
+  const [folderSizes, setFolderSizes] = useState<{ [key: string]: string }>({})
+  const [folderCreationTimes, setFolderCreationTimes] = useState<{ [key: string]: string }>({})
+  
+  // Handle folder size updates
+  const handleFolderSizeUpdate = useCallback((folderId: string, size: string) => {
+    setFolderSizes(prev => ({
+      ...prev,
+      [folderId]: size
+    }))
+  }, [])
+
+  // Handle folder creation time updates
+  const handleFolderCreationTimeUpdate = useCallback((folderId: string, createdAt: string) => {
+    setFolderCreationTimes(prev => ({
+      ...prev,
+      [folderId]: createdAt
+    }))
+  }, [])
+  
   // Sort the children
   const sortedChildren = useMemo(() => {
     if (!node.children) return []
-    return sortFiles(node.children)
-  }, [node.children, sortFiles])
+    
+    // Create a copy of children with updated sizes and creation times
+    const childrenWithMetadata = node.children.map(child => ({
+      ...child,
+      size: child.size || folderSizes[child.id] || undefined,
+      createdAt: child.createdAt || folderCreationTimes[child.id] || undefined
+    }))
+    
+    return sortFiles(childrenWithMetadata)
+  }, [node.children, sortFiles, folderSizes, folderCreationTimes])
 
   const handleDeleteFile = async (fileNode: TreeNode) => {
     confirm({
@@ -592,6 +731,31 @@ const FolderContents = ({ node, onFileClick, onNavigateUp, canNavigateUp, driveI
       )
       if (canWrite) actions.push({ id: 'delete', label: 'Delete', icon: <IconTrash size={16} />, onClick: () => handleDeleteFile(childNode), destructive: true })
     }
+    
+    // Add Info action for both files and folders
+    actions.push({
+      id: 'info',
+      label: 'Info',
+      icon: <IconInfoCircle size={16} />,
+      onClick: () => {
+        // Show folder/file info preview
+        // Create a fake rect for the preview modal (centered on screen)
+        const fakeRect = {
+          left: window.innerWidth / 2 - 100,
+          top: window.innerHeight / 2 - 100,
+          width: 200,
+          height: 200,
+          right: window.innerWidth / 2 + 100,
+          bottom: window.innerHeight / 2 + 100,
+          x: window.innerWidth / 2 - 100,
+          y: window.innerHeight / 2 - 100,
+          toJSON: () => fakeRect,
+        } as DOMRect
+        
+        onPreviewAnchor?.(fakeRect, childNode)
+      },
+    })
+    
     return actions
   }
 
@@ -698,61 +862,16 @@ const FolderContents = ({ node, onFileClick, onNavigateUp, canNavigateUp, driveI
               </div>
             )}
             {sortedChildren.map((child) => (
-              <div
+              <FolderItem
                 key={child.id}
-                className="flex flex-col items-center p-4 cursor-pointer group"
-                onClick={(e) => {
-                  if (child.type === 'file') {
-                    try {
-                      const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect()
-                      onPreviewAnchor?.(rect, child)
-                    } catch {}
-                    // Do not change selection/view; just open modal
-                    return
-                  }
-                  onFileClick?.(child)
-                }}
-                onContextMenu={(e) => onChildRightClick(e, child)}
-              >
-                <GlareHover
-                  width="80px"
-                  height="80px"
-                  background="rgba(0, 0, 0, 0.2)"
-                  borderRadius="12px"
-                  borderColor="transparent"
-                  glareColor="#ffffff"
-                  glareOpacity={0.3}
-                  glareAngle={-30}
-                  glareSize={300}
-                  transitionDuration={800}
-                  playOnce={false}
-                  className="mb-3"
-                >
-                  <div className="w-full h-full flex items-center justify-center">
-                    {child.type === 'folder' ? (
-                      <img src={FolderIcon} alt="Folder" className="w-8 h-8" />
-                    ) : (() => {
-                      // Check if it's an image file by extension
-                      const extension = child.name.split('.').pop()?.toLowerCase();
-                      const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico'].includes(extension || '');
-                      
-                      return isImage ? (
-                        <ImagePreviewIcon node={child} driveId={driveId} size="folder" />
-                      ) : (
-                        <FileIcon node={child} />
-                      );
-                    })()}
-                  </div>
-                </GlareHover>
-                <span className="text-sm text-white text-center truncate w-full px-1">
-                  {child.name}
-                </span>
-                {child.size && (
-                  <span className="text-xs text-neutral-400 text-center mt-1">
-                    {child.size}
-                  </span>
-                )}
-              </div>
+                child={child}
+                driveId={driveId}
+                onFileClick={onFileClick}
+                onPreviewAnchor={onPreviewAnchor}
+                onChildRightClick={onChildRightClick}
+                onFolderSizeUpdate={handleFolderSizeUpdate}
+                onFolderCreationTimeUpdate={handleFolderCreationTimeUpdate}
+              />
             ))}
           </div>
         ) : (
@@ -992,6 +1111,31 @@ export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavig
         { id: 'copy', label: 'Copy path', icon: <IconCopy size={16} />, onClick: handleCopyPath },
       )
     }
+    
+    // Add Info action for both files and folders
+    actions.push({
+      id: 'info',
+      label: 'Info',
+      icon: <IconInfoCircle size={16} />,
+      onClick: () => {
+        // Show folder/file info preview
+        // Create a fake rect for the preview modal (centered on screen)
+        const fakeRect = {
+          left: window.innerWidth / 2 - 100,
+          top: window.innerHeight / 2 - 100,
+          width: 200,
+          height: 200,
+          right: window.innerWidth / 2 + 100,
+          bottom: window.innerHeight / 2 + 100,
+          x: window.innerWidth / 2 - 100,
+          y: window.innerHeight / 2 - 100,
+          toJSON: () => fakeRect,
+        } as DOMRect
+        
+        openPreviewFromRect(fakeRect, selectedNode)
+      },
+    })
+    
     return actions
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedNode, canWrite])
@@ -1155,11 +1299,17 @@ function FolderDetails({ driveId, folderId }: { driveId?: string; folderId: stri
         const folderPath = folderId.startsWith('/') ? folderId : `/${folderId}`
         let createdAt: string | undefined
         try {
-          // Try to fetch the folder entry for createdAt (optional)
-          const entries: Array<{ key: string; value: any }> = await api.drives.listFolder(effectiveDriveId, folderPath, false)
-          createdAt = entries.find((e: any) => e.key === folderPath)?.value?.metadata?.createdAt
-        } catch {}
+          // Get creation time from the .keep file
+          const keepFilePath = folderPath.endsWith('/') ? `${folderPath}.keep` : `${folderPath}/.keep`
+          console.log(`[FolderDetails] Getting creation time for: ${keepFilePath}`)
+          const fileStats = await api.drives.getFileStats(effectiveDriveId, keepFilePath)
+          console.log(`[FolderDetails] File stats result:`, fileStats)
+          createdAt = fileStats?.createdAt
+        } catch (err) {
+          console.warn(`[FolderDetails] Failed to get creation time:`, err)
+        }
         const stats = await api.drives.getFolderStats(effectiveDriveId, folderPath)
+        console.log(`[FolderDetails] Folder stats result:`, stats)
         if (!mounted) return
         setStats({ ...stats, createdAt })
       } catch (e: any) {
@@ -1220,6 +1370,12 @@ function FolderDetails({ driveId, folderId }: { driveId?: string; folderId: stri
                 <div className="col-span-1 text-neutral-400">Items Total</div>
                 <div className="col-span-2 text-neutral-200">{stats.files + stats.folders}</div>
               </div>
+              {stats.createdAt && (
+                <div className="grid grid-cols-3 gap-3 p-3 text-sm">
+                  <div className="col-span-1 text-neutral-400">Created</div>
+                  <div className="col-span-2 text-neutral-200">{new Date(stats.createdAt).toLocaleDateString()}</div>
+                </div>
+              )}
             </div>
           </div>
         </>
