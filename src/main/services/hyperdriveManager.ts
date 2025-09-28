@@ -1058,7 +1058,7 @@ export async function getFolderStats(driveId: string, folder: string): Promise<{
   return { files, folders, sizeBytes }
 }
 
-export async function getFileStats(driveId: string, path: string): Promise<{ createdAt?: string; modifiedAt?: string; size?: number }> {
+export async function getFileStats(driveId: string, path: string): Promise<{ createdAt?: string; modifiedAt?: string; size?: number; isChunked?: boolean; chunkInfo?: { numChunks: number; chunkSize: number; chunkFolder: string } }> {
   const drive = activeDrives.get(driveId)?.hyperdrive
   if (!drive) throw new Error('Drive not found')
   
@@ -1074,10 +1074,20 @@ export async function getFileStats(driveId: string, path: string): Promise<{ cre
         const metadata = JSON.parse(pseudoFile.value.metadata)
         if (metadata.is_chunked) {
           console.log(`[hyperdrive] getFileStats: Found pseudo-file ${normalized}`)
+          const numChunks = metadata.numChunks || 0
+          const totalSize = metadata.totalSize || 0
+          const chunkSize = numChunks > 0 ? Math.ceil(totalSize / numChunks) : 0
+          
           return {
-            size: metadata.totalSize || 0,
+            size: totalSize,
             createdAt: metadata.createdAt,
-            modifiedAt: metadata.modifiedAt
+            modifiedAt: metadata.modifiedAt,
+            isChunked: true,
+            chunkInfo: {
+              numChunks,
+              chunkSize,
+              chunkFolder: metadata.chunkFolder || ''
+            }
           }
         }
       } catch (e) {

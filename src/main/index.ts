@@ -256,8 +256,18 @@ app.whenReady().then(() => {
       try {
         const metadata = JSON.parse(pseudoFile.value.metadata)
         if (metadata.is_chunked) {
-          console.log(`[ipc] drives:getFile ${path}: file is chunked, returning null to disable preview`)
-          return null // Return null for chunked files to disable preview
+          // Check if the chunked file is under the preview size limit
+          const PREVIEW_SIZE_LIMIT = 50 * 1024 * 1024 // 50MB limit for previews
+          const fileSize = metadata.totalSize || 0
+          
+          if (fileSize > PREVIEW_SIZE_LIMIT) {
+            console.log(`[ipc] drives:getFile ${path}: file is chunked and too large (${fileSize} bytes > ${PREVIEW_SIZE_LIMIT} bytes), returning null to disable preview`)
+            return null // Return null for large chunked files to disable preview
+          } else {
+            console.log(`[ipc] drives:getFile ${path}: file is chunked but under preview limit (${fileSize} bytes), allowing preview`)
+            // Allow preview for chunked files under the size limit
+            // The getFileBuffer function will handle reassembling the chunks
+          }
         }
       } catch (e) {
         // Not a pseudo-file, continue with normal processing

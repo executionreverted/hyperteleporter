@@ -719,6 +719,56 @@ function MediaPreview({ node, type, onShowDownloads, onClosePreview, currentDriv
 }
 
 const FileMetadata = ({ node }: { node: TreeNode }) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const api: any = (window as any)?.api
+  const [fileStats, setFileStats] = React.useState<{ 
+    createdAt?: string; 
+    modifiedAt?: string; 
+    size?: number; 
+    isChunked?: boolean; 
+    chunkInfo?: { 
+      numChunks: number; 
+      chunkSize: number; 
+      chunkFolder: string 
+    } 
+  } | null>(null)
+  const [loading, setLoading] = React.useState(false)
+  const [error, setError] = React.useState<string | null>(null)
+
+  React.useEffect(() => {
+    let mounted = true
+    ;(async () => {
+      try {
+        setLoading(true)
+        setError(null)
+        const match = window.location.hash.match(/#\/drive\/([^/]+)/)
+        const driveId = match ? match[1] : null
+        if (!driveId || !api?.drives?.getFileStats) {
+          setError('File info unavailable')
+          return
+        }
+        const path = node.id.startsWith('/') ? node.id : `/${node.id}`
+        const stats = await api.drives.getFileStats(driveId, path)
+        if (!mounted) return
+        setFileStats(stats)
+      } catch (e: any) {
+        if (!mounted) return
+        setError(String(e?.message || e))
+      } finally {
+        if (mounted) setLoading(false)
+      }
+    })()
+    return () => { mounted = false }
+  }, [api, node.id])
+
+  const formatBytes = (bytes: number): string => {
+    if (bytes === 0) return '0 B'
+    const k = 1024
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
+    const i = Math.floor(Math.log(bytes) / Math.log(k))
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+  }
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
@@ -733,40 +783,103 @@ const FileMetadata = ({ node }: { node: TreeNode }) => {
           </h3>
         </div>
         
-        <div className="space-y-3">
-          <div className="flex justify-between">
-            <span className="text-neutral-400">Name:</span>
-            <span className="text-white font-medium">{node.name}</span>
-          </div>
-          
-          <div className="flex justify-between">
-            <span className="text-neutral-400">Type:</span>
-            <span className="text-white font-medium">
-              {node.type === 'folder' ? 'Folder' : 'File'}
-            </span>
-          </div>
-          
-          {node.size && (
-            <div className="flex justify-between">
-              <span className="text-neutral-400">Size:</span>
-              <span className="text-white font-medium">{node.size}</span>
+        {loading ? (
+          <div className="flex items-center justify-center py-8">
+            <div className="flex flex-col items-center gap-2">
+              <div className="w-6 h-6 border-2 border-neutral-400 border-t-transparent rounded-full animate-spin" />
+              <p className="text-sm text-neutral-500">Loading file info...</p>
             </div>
-          )}
-          
-          {node.modified && (
-            <div className="flex justify-between">
-              <span className="text-neutral-400">Modified:</span>
-              <span className="text-white font-medium">{node.modified}</span>
-            </div>
-          )}
-          
-          <div className="flex justify-between">
-            <span className="text-neutral-400">Created:</span>
-            <span className="text-white font-medium">
-              {node.createdAt ? new Date(node.createdAt).toLocaleDateString() : new Date().toLocaleDateString()}
-            </span>
           </div>
-        </div>
+        ) : error ? (
+          <div className="text-center py-8">
+            <p className="text-red-400 text-sm">{error}</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="flex justify-between">
+              <span className="text-neutral-400">Name:</span>
+              <span className="text-white font-medium">{node.name}</span>
+            </div>
+            
+            <div className="flex justify-between">
+              <span className="text-neutral-400">Type:</span>
+              <span className="text-white font-medium">
+                {node.type === 'folder' ? 'Folder' : 'File'}
+              </span>
+            </div>
+            
+            {fileStats?.size !== undefined && (
+              <div className="flex justify-between">
+                <span className="text-neutral-400">Size:</span>
+                <span className="text-white font-medium">{formatBytes(fileStats.size)}</span>
+              </div>
+            )}
+            
+            {node.modified && (
+              <div className="flex justify-between">
+                <span className="text-neutral-400">Modified:</span>
+                <span className="text-white font-medium">{node.modified}</span>
+              </div>
+            )}
+            
+            <div className="flex justify-between">
+              <span className="text-neutral-400">Created:</span>
+              <span className="text-white font-medium">
+                {fileStats?.createdAt ? new Date(fileStats.createdAt).toLocaleDateString() : 
+                 node.createdAt ? new Date(node.createdAt).toLocaleDateString() : 
+                 new Date().toLocaleDateString()}
+              </span>
+            </div>
+
+            {/* Chunk Information for Pseudo-Files */}
+            {fileStats?.isChunked && fileStats?.chunkInfo && (
+              <>
+                <div className="border-t border-neutral-700 my-4 pt-4">
+                  <h4 className="text-md font-semibold text-white mb-3 flex items-center gap-2">
+                    <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
+                    Chunk Information
+                  </h4>
+                </div>
+                
+                <div className="space-y-3">
+                  <div className="flex justify-between">
+                    <span className="text-neutral-400">Storage Type:</span>
+                    <span className="text-blue-400 font-medium">Chunked File</span>
+                  </div>
+                  
+                  <div className="flex justify-between">
+                    <span className="text-neutral-400">Number of Chunks:</span>
+                    <span className="text-white font-medium">{fileStats.chunkInfo.numChunks}</span>
+                  </div>
+                  
+                  <div className="flex justify-between">
+                    <span className="text-neutral-400">Chunk Size:</span>
+                    <span className="text-white font-medium">{formatBytes(fileStats.chunkInfo.chunkSize)}</span>
+                  </div>
+                  
+                  <div className="flex justify-between">
+                    <span className="text-neutral-400">Total Size:</span>
+                    <span className="text-white font-medium">{formatBytes(fileStats.size || 0)}</span>
+                  </div>
+                  
+                  <div className="flex justify-between">
+                    <span className="text-neutral-400">Chunk Folder:</span>
+                    <span className="text-neutral-500 text-xs font-mono truncate max-w-32" title={fileStats.chunkInfo.chunkFolder}>
+                      {fileStats.chunkInfo.chunkFolder.split('/').pop() || 'N/A'}
+                    </span>
+                  </div>
+                  
+                  <div className="mt-3 p-3 bg-blue-500/10 rounded-lg border border-blue-500/20">
+                    <p className="text-blue-300 text-xs">
+                      This file is stored in chunks for better performance and memory management. 
+                      The original file is automatically reassembled when downloaded.
+                    </p>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </div>
     </motion.div>
   );

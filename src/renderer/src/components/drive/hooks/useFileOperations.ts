@@ -80,7 +80,7 @@ export function useFileOperations({
       toaster.showInfo('Upload Started', `Uploading ${individualFiles.length} file(s)...`)
       
       try {
-        const LARGE_FILE_THRESHOLD = 100 * 1024 * 1024 // 100MB threshold for streaming
+        const CHUNK_THRESHOLD = 10 * 1024 * 1024 // 10MB threshold for chunking
         let uploadedCount = 0
         
         // Process files one by one to handle large files with streaming
@@ -90,7 +90,7 @@ export function useFileOperations({
           updateProgress(f.name, i + 1);
           
           try {
-            if (f.size > LARGE_FILE_THRESHOLD) {
+            if (f.size > CHUNK_THRESHOLD) {
               console.log(`[Upload Debug] Large file detected (${f.size} bytes), using streaming upload for ${f.name}`);
               
               // For very large files, we need to handle them differently
@@ -163,31 +163,80 @@ export function useFileOperations({
       toaster.showInfo('Upload Started', `Uploading folder "${folderName}" with ${folderFiles.length} files...`)
       
       try {
-        // Process folder files directly
-        const uploadFiles = await Promise.all(folderFiles.map(async (file, index) => {
-          updateProgress(file.name, index + 1);
-          const data = await file.arrayBuffer();
-          // Extract the relative path within the folder (remove folder name from webkitRelativePath)
-          const webkitPath = file.webkitRelativePath || file.name;
-          const relativePath = webkitPath.startsWith(`${folderName}/`)
-            ? webkitPath.substring(folderName.length + 1)
-            : webkitPath;
-
-          return {
-            name: file.name,
-            data,
-            relativePath: relativePath
-          };
-        }));
-
-        // Create the folder path by combining current directory with folder name
+        const CHUNK_THRESHOLD = 10 * 1024 * 1024 // 10MB threshold for chunking
         const targetFolderPath = currentFolderPath === '/' ? `/${folderName}` : `${currentFolderPath}/${folderName}`
         
         console.log('[Upload Debug] Uploading folder to:', targetFolderPath);
-        const res = await DriveApiService.uploadFolder(driveId, targetFolderPath, uploadFiles)
+        
+        // Separate files that need chunking from regular files
+        const filesToChunk: File[] = []
+        const regularFiles: File[] = []
+        
+        for (const file of folderFiles) {
+          if (file.size > CHUNK_THRESHOLD) {
+            filesToChunk.push(file)
+            console.log(`[Upload Debug] File needs chunking: ${file.name} (${file.size} bytes)`)
+          } else {
+            regularFiles.push(file)
+          }
+        }
+        
+        let uploadedCount = 0
+        
+        // Upload files that need chunking using streaming upload
+        if (filesToChunk.length > 0) {
+          console.log(`[Upload Debug] Uploading ${filesToChunk.length} files using chunked upload`)
+          for (let i = 0; i < filesToChunk.length; i++) {
+            const file = filesToChunk[i]
+            updateProgress(file.name, uploadedCount + 1);
+            
+            const webkitPath = file.webkitRelativePath || file.name;
+            const relativePath = webkitPath.startsWith(`${folderName}/`)
+              ? webkitPath.substring(folderName.length + 1)
+              : webkitPath;
+            
+            try {
+              const data = await file.arrayBuffer();
+              const result = await DriveApiService.uploadFileStream(driveId, targetFolderPath, relativePath, data);
+              
+              if (result.success) {
+                uploadedCount++;
+                console.log(`[Upload Debug] Successfully uploaded chunked file: ${relativePath}`);
+              } else {
+                console.error(`[Upload Debug] Failed to upload chunked file ${relativePath}: ${result.error}`);
+              }
+            } catch (error) {
+              console.error(`[Upload Debug] Error uploading chunked file ${relativePath}:`, error);
+            }
+          }
+        }
+        
+        // Upload regular files using normal method
+        if (regularFiles.length > 0) {
+          console.log(`[Upload Debug] Uploading ${regularFiles.length} regular files using normal method`)
+          const uploadFiles = await Promise.all(regularFiles.map(async (file, index) => {
+            updateProgress(file.name, uploadedCount + index + 1);
+            const data = await file.arrayBuffer();
+            // Extract the relative path within the folder (remove folder name from webkitRelativePath)
+            const webkitPath = file.webkitRelativePath || file.name;
+            const relativePath = webkitPath.startsWith(`${folderName}/`)
+              ? webkitPath.substring(folderName.length + 1)
+              : webkitPath;
+
+            return {
+              name: file.name,
+              data,
+              relativePath: relativePath
+            };
+          }));
+
+          const res = await DriveApiService.uploadFolder(driveId, targetFolderPath, uploadFiles)
+          uploadedCount += res.uploaded
+        }
+        
         completeUpload()
         await onReload()
-        toaster.showSuccess('Upload Complete', `Successfully uploaded folder "${folderName}" with ${res.uploaded} file(s)`)
+        toaster.showSuccess('Upload Complete', `Successfully uploaded folder "${folderName}" with ${uploadedCount} file(s)`)
       } catch (e) {
         console.error('[Upload Debug] Folder upload error:', e);
         completeUpload()
