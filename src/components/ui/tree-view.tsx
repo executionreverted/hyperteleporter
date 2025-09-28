@@ -22,6 +22,7 @@ import {
   IconFilePlus,
   IconEye,
   IconArrowUp,
+  IconInfoCircle,
   
 } from "@tabler/icons-react";
 import FolderSvg from "../../renderer/src/assets/folder.svg";
@@ -158,7 +159,14 @@ const TreeNodeComponent = ({ node, level, onNodeSelect, onNodeToggle, selectedNo
     const targetEl = e.currentTarget as HTMLDivElement;
     // @ts-ignore - window.setTimeout returns a number in browsers
     clickTimeoutRef.current = window.setTimeout(() => {
-      // Use onPreviewAnchor if provided, otherwise dispatch custom event
+      // For folders: single click toggles expansion
+      if (node.type === 'folder' && hasChildren) {
+        onNodeToggle?.(node);
+        clickTimeoutRef.current = null;
+        return;
+      }
+      
+      // For files: show preview or select
       try {
         const rect = targetEl.getBoundingClientRect();
         if (onPreviewAnchor) {
@@ -171,7 +179,6 @@ const TreeNodeComponent = ({ node, level, onNodeSelect, onNodeToggle, selectedNo
         return;
       } catch {}
       onNodeSelect?.(node);
-      // No auto-expansion - user controls everything
       clickTimeoutRef.current = null;
     }, 200);
   };
@@ -214,6 +221,23 @@ const TreeNodeComponent = ({ node, level, onNodeSelect, onNodeToggle, selectedNo
           }
 
     // Common actions
+    actions.push({
+      id: 'info',
+      label: 'Info',
+      icon: <IconInfoCircle size={16} />,
+      onClick: () => {
+        // Show folder/file info preview
+        const targetEl = e.currentTarget as HTMLDivElement;
+        const rect = targetEl.getBoundingClientRect();
+        if (onPreviewAnchor) {
+          onPreviewAnchor(rect, node);
+        } else {
+          const detail = { rect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height }, node };
+          window.dispatchEvent(new CustomEvent('open-preview', { detail }));
+        }
+      },
+    });
+
     actions.push({
       id: 'share',
       label: 'Share',
@@ -445,7 +469,7 @@ export function TreeView({
   };
 
   return (
-    <div className={cn("w-full h-full overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-600 scrollbar-track-neutral-800", className)} onContextMenu={onContainerRightClick}>
+    <div className={cn("w-full h-full overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-600", className)} onContextMenu={onContainerRightClick}>
       {showBreadcrumb && (
         <BreadcrumbNavigation
           path={breadcrumbPath}

@@ -48,14 +48,37 @@ export async function addDownload(record: DownloadRecord): Promise<void> {
   const downloads = await readDownloads()
   downloads.unshift(record) // Add to beginning (most recent first)
   
-  // Keep only the latest 50 downloads
-  const limitedDownloads = downloads.slice(0, 50)
+  // Clean up downloads older than 15 days
+  const fifteenDaysAgo = new Date()
+  fifteenDaysAgo.setDate(fifteenDaysAgo.getDate() - 15)
   
-  await writeDownloads(limitedDownloads)
+  const recentDownloads = downloads.filter(download => {
+    const downloadDate = new Date(download.downloadedAt)
+    return downloadDate > fifteenDaysAgo
+  })
+  
+  await writeDownloads(recentDownloads)
 }
 
 export async function removeDownload(id: string): Promise<void> {
   const downloads = await readDownloads()
   const filtered = downloads.filter(d => d.id !== id)
   await writeDownloads(filtered)
+}
+
+export async function cleanupOldDownloads(daysOld: number = 15): Promise<void> {
+  const downloads = await readDownloads()
+  const cutoffDate = new Date()
+  cutoffDate.setDate(cutoffDate.getDate() - daysOld)
+  
+  const recentDownloads = downloads.filter(download => {
+    const downloadDate = new Date(download.downloadedAt)
+    return downloadDate > cutoffDate
+  })
+  
+  if (recentDownloads.length !== downloads.length) {
+    await writeDownloads(recentDownloads)
+    const removedCount = downloads.length - recentDownloads.length
+    console.log(`[downloads] Cleaned up ${removedCount} downloads older than ${daysOld} days`)
+  }
 }
