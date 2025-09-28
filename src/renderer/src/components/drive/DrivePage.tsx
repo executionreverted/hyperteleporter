@@ -19,6 +19,7 @@ import { TreeNode } from './types'
 import { DriveApiService } from './services/driveApiService'
 import { buildCompleteFileSystemTree, findNodeById, expandAllFolders } from './utils/fileSystemUtils'
 import { useGlobalSearch } from '../../hooks/useGlobalSearch'
+import { UploadProgressModal } from '../common/UploadProgressModal'
 
 export const DrivePage: React.FC = () => {
   const params = useParams()
@@ -98,7 +99,8 @@ export const DrivePage: React.FC = () => {
       if (state.selectedNode?.id === nodeId) {
         setSelectedNode(undefined)
       }
-    }
+    },
+    onShowDownloads: () => setShowDownloadsModal(true)
   })
 
 
@@ -319,7 +321,8 @@ export const DrivePage: React.FC = () => {
         />
 
         {/* Main Content Area */}
-        <div className="flex-1 flex flex-col">
+        <div className="flex-1 flex flex-col min-h-0">
+          {/* Header - takes only space it needs */}
           <DriveHeader
             currentDrive={state.currentDrive}
             syncStatus={state.syncStatus}
@@ -337,8 +340,8 @@ export const DrivePage: React.FC = () => {
             canWrite={canWrite}
           />
 
-          {/* Content Panel */}
-          <div className="flex-1 flex flex-col">
+          {/* Content Panel - takes remaining space */}
+          <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-600 scrollbar-track-neutral-800 hover:scrollbar-thumb-neutral-500">
             <ContentPanel 
               selectedNode={state.selectedNode} 
               onFileClick={handleFileClick}
@@ -371,9 +374,11 @@ export const DrivePage: React.FC = () => {
             )}
           </div>
           
-          {/* Dropzone */}
+          {/* Dropzone - always at bottom, takes only space it needs */}
           {canWrite && (
-            <Dropzone onFileUpload={handleFileUploadWithPath} />
+            <div className="flex-shrink-0">
+              <Dropzone onFileUpload={handleFileUploadWithPath} />
+            </div>
           )}
         </div>
       </div>
@@ -431,6 +436,9 @@ export const DrivePage: React.FC = () => {
           )}
         </div>
       )}
+
+      {/* Upload Progress Modal */}
+      <UploadProgressModal />
     </div>
   )
 }

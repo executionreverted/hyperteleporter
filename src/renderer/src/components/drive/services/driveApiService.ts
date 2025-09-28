@@ -78,6 +78,35 @@ export class DriveApiService {
   }
 
   /**
+   * Uploads a folder with hierarchy
+   */
+  static async uploadFolder(
+    driveId: string, 
+    folderPath: string, 
+    files: Array<{ name: string; data: ArrayBuffer; relativePath: string }>
+  ): Promise<{ uploaded: number }> {
+    const api = getApi()
+    if (api?.drives?.uploadFolder) {
+      return api.drives.uploadFolder(driveId, folderPath, files)
+    }
+    
+    // Fallback to direct IPC
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const electron = (window as any)?.electron
+    if (electron?.ipcRenderer?.invoke) {
+      // Pass ArrayBuffers; main will normalize to Buffers
+      return electron.ipcRenderer.invoke('drives:uploadFolder', {
+        driveId,
+        folderPath,
+        files: files.map(f => ({ name: f.name, data: f.data, relativePath: f.relativePath }))
+      })
+    }
+    
+    console.warn('[DriveApiService] uploadFolder not available (no preload + no ipc)')
+    return { uploaded: 0 }
+  }
+
+  /**
    * Deletes a file or folder
    */
   static async deleteFile(driveId: string, path: string): Promise<boolean> {

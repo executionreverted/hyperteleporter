@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { IconX, IconDownload, IconTrash, IconFolderOpen, IconClock } from '@tabler/icons-react'
 import { useEscapeKey } from '../../hooks/useEscapeKey'
+import { DownloadProgressItem } from './DownloadProgressItem'
+import { useDownloadProgress } from '../../contexts/DownloadProgressContext'
 
 interface DownloadRecord {
   id: string
@@ -139,6 +141,9 @@ export function DownloadsModal({ isOpen, onClose }: DownloadsModalProps) {
             </div>
           ) : (
             <div className="p-4 space-y-4">
+              {/* Active Download Progress */}
+              <DownloadProgressItem onOpenFolder={handleOpenFolder} />
+              
               {downloads.map((download) => (
                 <div
                   key={download.id}

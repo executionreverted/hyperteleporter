@@ -251,14 +251,14 @@ export async function listDrive(folderDriveId: string, folder: string, recursive
   const listFolder = folder || '/'
   // Ensure folder starts with '/'
   const prefix = listFolder.startsWith('/') ? listFolder : `/${listFolder}`
-  console.log(`[hyperdrive] listDrive driveId=${folderDriveId} prefix=${prefix} recursive=${recursive}`)
+  // console.log(`[hyperdrive] listDrive driveId=${folderDriveId} prefix=${prefix} recursive=${recursive}`)
   for await (const file of drive.list('/', { recursive: true })) {
     const isFile = !!file?.value?.blob || !!file?.value?.linkname
-    console.log(`[hyperdrive] entry key=${file.key} type=${isFile ? 'file' : 'folder'}`)
+    // console.log(`[hyperdrive] entry key=${file.key} type=${isFile ? 'file' : 'folder'}`)
     // Only include items under prefix
     if (file.key.startsWith(prefix)) results.push({ key: file.key, value: file.value })
   }
-  console.log(`[hyperdrive] listDrive done: ${results.length} entries`)
+  // console.log(`[hyperdrive] listDrive done: ${results.length} entries`)
   return results
 }
 
@@ -289,6 +289,55 @@ export async function uploadFiles(
     uploaded += 1
   }
   console.log(`[hyperdrive] upload complete count=${uploaded}`)
+  try {
+    // Hint replication layer we expect updates soon
+    // @ts-ignore - update exists at runtime
+    await (drive as any).update({ wait: false })
+  } catch {}
+  broadcastDriveChanged(driveId)
+  return { uploaded }
+}
+
+export async function uploadFolder(
+  driveId: string,
+  folderPath: string,
+  files: Array<{ name: string; data: Buffer; relativePath: string }>
+): Promise<{ uploaded: number }> {
+  const drive = activeDrives.get(driveId)?.hyperdrive
+  if (!drive) throw new Error('Drive not found')
+  const base = (folderPath && folderPath !== '/') ? (folderPath.startsWith('/') ? folderPath : `/${folderPath}`) : '/'
+  let uploaded = 0
+  
+  // Create the main folder first
+  const mainFolderPath = base.replace(/\/$/, '') + '/.keep'
+  await drive.put(mainFolderPath, Buffer.alloc(0))
+  
+  // Collect all unique directory paths that need to be created
+  const directoryPaths = new Set<string>()
+  for (const f of files) {
+    const normalized = base === '/' ? `/${f.relativePath}` : `${base.replace(/\/$/, '')}/${f.relativePath}`
+    const pathParts = normalized.split('/').filter(Boolean)
+    
+    // Add all intermediate directory paths
+    for (let i = 1; i < pathParts.length; i++) {
+      const dirPath = '/' + pathParts.slice(0, i).join('/')
+      directoryPaths.add(dirPath)
+    }
+  }
+  
+  // Create all necessary directories
+  for (const dirPath of directoryPaths) {
+    const dirMarkerPath = dirPath + '/.keep'
+    await drive.put(dirMarkerPath, Buffer.alloc(0))
+  }
+  
+  for (const f of files) {
+    // Use the relativePath for proper folder structure
+    const normalized = base === '/' ? `/${f.relativePath}` : `${base.replace(/\/$/, '')}/${f.relativePath}`
+    await drive.put(normalized, f.data)
+    uploaded += 1
+  }
+  
   try {
     // Hint replication layer we expect updates soon
     // @ts-ignore - update exists at runtime
@@ -573,37 +622,69 @@ export async function downloadFileToDownloads(driveId: string, filePath: string,
 }
 
 // Folder download using proper Hyperdrive API
-export async function downloadFolderToDownloads(driveId: string, folder: string, _folderName: string, driveName: string): Promise<{ success: boolean; downloadPath: string; fileCount: number }> {
+export async function downloadFolderToDownloads(driveId: string, folder: string, _folderName: string, driveName: string, onProgress?: (currentFile: string, downloadedFiles: number, totalFiles: number) => void): Promise<{ success: boolean; downloadPath: string; fileCount: number }> {
   const drive = activeDrives.get(driveId)?.hyperdrive
   if (!drive) throw new Error('Drive not found')
 
   const downloadsDir = join(homedir(), 'Downloads', 'HyperTeleporter', driveName)
-  const folderPath = folder === '/' ? '' : folder.replace(/^\//, '')
-  const targetDir = join(downloadsDir, folderPath)
+  
+  // Handle virtual-root and root folder cases
+  let folderPath = folder
+  if (folder === 'virtual-root' || folder === '/' || folder === '') {
+    folderPath = '/'
+  } else {
+    folderPath = folder.replace(/^\//, '')
+  }
+  
+  const targetDir = join(downloadsDir, folderPath === '/' ? '' : folderPath)
 
   try {
     await mkdir(downloadsDir, { recursive: true })
     await mkdir(targetDir, { recursive: true })
     
-    console.log(`[hyperdrive] Starting folder download: ${folder}`)
+  console.log(`[hyperdrive] Starting folder download: ${folder}`)
+  console.log(`[hyperdrive] Normalized folder path: ${folderPath}`)
+  
+  // First, download all blobs for the folder using the proper Hyperdrive API
+  console.log(`[hyperdrive] Downloading all blobs for folder: ${folderPath}`)
+  try {
+    await drive.download(folderPath, { recursive: true, wait: false })
+    // Don't wait for completion - let it download in background
+    console.log(`[hyperdrive] Started background download for folder: ${folderPath}`)
+  } catch (err) {
+    console.warn(`[hyperdrive] Background download failed for ${folderPath}:`, err)
+  }
     
-    // First, download all blobs for the folder using the proper Hyperdrive API
-    console.log(`[hyperdrive] Downloading all blobs for folder: ${folder}`)
-    try {
-      await drive.download(folder, { recursive: true, wait: false })
-      // Don't wait for completion - let it download in background
-      console.log(`[hyperdrive] Started background download for folder: ${folder}`)
-    } catch (err) {
-      console.warn(`[hyperdrive] Background download failed for ${folder}:`, err)
+    // First, count total files for progress tracking
+    let totalFiles = 0
+    for await (const entry of drive.list(folderPath, { recursive: true })) {
+      if (entry?.key && (!!entry?.value?.blob || !!entry?.value?.linkname)) {
+        totalFiles++
+      }
     }
+    
+    console.log(`[hyperdrive] Total files to download: ${totalFiles}`)
     
     // Now list and download all files in the folder
     let fileCount = 0
-    for await (const entry of drive.list(folder, { recursive: true })) {
-      if (!entry?.key) continue
+    let processedFiles = 0
+    let totalEntries = 0
+    console.log(`[hyperdrive] Listing entries in folder: ${folderPath}`)
+    
+    for await (const entry of drive.list(folderPath, { recursive: true })) {
+      totalEntries++
+      console.log(`[hyperdrive] Entry ${totalEntries}: key="${entry?.key}", hasBlob=${!!entry?.value?.blob}, hasLinkname=${!!entry?.value?.linkname}`)
+      
+      if (!entry?.key) {
+        console.log(`[hyperdrive] Skipping entry ${totalEntries} - no key`)
+        continue
+      }
       
       const isFile = !!entry?.value?.blob || !!entry?.value?.linkname
+      console.log(`[hyperdrive] Entry ${totalEntries} isFile: ${isFile}`)
+      
       if (isFile) {
+        processedFiles++ // Count files we attempt to process
         try {
           console.log(`[hyperdrive] Downloading file: ${entry.key}`)
           // Prefetch this file's blobs to reduce timeouts
@@ -651,19 +732,50 @@ export async function downloadFolderToDownloads(driveId: string, folder: string,
             await writeFile(filePath, data)
             fileCount++
             console.log(`[hyperdrive] Downloaded: ${relativePath}`)
+            
+            // Report progress AFTER successful download
+            if (onProgress) {
+              console.log(`[hyperdrive] Reporting progress: file=${entry.key}, processed=${processedFiles}, total=${totalFiles}`)
+              onProgress(entry.key, processedFiles, totalFiles)
+            }
           } else {
             console.warn(`[hyperdrive] Skipped (no data after retries): ${entry.key}`)
+            // Report progress for skipped files too
+            if (onProgress) {
+              console.log(`[hyperdrive] Reporting progress (skipped): file=${entry.key}, processed=${processedFiles}, total=${totalFiles}`)
+              onProgress(entry.key, processedFiles, totalFiles)
+            }
           }
         } catch (err) {
           console.error(`[hyperdrive] Failed to download file ${entry.key}:`, err)
+          // Still report progress even if file failed to keep progress bar moving
+          if (onProgress) {
+            console.log(`[hyperdrive] Reporting progress (failed): file=${entry.key}, processed=${processedFiles}, total=${totalFiles}`)
+            onProgress(entry.key, processedFiles, totalFiles)
+          }
         }
       }
     }
 
-    console.log(`[hyperdrive] Folder download completed. Files downloaded: ${fileCount}`)
+    console.log(`[hyperdrive] Folder download completed. Total entries found: ${totalEntries}, Files processed: ${processedFiles}, Files downloaded: ${fileCount}`)
 
     if (fileCount === 0) {
-      throw new Error('No files found in folder')
+      // Check if the folder exists at all by trying to list it
+      let hasAnyEntries = false
+      try {
+        for await (const entry of drive.list(folderPath, { recursive: true })) {
+          hasAnyEntries = true
+          break // Just check if there's at least one entry
+        }
+      } catch (err) {
+        console.warn(`[hyperdrive] Error checking folder entries:`, err)
+      }
+      
+      if (!hasAnyEntries) {
+        throw new Error(`Folder "${folderPath}" is empty or does not exist`)
+      } else {
+        throw new Error(`No downloadable files found in folder "${folderPath}"`)
+      }
     }
 
     return { success: true, downloadPath: targetDir, fileCount }

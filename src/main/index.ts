@@ -2,7 +2,7 @@ import { app, shell, BrowserWindow, ipcMain, screen, globalShortcut } from 'elec
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 const icon = join(__dirname, '../../build/icon.png')
-import { initializeAllDrives, closeAllDrives, createDrive, listActiveDrives, listDrive, createFolder, uploadFiles, getFileBuffer, deleteFile, getDriveStorageInfo, joinDrive, stopAllDriveWatchers, getFolderStats, downloadFolderToDownloads, downloadFileToDownloads, checkDriveSyncStatus, getDriveSyncStatus } from './services/hyperdriveManager'
+import { initializeAllDrives, closeAllDrives, createDrive, listActiveDrives, listDrive, createFolder, uploadFiles, uploadFolder, getFileBuffer, deleteFile, getDriveStorageInfo, joinDrive, stopAllDriveWatchers, getFolderStats, downloadFolderToDownloads, downloadFileToDownloads, checkDriveSyncStatus, getDriveSyncStatus } from './services/hyperdriveManager'
 import { addDownload, readDownloads, removeDownload } from './services/downloads'
 // Swarm management is now handled by hyperdriveManager
 import { readUserProfile, writeUserProfile } from './services/userProfile'
@@ -233,6 +233,31 @@ app.whenReady().then(() => {
     return res
   })
 
+  ipcMain.handle('drives:uploadFolder', async (_evt, { driveId, folderPath, files }: { driveId: string, folderPath: string, files: Array<{ name: string; data: any; relativePath: string }> }) => {
+    console.log('[ipc] drives:uploadFolder', {
+      driveId,
+      folderPath,
+      files: files?.map((f) => ({ name: f.name, relativePath: f.relativePath, hasData: !!f.data, type: typeof f.data, dataKeys: f.data ? Object.keys(f.data) : [] }))
+    })
+    // Normalize incoming data to Node Buffers
+    const normalized = files.map(f => {
+      const data = f.data
+      const buf = Buffer.isBuffer(data)
+        ? data
+        : (data && data.byteLength !== undefined && typeof data.length === 'number' && data.buffer instanceof ArrayBuffer)
+          ? Buffer.from(data)
+          : (data && data.buffer instanceof ArrayBuffer)
+            ? Buffer.from(new Uint8Array(data.buffer))
+            : (data instanceof ArrayBuffer)
+              ? Buffer.from(new Uint8Array(data))
+              : Buffer.from([])
+      return { name: f.name, data: buf, relativePath: f.relativePath }
+    })
+    console.log('[ipc] drives:uploadFolder normalized', normalized.map(n => ({ name: n.name, relativePath: n.relativePath, bytes: n.data.length })))
+    const res = await uploadFolder(driveId, folderPath, normalized)
+    return res
+  })
+
   ipcMain.handle('drives:getFile', async (_evt, { driveId, path }: { driveId: string, path: string }) => {
     console.log(`[ipc] drives:getFile request: driveId=${driveId}, path=${path}`)
     const buf = await getFileBuffer(driveId, path)
@@ -292,10 +317,19 @@ app.whenReady().then(() => {
     }
   })
 
-  ipcMain.handle('drives:downloadFolder', async (_evt, { driveId, folder, folderName, driveName }: { driveId: string, folder: string, folderName: string, driveName: string }) => {
+  ipcMain.handle('drives:downloadFolder', async (event, { driveId, folder, folderName, driveName }: { driveId: string, folder: string, folderName: string, driveName: string }) => {
     console.log(`[ipc] drives:downloadFolder request: driveId=${driveId}, folder=${folder}, folderName=${folderName}, driveName=${driveName}`)
     try {
-      const result = await downloadFolderToDownloads(driveId, folder, folderName, driveName)
+      const result = await downloadFolderToDownloads(driveId, folder, folderName, driveName, (currentFile, downloadedFiles, totalFiles) => {
+        // Send progress update to renderer
+        console.log(`[ipc] Sending download progress: file=${currentFile}, downloaded=${downloadedFiles}, total=${totalFiles}`)
+        event.sender.send('download-progress', {
+          currentFile,
+          downloadedFiles,
+          totalFiles,
+          folderName
+        })
+      })
       const downloadRecord = {
         id: Date.now().toString(),
         driveId,
@@ -368,10 +402,10 @@ app.whenReady().then(() => {
 
   // Drive sync status IPC handlers
   ipcMain.handle('drives:checkSyncStatus', async (_evt, { driveId }: { driveId: string }) => {
-    console.log(`[ipc] drives:checkSyncStatus called for driveId=${driveId}`)
+    // console.log(`[ipc] drives:checkSyncStatus called for driveId=${driveId}`)
     try {
       const status = await checkDriveSyncStatus(driveId)
-      console.log(`[ipc] drives:checkSyncStatus ${driveId}:`, status)
+      // console.log(`[ipc] drives:checkSyncStatus ${driveId}:`, status)
       return status
     } catch (error) {
       console.error(`[ipc] drives:checkSyncStatus failed:`, error)
@@ -380,14 +414,14 @@ app.whenReady().then(() => {
   })
 
   ipcMain.handle('drives:getSyncStatus', async (_evt, { driveId }: { driveId: string }) => {
-    console.log(`[ipc] drives:getSyncStatus called for driveId=${driveId}`)
+    // console.log(`[ipc] drives:getSyncStatus called for driveId=${driveId}`)
     const isSyncing = getDriveSyncStatus(driveId)
     return { isSyncing }
   })
 
   // Expose user profile IPC (persisted on disk, separate from Hyperdrive for now)
   ipcMain.handle('user:getProfile', async () => {
-    console.log('[main] user:getProfile called')
+    // console.log('[main] user:getProfile called')
     const profile = await readUserProfile()
     console.log('[main] user:getProfile returning:', profile)
     return profile

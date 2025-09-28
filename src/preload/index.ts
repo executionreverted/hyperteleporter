@@ -14,6 +14,11 @@ const api = {
       const payload = files.map(f => ({ name: f.name, data: new Uint8Array(f.data) }))
       return ipcRenderer.invoke('drives:uploadFiles', { driveId, folderPath, files: payload })
     },
+    uploadFolder: async (driveId: string, folderPath: string, files: Array<{ name: string; data: ArrayBuffer; relativePath: string }>) => {
+      // Convert ArrayBuffer to Uint8Array (safer across IPC)
+      const payload = files.map(f => ({ name: f.name, data: new Uint8Array(f.data), relativePath: f.relativePath }))
+      return ipcRenderer.invoke('drives:uploadFolder', { driveId, folderPath, files: payload })
+    },
     deleteFile: async (driveId: string, path: string) => ipcRenderer.invoke('drives:deleteFile', { driveId, path }),
     getStorageInfo: async (driveId: string) => ipcRenderer.invoke('drives:getStorageInfo', { driveId }),
     getFolderStats: async (driveId: string, folder: string) => ipcRenderer.invoke('drives:getFolderStats', { driveId, folder }),
@@ -92,6 +97,12 @@ const api = {
     return () => ipcRenderer.removeListener('global-search-triggered', callback)
   }
 }
+
+// Download progress events
+ipcRenderer.on('download-progress', (_, data) => {
+  // Forward to renderer
+  window.dispatchEvent(new CustomEvent('download-progress', { detail: data }))
+})
 
 // Use `contextBridge` APIs to expose Electron APIs to
 // renderer only if context isolation is enabled, otherwise

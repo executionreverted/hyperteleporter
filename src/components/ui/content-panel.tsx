@@ -594,50 +594,56 @@ const FolderContents = ({ node, onFileClick, onNavigateUp, canNavigateUp, driveI
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.15, ease: "easeOut" }}
-      className="p-6 h-full"
+      className="p-6"
     >
-      <div className="bg-black/10 rounded-lg p-8 h-full">
-        <div className="flex items-center justify-between mb-4 gap-2">
-          <div className="flex items-center gap-2">
-            {canNavigateUp ? (
-              <span
-                role="button"
-                aria-label="Back"
-                title="Back"
-                onClick={() => onNavigateUp?.()}
-                className="text-neutral-400 hover:text-white cursor-pointer select-none"
-              >
-                {/* minimal chevron */}
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M15 18l-6-6 6-6" />
-                </svg>
-              </span>
-            ) : (
-              <span className="text-neutral-700 select-none" aria-hidden="true">
-                {/* placeholder to preserve width/height */}
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                  <circle cx="12" cy="12" r="3" />
-                </svg>
-              </span>
-            )}
-            <h3 className="text-lg font-semibold text-white">
-              Folder Contents
-            </h3>
-          </div>
-          <div className="text-sm text-neutral-400 truncate">
-            <span className="text-white font-medium">{node.name}</span>
-            <span className="mx-2">•</span>
-            <span>{totalItems} items</span>
-            <span className="mx-2">•</span>
-            <span>{folderCount} folders, {fileCount} files</span>
-            {node.modified && (
-              <>
-                <span className="mx-2">•</span>
-                <span>Modified {node.modified}</span>
-              </>
-            )}
+      <div className="bg-black/10 rounded-lg">
+        {/* Sticky Header */}
+        <div className="sticky top-0 z-10 bg-black/10 backdrop-blur-sm border-b border-white/10 p-8 pb-4">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              {canNavigateUp ? (
+                <span
+                  role="button"
+                  aria-label="Back"
+                  title="Back"
+                  onClick={() => onNavigateUp?.()}
+                  className="text-neutral-400 hover:text-white cursor-pointer select-none"
+                >
+                  {/* minimal chevron */}
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M15 18l-6-6 6-6" />
+                  </svg>
+                </span>
+              ) : (
+                <span className="text-neutral-700 select-none" aria-hidden="true">
+                  {/* placeholder to preserve width/height */}
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                    <circle cx="12" cy="12" r="3" />
+                  </svg>
+                </span>
+              )}
+              <h3 className="text-lg font-semibold text-white">
+                Folder Contents
+              </h3>
+            </div>
+            <div className="text-sm text-neutral-400 truncate">
+              <span className="text-white font-medium">{node.name}</span>
+              <span className="mx-2">•</span>
+              <span>{totalItems} items</span>
+              <span className="mx-2">•</span>
+              <span>{folderCount} folders, {fileCount} files</span>
+              {node.modified && (
+                <>
+                  <span className="mx-2">•</span>
+                  <span>Modified {node.modified}</span>
+                </>
+              )}
+            </div>
           </div>
         </div>
+        
+        {/* Content Area */}
+        <div className="p-8 pt-4">
         
         {(canNavigateUp || (node.children && node.children.length > 0)) ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
@@ -735,6 +741,7 @@ const FolderContents = ({ node, onFileClick, onNavigateUp, canNavigateUp, driveI
             <p className="text-neutral-400">This folder is empty</p>
           </div>
         )}
+        </div>
       </div>
       <ContextMenu isOpen={isOpen} position={position} actions={actions} onClose={closeContextMenu} />
       <ConfirmDialog />
@@ -1010,15 +1017,15 @@ export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavig
   }
 
   return (
-    <div className={cn("h-full overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-600 scrollbar-track-neutral-800 bg-black/5", className)}>
+    <div className={cn("bg-black/5", className)}>
       
       {selectedNode.type === 'folder' ? (
-        <div className="h-full" onContextMenu={onRightClick}>
+        <div onContextMenu={onRightClick}>
           <FolderContents node={selectedNode} onFileClick={onFileClick} onNavigateUp={onNavigateUp} canNavigateUp={canNavigateUp} driveId={driveId} onFileDeleted={onFileDeleted} onPreviewAnchor={openPreviewFromRect} onDownloadFile={onDownloadFile} onDownloadFolder={onDownloadFolder} canWrite={canWrite} currentDrive={currentDrive} />
         </div>
       ) : (
         // For files, show empty state or parent folder - no file content view
-        <div className="h-full flex items-center justify-center text-neutral-500" onContextMenu={onRightClick}>
+        <div className="flex items-center justify-center text-neutral-500 min-h-[400px]" onContextMenu={onRightClick}>
           <div className="text-center">
             <div className="w-16 h-16 mx-auto mb-4 rounded-lg bg-neutral-800/50 flex items-center justify-center">
               <FileIcon node={selectedNode} />
