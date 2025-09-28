@@ -22,6 +22,12 @@ export function processFolderUpload(files: FileList): UploadResult {
   const filesWithPath: FileWithPath[] = [];
   const conflicts: string[] = [];
   
+  console.log('[Folder Upload Debug] Processing files:', fileArray.map(f => ({
+    name: f.name,
+    webkitPath: f.webkitRelativePath,
+    hasWebkitPath: !!f.webkitRelativePath
+  })));
+  
   if (fileArray.length === 0) {
     return { files: [], folderName: '', hasConflicts: false, conflicts: [], shouldCreateFolder: false };
   }
@@ -29,12 +35,18 @@ export function processFolderUpload(files: FileList): UploadResult {
   // Check if files have webkitRelativePath (from webkitdirectory input)
   const hasWebkitPaths = fileArray.some(file => file.webkitRelativePath);
   
+  console.log('[Folder Upload Debug] Has webkit paths:', hasWebkitPaths);
+  
   if (hasWebkitPaths) {
     // Process webkitdirectory files (click to select folder)
-    return processWebkitDirectoryFiles(fileArray);
+    const result = processWebkitDirectoryFiles(fileArray);
+    console.log('[Folder Upload Debug] Webkit directory result:', result);
+    return result;
   } else {
     // Process drag-and-drop files - try to detect folder structure
-    return processDragDropFiles(fileArray);
+    const result = processDragDropFiles(fileArray);
+    console.log('[Folder Upload Debug] Drag drop result:', result);
+    return result;
   }
 }
 

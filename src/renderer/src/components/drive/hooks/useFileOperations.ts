@@ -41,84 +41,60 @@ export function useFileOperations({
   }, [updateDownloadProgress])
 
   const handleFileUpload = useCallback(async (files: File[], currentFolderPath: string) => {
+    console.log('[Upload Debug] Starting upload with:', {
+      driveId,
+      filesCount: files?.length,
+      currentFolderPath,
+      files: files?.map(f => ({ name: f.name, webkitPath: f.webkitRelativePath }))
+    });
+    
     if (!driveId || !files?.length) return
     
-    // Check if this is a folder upload (has webkitRelativePath with folder structure)
-    const isFolderUpload = files.some(file => {
-      const webkitPath = file.webkitRelativePath
-      return webkitPath && webkitPath.includes('/') && webkitPath.split('/').length > 1
-    })
+    // Separate individual files from folder files
+    const individualFiles: File[] = [];
+    const folderFiles: File[] = [];
     
-    if (isFolderUpload) {
-      // Process folder upload
-      const { processFolderUpload, checkNameConflicts, prepareFilesForUpload } = await import('../../../utils/folderUpload');
-      
-      const result = processFolderUpload(files as any)
-      const folderName = result.folderName
-      
-      // Check for name conflicts (simplified - you might want to get existing items from state)
-      const conflictCheck = checkNameConflicts(folderName, [])
-      
-      if (conflictCheck.hasConflicts) {
-        toaster.showError('Upload Failed', `Folder "${folderName}" already exists. Please rename or delete the existing folder first.`)
-        return
+    for (const file of files) {
+      if (file.webkitRelativePath && file.webkitRelativePath.includes('/')) {
+        folderFiles.push(file);
+      } else {
+        individualFiles.push(file);
       }
+    }
+    
+    console.log('[Upload Debug] Separated files:', {
+      individualFiles: individualFiles.length,
+      folderFiles: folderFiles.length
+    });
+    
+    // Handle individual files first
+    if (individualFiles.length > 0) {
+      console.log('[Upload Debug] Processing individual files:', individualFiles.map(f => ({
+        name: f.name,
+        size: f.size,
+        type: f.type,
+        lastModified: f.lastModified
+      })));
       
-      // Start upload progress
-      startUpload(files.length, folderName)
-      toaster.showInfo('Upload Started', `Uploading folder "${folderName}" with ${files.length} files...`)
-      
-      // No conflicts, proceed with upload
-      try {
-        // Check if files already have webkitRelativePath (from File System Access API)
-        const hasWebkitPaths = files.some(file => file.webkitRelativePath && file.webkitRelativePath.includes('/'));
-
-        let uploadFiles;
-        if (hasWebkitPaths) {
-          // Files already have proper webkitRelativePath, use them directly
-          uploadFiles = await Promise.all(files.map(async (file, index) => {
-            updateProgress(file.name, index);
-            const data = await file.arrayBuffer();
-            // Extract the relative path within the folder (remove folder name from webkitRelativePath)
-            const webkitPath = file.webkitRelativePath || file.name;
-            const relativePath = webkitPath.startsWith(`${folderName}/`)
-              ? webkitPath.substring(folderName.length + 1)
-              : webkitPath;
-
-            return {
-              name: file.name,
-              data,
-              relativePath: relativePath
-            };
-          }));
-        } else {
-          // Process files through folder upload utility
-          uploadFiles = await prepareFilesForUpload(result.files, folderName)
-        }
-
-        // Create the folder path by combining current directory with folder name
-        const targetFolderPath = currentFolderPath === '/' ? `/${folderName}` : `${currentFolderPath}/${folderName}`
-        
-        const res = await DriveApiService.uploadFolder(driveId, targetFolderPath, uploadFiles)
-        completeUpload()
-        await onReload()
-        toaster.showSuccess('Upload Complete', `Successfully uploaded folder "${folderName}" with ${res.uploaded} file(s)`)
-      } catch (e) {
-        completeUpload()
-        toaster.showError('Upload Failed', 'Failed to upload folder. Please try again.')
-      }
-    } else {
-      // Handle regular file uploads (single or multiple files without folder structure)
-      startUpload(files.length, '')
-      toaster.showInfo('Upload Started', `Uploading ${files.length} file(s)...`)
+      startUpload(individualFiles.length, '')
+      toaster.showInfo('Upload Started', `Uploading ${individualFiles.length} file(s)...`)
       
       try {
-        const payload = await Promise.all(files.map(async (f, index) => {
+        const payload = await Promise.all(individualFiles.map(async (f, index) => {
+          console.log(`[Upload Debug] Processing individual file ${index + 1}/${individualFiles.length}:`, f.name);
           updateProgress(f.name, index);
-          return { 
-            name: f.name, 
-            data: await f.arrayBuffer() 
-          };
+          
+          try {
+            const data = await f.arrayBuffer();
+            console.log(`[Upload Debug] Successfully read file ${f.name}, size: ${data.byteLength} bytes`);
+            return { 
+              name: f.name, 
+              data: data
+            };
+          } catch (fileError) {
+            console.error(`[Upload Debug] Error reading file ${f.name}:`, fileError);
+            throw fileError;
+          }
         }))
         
         const res = await DriveApiService.uploadFiles(driveId, currentFolderPath, payload)
@@ -126,8 +102,65 @@ export function useFileOperations({
         await onReload()
         toaster.showSuccess('Upload Complete', `Successfully uploaded ${res.uploaded} file(s)`)
       } catch (error) {
+        console.error('[Upload Debug] Individual files upload error:', error);
         completeUpload()
-        toaster.showError('Upload Failed', 'Failed to upload files. Please try again.')
+        toaster.showError('Upload Failed', `Failed to upload files: ${error instanceof Error ? error.message : 'Unknown error'}`)
+        return
+      }
+    }
+    
+    // Handle folder files
+    if (folderFiles.length > 0) {
+      console.log('[Upload Debug] Processing folder files:', folderFiles.map(f => ({
+        name: f.name,
+        webkitPath: f.webkitRelativePath
+      })));
+      
+      // Extract folder name from the first file's webkitRelativePath
+      const firstFile = folderFiles[0];
+      if (!firstFile.webkitRelativePath) {
+        console.error('[Upload Debug] Folder file without webkitRelativePath:', firstFile);
+        toaster.showError('Upload Failed', 'Folder files are missing path information');
+        return;
+      }
+      
+      const folderName = firstFile.webkitRelativePath.split('/')[0];
+      console.log('[Upload Debug] Extracted folder name:', folderName);
+      
+      // Start upload progress for folder
+      startUpload(folderFiles.length, folderName)
+      toaster.showInfo('Upload Started', `Uploading folder "${folderName}" with ${folderFiles.length} files...`)
+      
+      try {
+        // Process folder files directly
+        const uploadFiles = await Promise.all(folderFiles.map(async (file, index) => {
+          updateProgress(file.name, index);
+          const data = await file.arrayBuffer();
+          // Extract the relative path within the folder (remove folder name from webkitRelativePath)
+          const webkitPath = file.webkitRelativePath || file.name;
+          const relativePath = webkitPath.startsWith(`${folderName}/`)
+            ? webkitPath.substring(folderName.length + 1)
+            : webkitPath;
+
+          return {
+            name: file.name,
+            data,
+            relativePath: relativePath
+          };
+        }));
+
+        // Create the folder path by combining current directory with folder name
+        const targetFolderPath = currentFolderPath === '/' ? `/${folderName}` : `${currentFolderPath}/${folderName}`
+        
+        console.log('[Upload Debug] Uploading folder to:', targetFolderPath);
+        const res = await DriveApiService.uploadFolder(driveId, targetFolderPath, uploadFiles)
+        completeUpload()
+        await onReload()
+        toaster.showSuccess('Upload Complete', `Successfully uploaded folder "${folderName}" with ${res.uploaded} file(s)`)
+      } catch (e) {
+        console.error('[Upload Debug] Folder upload error:', e);
+        completeUpload()
+        toaster.showError('Upload Failed', `Failed to upload folder: ${e instanceof Error ? e.message : 'Unknown error'}`)
       }
     }
   }, [driveId, onReload, toaster, startUpload, updateProgress, completeUpload])

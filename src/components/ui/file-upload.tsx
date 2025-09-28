@@ -102,16 +102,43 @@ export const FileUpload = ({
 
     // Get the dropped files first
     const droppedFiles = Array.from(e.dataTransfer.files);
+    console.log('[Drag Drop Debug] Dropped files:', droppedFiles.map(f => ({ 
+      name: f.name, 
+      webkitPath: f.webkitRelativePath,
+      size: f.size,
+      type: f.type
+    })));
 
-    // Check if any files have webkitRelativePath (from folder drag)
-    const hasWebkitPaths = droppedFiles.some(file => file.webkitRelativePath && file.webkitRelativePath.includes('/'));
+    // Separate individual files from folder files
+    const individualFiles: File[] = [];
+    const folderFiles: File[] = [];
 
-    if (hasWebkitPaths) {
-      handleFileChange(droppedFiles);
-      return;
+    // Check each file to see if it's from a folder or individual
+    for (const file of droppedFiles) {
+      if (file.webkitRelativePath && file.webkitRelativePath.includes('/')) {
+        // This file is from a folder drag
+        folderFiles.push(file);
+      } else {
+        // Check if this is a folder entry (usually has no type and small size)
+        // Also check if the name matches any folder names from File System Access API
+        const isFolderEntry = !file.type && (file.size === 0 || file.size < 1000);
+        
+        if (isFolderEntry) {
+          console.log('[Drag Drop Debug] Skipping potential folder entry:', file.name, { size: file.size, type: file.type });
+          // Skip folder entries - they'll be handled by File System Access API
+        } else {
+          // This is an individual file
+          individualFiles.push(file);
+        }
+      }
     }
+    
+    console.log('[Drag Drop Debug] After initial separation:', {
+      individualFiles: individualFiles.length,
+      folderFiles: folderFiles.length
+    });
 
-    // Try File System Access API as fallback
+    // Always try File System Access API first to get proper folder structure
     if ('showDirectoryPicker' in window) {
       try {
         // Try to get directory handle from the drop event
@@ -132,20 +159,56 @@ export const FileUpload = ({
         }
 
         if (directoryHandles.length > 0) {
-          // Process directory handles
-          await processDirectoryHandles(directoryHandles);
-          return;
+          // Process directory handles and add to folder files
+          const additionalFolderFiles = await processDirectoryHandles(directoryHandles);
+          console.log('[Drag Drop Debug] File System Access API added files:', additionalFolderFiles.map(f => ({
+            name: f.name,
+            webkitPath: f.webkitRelativePath
+          })));
+          folderFiles.push(...additionalFolderFiles);
+          
+          // If we got folder files from File System Access API, we need to be more careful
+          // about which individual files to keep - only keep true individual files, not folder entries
+          if (additionalFolderFiles.length > 0) {
+            console.log('[Drag Drop Debug] File System Access API provided folder files, checking individual files');
+            
+            // Filter out individual files that might be folder entries
+            const trueIndividualFiles = individualFiles.filter(file => {
+              // Keep files that have a proper type and reasonable size
+              const isRealFile = file.type && file.size > 0;
+              if (!isRealFile) {
+                console.log('[Drag Drop Debug] Filtering out potential folder entry:', file.name);
+              }
+              return isRealFile;
+            });
+            
+            console.log('[Drag Drop Debug] Kept individual files:', trueIndividualFiles.length);
+            individualFiles.length = 0;
+            individualFiles.push(...trueIndividualFiles);
+          }
         }
       } catch (error) {
+        console.log('[Drag Drop Debug] File System Access API error:', error);
         // Fall through to regular file handling
       }
     }
+
+    // Combine all files for upload
+    const allFiles = [...individualFiles, ...folderFiles];
     
-    // Final fallback - treat as regular files
-    handleFileChange(droppedFiles);
+    console.log('[Drag Drop Debug] Final files to upload:', {
+      totalFiles: allFiles.length,
+      individualFiles: individualFiles.length,
+      folderFiles: folderFiles.length,
+      files: allFiles.map(f => ({ name: f.name, webkitPath: f.webkitRelativePath }))
+    });
+    
+    if (allFiles.length > 0) {
+      handleFileChange(allFiles);
+    }
   }, []);
 
-  const processDirectoryHandles = async (handles: FileSystemDirectoryHandle[]) => {
+  const processDirectoryHandles = async (handles: FileSystemDirectoryHandle[]): Promise<File[]> => {
     const allFilesWithPath: FileWithPath[] = [];
     
     for (const handle of handles) {
@@ -170,8 +233,10 @@ export const FileUpload = ({
         return newFile;
       });
       
-      handleFileChange(files);
+      return files;
     }
+    
+    return [];
   };
 
   const getFilesFromDirectory = async (dirHandle: FileSystemDirectoryHandle, path = '', rootFolderName = ''): Promise<FileWithPath[]> => {
