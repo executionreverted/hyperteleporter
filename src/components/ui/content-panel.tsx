@@ -18,6 +18,7 @@ import { useContentSorting } from "../../renderer/src/hooks/useContentSorting";
 import { ContentSortControls } from "../../renderer/src/components/common/ContentSortControls";
 import { useFolderSize } from "../../renderer/src/hooks/useFolderSize";
 import { useFolderCreationTime } from "../../renderer/src/hooks/useFolderCreationTime";
+import { useDownloadProgress } from "../../renderer/src/contexts/DownloadProgressContext";
 
 // Component for individual folder/file items with size display
 const FolderItem = ({ 
@@ -140,6 +141,7 @@ interface ContentPanelProps {
   onRefresh?: () => void;
   onDownloadFile?: (node: TreeNode) => void;
   onDownloadFolder?: (node: TreeNode) => void;
+  onShowDownloads?: () => void;
   onPreviewAnchor?: (rect: DOMRect, node: TreeNode) => void;
   // External preview state (when onPreviewAnchor is provided)
   previewRect?: DOMRect | null;
@@ -155,12 +157,15 @@ interface ContentPanelProps {
 
 import { FileIcon, ImagePreviewIcon } from "./file-icons";
 
-const FilePreview = ({ node, insideModal = false }: { node: TreeNode; insideModal?: boolean }) => {
+const FilePreview = ({ node, insideModal = false, onShowDownloads, onClosePreview, currentDrive }: { node: TreeNode; insideModal?: boolean; onShowDownloads?: () => void; onClosePreview?: () => void; currentDrive?: { name: string; id: string } }) => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const api: any = (window as any)?.api
   const [imgUrl, setImgUrl] = React.useState<string | null>(null)
   const [loadingImg, setLoadingImg] = React.useState(false)
   const [imgError, setImgError] = React.useState<string | null>(null)
+  const [isFileTooLarge, setIsFileTooLarge] = React.useState(false)
+  const { startDownload, updateDownloadPath, completeDownload, failDownload } = useDownloadProgress()
+  const toaster = useToaster()
   
   // Code preview hooks - moved to top level to avoid conditional hook calls
   const [code, setCode] = React.useState<string | null>(null)
@@ -264,6 +269,72 @@ const FilePreview = ({ node, insideModal = false }: { node: TreeNode; insideModa
   };
 
   const renderPreview = () => {
+    // Check if file is too large for preview
+    if (isFileTooLarge) {
+      return (
+        <div className={insideModal ? "p-4" : "p-6"}>
+          <div className="text-center">
+            <div className="text-neutral-300 mb-4">
+              <div className="text-lg font-medium mb-2">File too large to preview</div>
+              <div className="text-sm">This file is larger than 50MB. Download to view the file.</div>
+            </div>
+            <MagicButton
+              onClick={async () => {
+                try {
+                  const match = window.location.hash.match(/#\/drive\/([^/]+)/)
+                  const driveId = match ? match[1] : null
+                  if (!driveId || !api?.drives?.downloadFile) return
+                  
+                  const path = node.id.startsWith('/') ? node.id : `/${node.id}`
+                  const fileName = node.name
+                  const driveName = currentDrive?.name || 'Unknown Drive'
+                  
+                  // Start download progress tracking
+                  const downloadId = `download-${Date.now()}`
+                  startDownload(fileName, 1, downloadId, '') // Single file download
+                  
+                  // Open downloads modal to show progress
+                  onShowDownloads?.()
+                  
+                  toaster.showInfo('Download Started', `Downloading ${fileName}...`)
+                  
+                  // Download file to Downloads folder
+                  const result = await api.drives.downloadFile(driveId, path, fileName, driveName)
+                  
+                  if (result?.success) {
+                    // Update download path and complete
+                    updateDownloadPath(downloadId, result.downloadPath)
+                    completeDownload(downloadId)
+                    
+                    toaster.showSuccess('Download Complete', `${fileName} saved to Downloads/HyperTeleporter/${driveName}/`, {
+                      label: 'Open Folder',
+                      onClick: () => api?.downloads?.openFolder?.(result.downloadPath)
+                    })
+                    
+                    // Close preview modal
+                    onClosePreview?.()
+                    
+                    // Dispatch event to refresh downloads modal
+                    window.dispatchEvent(new CustomEvent('download-completed'))
+                  } else {
+                    failDownload(downloadId, result?.error || 'Unknown error')
+                    toaster.showError('Download Failed', `Failed to download ${fileName}: ${result?.error || 'Unknown error'}`)
+                  }
+                } catch (error) {
+                  const downloadId = `download-${Date.now()}`
+                  failDownload(downloadId, 'Download failed. Please try again.')
+                  toaster.showError('Download Failed', 'Failed to download file. Please try again.')
+                  console.error('Failed to download file:', error)
+                }
+              }}
+            >
+              Download File
+            </MagicButton>
+          </div>
+        </div>
+      )
+    }
+
     switch (fileType) {
       case 'txt':
       case 'md':
@@ -314,7 +385,7 @@ const FilePreview = ({ node, insideModal = false }: { node: TreeNode; insideModa
       case 'webm':
       case 'mov':
         return (
-          <MediaPreview node={node} type="video" />
+          <MediaPreview node={node} type="video" onShowDownloads={onShowDownloads} onClosePreview={onClosePreview} currentDrive={currentDrive} />
         );
 
       case 'pdf':
@@ -338,7 +409,7 @@ const FilePreview = ({ node, insideModal = false }: { node: TreeNode; insideModa
       case 'wav':
       case 'ogg':
         return (
-          <MediaPreview node={node} type="audio" />
+          <MediaPreview node={node} type="audio" onShowDownloads={onShowDownloads} onClosePreview={onClosePreview} currentDrive={currentDrive} />
         );
 
       default:
@@ -359,11 +430,29 @@ const FilePreview = ({ node, insideModal = false }: { node: TreeNode; insideModa
       setLoadingImg(true)
       setImgError(null)
       const path = node.id.startsWith('/') ? node.id : `/${node.id}`
-      Promise.resolve(api.files.getFileUrl(driveId, path))
-        .then((url: string | null) => {
-          if (!url) throw new Error('No data')
-          setImgUrl(url)
-        })
+      
+      // First, try to download the file if it's not available locally
+      const loadImage = async () => {
+        if (api?.files?.downloadFile) {
+          console.log(`[FilePreview] Attempting to download image: ${path}`)
+          const downloadSuccess = await api.files.downloadFile(driveId, path)
+          if (downloadSuccess) {
+            console.log(`[FilePreview] Image downloaded successfully: ${path}`)
+          } else {
+            console.warn(`[FilePreview] Image download failed: ${path}`)
+          }
+        }
+        
+        const url = await api.files.getFileUrl(driveId, path)
+        if (url === 'FILE_TOO_LARGE') {
+          setIsFileTooLarge(true)
+          return
+        }
+        if (!url) throw new Error('No data')
+        setImgUrl(url)
+      }
+      
+      loadImage()
         .catch((e: any) => setImgError(String(e?.message || e)))
         .finally(() => setLoadingImg(false))
     } catch {}
@@ -484,10 +573,13 @@ function TextPreview({ node, insideModal = false }: { node: TreeNode; insideModa
   )
 }
 
-function MediaPreview({ node, type }: { node: TreeNode; type: 'audio' | 'video' }) {
+function MediaPreview({ node, type, onShowDownloads, onClosePreview, currentDrive }: { node: TreeNode; type: 'audio' | 'video'; onShowDownloads?: () => void; onClosePreview?: () => void; currentDrive?: { name: string; id: string } }) {
   const [url, setUrl] = React.useState<string | null>(null)
   const [loading, setLoading] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
+  const [isFileTooLarge, setIsFileTooLarge] = React.useState(false)
+  const { startDownload, updateDownloadPath, completeDownload, failDownload } = useDownloadProgress()
+  const toaster = useToaster()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const api: any = (window as any)?.api
 
@@ -496,6 +588,7 @@ function MediaPreview({ node, type }: { node: TreeNode; type: 'audio' | 'video' 
       try {
         setLoading(true)
         setError(null)
+        setIsFileTooLarge(false)
         const match = window.location.hash.match(/#\/drive\/([^/]+)/)
         const driveId = match ? match[1] : null
         if (!driveId || !api?.files?.getFileUrl) {
@@ -503,7 +596,23 @@ function MediaPreview({ node, type }: { node: TreeNode; type: 'audio' | 'video' 
           return
         }
         const path = node.id.startsWith('/') ? node.id : `/${node.id}`
+        
+        // First, try to download the file if it's not available locally
+        if (api?.files?.downloadFile) {
+          console.log(`[MediaPreview] Attempting to download file: ${path}`)
+          const downloadSuccess = await api.files.downloadFile(driveId, path)
+          if (downloadSuccess) {
+            console.log(`[MediaPreview] File downloaded successfully: ${path}`)
+          } else {
+            console.warn(`[MediaPreview] File download failed: ${path}`)
+          }
+        }
+        
         const blobUrl = await api.files.getFileUrl(driveId, path)
+        if (blobUrl === 'FILE_TOO_LARGE') {
+          setIsFileTooLarge(true)
+          return
+        }
         if (!blobUrl) throw new Error('Empty')
         setUrl(blobUrl)
       } catch (e: any) {
@@ -518,6 +627,68 @@ function MediaPreview({ node, type }: { node: TreeNode; type: 'audio' | 'video' 
 
   if (loading) return <div className="p-6 text-neutral-300">Loading…</div>
   if (error) return <div className="p-6 text-red-400">{error}</div>
+  if (isFileTooLarge) {
+    return (
+      <div className="p-6 text-center">
+        <div className="text-neutral-300 mb-4">
+          <div className="text-lg font-medium mb-2">File too large to preview</div>
+          <div className="text-sm">This file is larger than 50MB. Download to view the file.</div>
+        </div>
+        <MagicButton
+          onClick={async () => {
+            try {
+              const match = window.location.hash.match(/#\/drive\/([^/]+)/)
+              const driveId = match ? match[1] : null
+              if (!driveId || !api?.drives?.downloadFile) return
+              
+              const path = node.id.startsWith('/') ? node.id : `/${node.id}`
+              const fileName = node.name
+              const driveName = currentDrive?.name || 'Unknown Drive'
+              
+              // Start download progress tracking
+              const downloadId = `download-${Date.now()}`
+              startDownload(fileName, 1, downloadId, '') // Single file download
+              
+              // Open downloads modal to show progress
+              onShowDownloads?.()
+              
+              toaster.showInfo('Download Started', `Downloading ${fileName}...`)
+              
+              // Download file to Downloads folder
+              const result = await api.drives.downloadFile(driveId, path, fileName, driveName)
+              
+              if (result?.success) {
+                // Update download path and complete
+                updateDownloadPath(downloadId, result.downloadPath)
+                completeDownload(downloadId)
+                
+                toaster.showSuccess('Download Complete', `${fileName} saved to Downloads/HyperTeleporter/${driveName}/`, {
+                  label: 'Open Folder',
+                  onClick: () => api?.downloads?.openFolder?.(result.downloadPath)
+                })
+                
+                // Close preview modal
+                onClosePreview?.()
+                
+                // Dispatch event to refresh downloads modal
+                window.dispatchEvent(new CustomEvent('download-completed'))
+              } else {
+                failDownload(downloadId, result?.error || 'Unknown error')
+                toaster.showError('Download Failed', `Failed to download ${fileName}: ${result?.error || 'Unknown error'}`)
+              }
+            } catch (error) {
+              const downloadId = `download-${Date.now()}`
+              failDownload(downloadId, 'Download failed. Please try again.')
+              toaster.showError('Download Failed', 'Failed to download file. Please try again.')
+              console.error('Failed to download file:', error)
+            }
+          }}
+        >
+          Download File
+        </MagicButton>
+      </div>
+    )
+  }
   if (!url) return null
 
   return (
@@ -890,7 +1061,7 @@ const FolderContents = ({ node, onFileClick, onNavigateUp, canNavigateUp, driveI
   );
 };
 
-export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavigateUp, driveId, onFileDeleted, onCreateFolder, onRefresh, onDownloadFile, onDownloadFolder, onPreviewAnchor, previewRect, isPreviewOpen, previewNode, onClosePreview, className, canWrite = true, currentDrive, syncStatus, isDriveSyncing }: ContentPanelProps) {
+export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavigateUp, driveId, onFileDeleted, onCreateFolder, onRefresh, onDownloadFile, onDownloadFolder, onShowDownloads, onPreviewAnchor, previewRect, isPreviewOpen, previewNode, onClosePreview, className, canWrite = true, currentDrive, syncStatus, isDriveSyncing }: ContentPanelProps) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const api: any = (window as any)?.api
   const toaster = useToaster()
@@ -1251,7 +1422,7 @@ export function ContentPanel({ selectedNode, onFileClick, onNavigateUp, canNavig
                 {/* Upper half: preview or folder cover */}
                 <div className="basis-1/2 min-h-0 max-h-1/2  overflow-hidden">
                   {currentPreviewNode.type === 'file' ? (
-                    <FilePreview node={currentPreviewNode} insideModal />
+                    <FilePreview node={currentPreviewNode} insideModal onShowDownloads={onShowDownloads} onClosePreview={onClosePreview} currentDrive={currentDrive} />
                   ) : (
                     <div className="h-full w-full flex items-center justify-center p-8">
                       <img src={FolderIcon} alt="Folder" className="w-20 h-20 opacity-80" />

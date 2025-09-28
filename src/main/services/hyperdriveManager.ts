@@ -506,6 +506,37 @@ export async function uploadFolder(
 }
 
 // Simple file buffer function using proper Hyperdrive API
+export async function downloadFile(driveId: string, path: string): Promise<boolean> {
+  const drive = activeDrives.get(driveId)?.hyperdrive
+  if (!drive) throw new Error('Drive not found')
+  const normalized = path.startsWith('/') ? path : `/${path}`
+  
+  try {
+    // Check if file exists
+    const exists = await drive.exists(normalized)
+    if (!exists) {
+      console.log(`[hyperdrive] File does not exist: ${normalized}`)
+      return false
+    }
+
+    // Check if file is already downloaded
+    const isDownloaded = await drive.has(normalized)
+    if (isDownloaded) {
+      console.log(`[hyperdrive] File already downloaded: ${normalized}`)
+      return true
+    }
+
+    // Start background download (non-blocking)
+    console.log(`[hyperdrive] Starting background download: ${normalized}`)
+    const download = await drive.download(normalized, { wait: false })
+    console.log(`[hyperdrive] Background download started for: ${normalized}`)
+    return true
+  } catch (err) {
+    console.error(`[hyperdrive] Failed to start download for ${normalized}:`, err)
+    return false
+  }
+}
+
 export async function getFileBuffer(driveId: string, path: string): Promise<Buffer | null> {
   const drive = activeDrives.get(driveId)?.hyperdrive
   if (!drive) throw new Error('Drive not found')

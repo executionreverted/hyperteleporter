@@ -433,6 +433,7 @@ export const DrivePage: React.FC = () => {
               onRefresh={reloadCurrentFolder}
               onDownloadFile={handleDownloadFile}
               onDownloadFolder={handleDownloadFolder}
+              onShowDownloads={() => setShowDownloadsModal(true)}
               onPreviewAnchor={handlePreviewAnchor}
               previewRect={previewRect}
               isPreviewOpen={isPreviewOpen}

@@ -2,7 +2,7 @@ import { app, shell, BrowserWindow, ipcMain, screen } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 const icon = join(__dirname, '../../build/icon.png')
-import { initializeAllDrives, closeAllDrives, createDrive, listActiveDrives, listDrive, createFolder, uploadFiles, uploadFolder, getFileBuffer, deleteFile, getDriveStorageInfo, joinDrive, stopAllDriveWatchers, getFolderStats, getFileStats, downloadFolderToDownloads, downloadFileToDownloads, checkDriveSyncStatus, getDriveSyncStatus, clearDriveContent, getActiveDrive } from './services/hyperdriveManager'
+import { initializeAllDrives, closeAllDrives, createDrive, listActiveDrives, listDrive, createFolder, uploadFiles, uploadFolder, getFileBuffer, deleteFile, getDriveStorageInfo, joinDrive, stopAllDriveWatchers, getFolderStats, getFileStats, downloadFolderToDownloads, downloadFileToDownloads, checkDriveSyncStatus, getDriveSyncStatus, clearDriveContent, getActiveDrive, downloadFile } from './services/hyperdriveManager'
 import { addDownload, readDownloads, removeDownload } from './services/downloads'
 import { readUserProfile, writeUserProfile } from './services/userProfile'
 import { removeDrive, getDriveRecordById } from './services/driveRegistry'
@@ -246,6 +246,17 @@ app.whenReady().then(() => {
     view.set(buf)
     console.log(`[ipc] drives:getFile ${path}: original offset=${buf.byteOffset}, length=${buf.length}, new buffer length=${newBuffer.byteLength}`)
     return newBuffer
+  })
+
+  ipcMain.handle('drives:downloadFileForPreview', async (_evt, { driveId, path }: { driveId: string, path: string }) => {
+    console.log(`[ipc] drives:downloadFileForPreview called for driveId=${driveId}, path=${path}`)
+    try {
+      const success = await downloadFile(driveId, path)
+      return success
+    } catch (error) {
+      console.error(`[ipc] drives:downloadFileForPreview failed:`, error)
+      return false
+    }
   })
 
   ipcMain.handle('drives:deleteFile', async (_evt, { driveId, path }: { driveId: string, path: string }) => {

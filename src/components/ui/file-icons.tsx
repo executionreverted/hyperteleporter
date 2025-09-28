@@ -80,6 +80,17 @@ export const ImagePreviewIcon = React.memo(({
           return;
         }
 
+        // First, try to download the file if it's not available locally
+        if (api?.files?.downloadFile) {
+          console.log(`[ImagePreviewIcon] Attempting to download image: ${node.id}`);
+          const downloadSuccess = await api.files.downloadFile(driveId, node.id);
+          if (downloadSuccess) {
+            console.log(`[ImagePreviewIcon] Image downloaded successfully: ${node.id}`);
+          } else {
+            console.warn(`[ImagePreviewIcon] Image download failed: ${node.id}`);
+          }
+        }
+
         const url = await api.files.getFileUrl(driveId, node.id);
         if (url) {
           // Cache the URL
