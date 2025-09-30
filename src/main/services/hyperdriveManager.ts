@@ -20,6 +20,87 @@ export type InitializedDrive = {
 
 const activeDrives = new Map<string, InitializedDrive>()
 const activeWatchers = new Map<string, { watcher: AsyncIterableIterator<any>; running: boolean }>()
+const pendingGcReconciliations = new Map<string, NodeJS.Timeout>()
+
+// GC state persistence per drive
+function getGcStatePath(driveId: string): string {
+  const drive = activeDrives.get(driveId)
+  const storageDir = drive?.record.storageDir || join(getHyperdriveBaseDir(), 'stores', driveId)
+  return join(storageDir, 'gc-state.json')
+}
+
+async function readLastSeenVersion(driveId: string): Promise<number | null> {
+  try {
+    const path = getGcStatePath(driveId)
+    const content = await fsReadFile(path, 'utf8')
+    const json = JSON.parse(content)
+    if (typeof json?.lastSeenVersion === 'number') return json.lastSeenVersion
+    return null
+  } catch {
+    return null
+  }
+}
+
+async function writeLastSeenVersion(driveId: string, version: number): Promise<void> {
+  try {
+    const path = getGcStatePath(driveId)
+    const body = JSON.stringify({ lastSeenVersion: version })
+    await writeFile(path, body)
+    console.log(`[hyperdrive][gc] wrote lastSeenVersion for ${driveId}: ${version}`)
+  } catch {}
+}
+
+// Reconcile deletions since lastSeenVersion and clear local blobs for deleted entries
+async function reconcileDeletedBlobs(driveId: string): Promise<void> {
+  const drive = activeDrives.get(driveId)?.hyperdrive as any
+  if (!drive) return
+  try {
+    const currentVersion = drive.version
+    let lastSeen = await readLastSeenVersion(driveId)
+    console.log(`[hyperdrive][gc] reconcile start drive=${driveId} lastSeen=${lastSeen} current=${currentVersion}`)
+    if (lastSeen === null) {
+      // First run: baseline to current to avoid retro clearing
+      await writeLastSeenVersion(driveId, currentVersion)
+      console.log(`[hyperdrive][gc] first run baseline -> ${currentVersion}`)
+      return
+    }
+    if (lastSeen >= currentVersion) return
+
+    try {
+      // Ensure we have peers before blocking on update when online
+      // @ts-ignore
+      await drive.update({ wait: false })
+    } catch {}
+
+    // Diff from lastSeen to current
+    const changes = drive.diff(lastSeen, '/', { recursive: true })
+    const blobs = await drive.getBlobs()
+    for await (const change of changes) {
+      const nowEntry = change?.left
+      const prevEntry = change?.right
+      // Deletion: entry existed at previous version but not now
+      if (!nowEntry && prevEntry && prevEntry.key) {
+        const key = prevEntry.key
+        const blobRef = prevEntry?.value?.blob
+        try {
+          if (blobRef) {
+            await blobs.clear(blobRef)
+            console.log(`[hyperdrive][gc] cleared blob for deleted ${key}`)
+          } else {
+            await drive.clear(key, { diff: true })
+            console.log(`[hyperdrive][gc] cleared by path for deleted ${key}`)
+          }
+        } catch (e) {
+          console.warn(`[hyperdrive][gc] failed clearing for ${key}:`, e)
+        }
+      }
+    }
+    await writeLastSeenVersion(driveId, currentVersion)
+    console.log(`[hyperdrive][gc] reconcile completed drive=${driveId} -> ${currentVersion}`)
+  } catch (err) {
+    console.warn(`[hyperdrive] reconcileDeletedBlobs failed for ${driveId}:`, err)
+  }
+}
 
 async function startDriveWatcher(id: string, hyperdrive: Hyperdrive): Promise<void> {
   if (activeWatchers.has(id)) return
@@ -41,6 +122,13 @@ async function startDriveWatcher(id: string, hyperdrive: Hyperdrive): Promise<vo
               win.webContents.send('drive:changed', { driveId: id })
             } catch {}
           }
+      // Debounced GC reconciliation
+      const prev = pendingGcReconciliations.get(id)
+      if (prev) clearTimeout(prev)
+      const to = setTimeout(() => {
+        reconcileDeletedBlobs(id).catch(() => {})
+      }, 300)
+      pendingGcReconciliations.set(id, to)
         }
       } catch (err) {
         console.warn(`[hyperdrive] watcher loop ended for drive ${id}`, err)
@@ -128,6 +216,13 @@ export async function initializeAllDrives(): Promise<InitializedDrive[]> {
       const drive: InitializedDrive = { record: normalizedRecord, corestore, hyperdrive, isSyncing: false }
       activeDrives.set(record.id, drive)
       initialized.push(drive)
+
+      // On init, reconcile any missed deletions while offline
+      ;(async () => {
+        try {
+          await reconcileDeletedBlobs(record.id)
+        } catch {}
+      })()
       
     } catch (err) {
       console.error(`[hyperdrive] initializeAllDrives: Failed to initialize drive ${record.id} (${record.name}):`, err)
@@ -1235,7 +1330,7 @@ export async function getFileStats(driveId: string, path: string): Promise<{ cre
   }
 }
 
-import { writeFile, mkdir } from 'fs/promises'
+import { writeFile, mkdir, readFile as fsReadFile } from 'fs/promises'
 import { homedir } from 'os'
 import { getDownloadConfig, DownloadConfig } from '../config/downloadConfig'
 import { downloadTracker, ActiveDownload } from './downloadTracker'

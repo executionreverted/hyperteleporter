@@ -497,6 +497,18 @@ app.whenReady().then(() => {
     }
   })
 
+  // Manual trigger for deletion reconciliation (testing)
+  ipcMain.handle('drives:gcReconcile', async (_evt, { driveId }: { driveId: string }) => {
+    try {
+      const { reconcileDeletedBlobs } = await import('./services/hyperdriveManager') as any
+      await reconcileDeletedBlobs(driveId)
+      return { success: true }
+    } catch (error) {
+      console.error(`[ipc] drives:gcReconcile failed:`, error)
+      return { success: false, error: String(error) }
+    }
+  })
+
   // Drive sync status IPC handlers
   ipcMain.handle('drives:checkSyncStatus', async (_evt, { driveId }: { driveId: string }) => {
     // console.log(`[ipc] drives:checkSyncStatus called for driveId=${driveId}`)
