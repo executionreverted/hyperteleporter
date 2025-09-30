@@ -34,6 +34,8 @@ const api = {
     checkSyncStatus: async (driveId: string) => ipcRenderer.invoke('drives:checkSyncStatus', { driveId }),
     getSyncStatus: async (driveId: string) => ipcRenderer.invoke('drives:getSyncStatus', { driveId })
   },
+  // Expose drive removal to renderer to avoid direct ipcRenderer usage
+  removeDrive: async (driveId: string) => ipcRenderer.invoke('drives:removeDrive', { driveId }),
   downloads: {
     list: async () => ipcRenderer.invoke('downloads:list'),
     remove: async (id: string) => ipcRenderer.invoke('downloads:remove', { id }),
@@ -151,6 +153,15 @@ ipcRenderer.on('download-progress', (_, data) => {
 ipcRenderer.on('clear-content-progress', (_, data) => {
   // Forward to renderer
   window.dispatchEvent(new CustomEvent('clear-content-progress', { detail: data }))
+})
+
+// Drives lifecycle events forwarding
+ipcRenderer.on('drives:initialized', () => {
+  window.dispatchEvent(new CustomEvent('drives:initialized'))
+})
+
+ipcRenderer.on('drive:removed', (_evt, payload) => {
+  window.dispatchEvent(new CustomEvent('drive:removed', { detail: payload }))
 })
 
 // Use `contextBridge` APIs to expose Electron APIs to

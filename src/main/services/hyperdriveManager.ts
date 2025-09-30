@@ -1451,8 +1451,13 @@ async function downloadFileParallel(
       ? entry.key.slice(folderPath.length).replace(/^\//, '')
       : entry.key.replace(/^\//, '')
     
+    console.log(`[hyperdrive] downloadFileParallel: entry.key=${entry.key}, folderPath=${folderPath}, relativePath=${relativePath}`)
+    console.log(`[hyperdrive] downloadFileParallel: targetDir=${targetDir}`)
+    
     const filePath = join(targetDir, relativePath)
     const fileDir = join(targetDir, relativePath.split('/').slice(0, -1).join('/'))
+    
+    console.log(`[hyperdrive] downloadFileParallel: filePath=${filePath}, fileDir=${fileDir}`)
     
     if (fileDir !== targetDir) {
       await mkdir(fileDir, { recursive: true })
@@ -1781,7 +1786,11 @@ async function performFolderDownload(
     await mkdir(targetDir, { recursive: true })
     
     console.log(`[hyperdrive] Starting parallel folder download: ${folderName}`)
+    console.log(`[hyperdrive] Input folderPath: ${folderPath}`)
     console.log(`[hyperdrive] Normalized folder path: ${normalizedFolderPath}`)
+    console.log(`[hyperdrive] Downloads directory: ${downloadsDir}`)
+    console.log(`[hyperdrive] Target directory: ${targetDir}`)
+    console.log(`[hyperdrive] join(${downloadsDir}, ${normalizedFolderPath === '/' ? '' : normalizedFolderPath}) = ${targetDir}`)
     console.log(`[hyperdrive] Using config:`, {
       concurrentDownloads: config.concurrentDownloads,
       enablePrefetching: config.enablePrefetching,
@@ -1848,7 +1857,7 @@ async function performFolderDownload(
         // Wait for prefetch if available
         await prefetcher.waitForPrefetch(entry.key)
         
-        const result = await downloadFileParallel(drive, entry, targetDir, normalizedFolderPath, progressBatcher!, totalFiles, config)
+        const result = await downloadFileParallel(drive, entry, targetDir, folderPath, progressBatcher!, totalFiles, config)
         
         processedFiles++
         
