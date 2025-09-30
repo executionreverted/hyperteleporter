@@ -30,6 +30,8 @@ export const ImagePreviewIcon = React.memo(({
   const [imageUrl, setImageUrl] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState(false);
+  const [isVisible, setIsVisible] = React.useState(false);
+  const containerRef = React.useRef<HTMLDivElement | null>(null);
 
   // Size mapping
   const sizeConfig = React.useMemo(() => {
@@ -55,8 +57,28 @@ export const ImagePreviewIcon = React.memo(({
     return `${driveId}-${node.id}`;
   }, [driveId, node.id]);
 
+  // Lazy-load: observe visibility before fetching preview
   React.useEffect(() => {
-    if (!driveId || imageUrl) return;
+    const el = containerRef.current;
+    if (!el) return;
+    if (isVisible) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting || entry.intersectionRatio > 0) {
+            setIsVisible(true);
+            observer.disconnect();
+          }
+        })
+      },
+      { root: null, rootMargin: '200px', threshold: 0.01 }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [isVisible]);
+
+  React.useEffect(() => {
+    if (!driveId || imageUrl || !isVisible) return;
 
     // Check cache first
     const cachedUrl = imageCache.get(cacheKey);
@@ -80,17 +102,7 @@ export const ImagePreviewIcon = React.memo(({
           return;
         }
 
-        // First, try to download the file if it's not available locally
-        if (api?.files?.downloadFile) {
-          console.log(`[ImagePreviewIcon] Attempting to download image: ${node.id}`);
-          const downloadSuccess = await api.files.downloadFile(driveId, node.id);
-          if (downloadSuccess) {
-            console.log(`[ImagePreviewIcon] Image downloaded successfully: ${node.id}`);
-          } else {
-            console.warn(`[ImagePreviewIcon] Image download failed: ${node.id}`);
-          }
-        }
-
+        // Fetch a blob/url without forcing a download for preview
         const url = await api.files.getFileUrl(driveId, node.id);
         if (url) {
           // Cache the URL
@@ -108,12 +120,12 @@ export const ImagePreviewIcon = React.memo(({
     };
 
     loadImagePreview();
-  }, [cacheKey, driveId, loading, imageUrl]);
+  }, [cacheKey, driveId, loading, imageUrl, isVisible, node.name]);
 
   // If loading, show loading state
   if (loading) {
     return (
-      <div className={`${sizeConfig.container} flex items-center justify-center bg-gray-700 rounded`}>
+      <div ref={containerRef} className={`${sizeConfig.container} flex items-center justify-center bg-gray-700 rounded`}>
         <div className={`${sizeConfig.spinner} border-2 border-gray-400 border-t-transparent rounded-full animate-spin`} />
       </div>
     );
@@ -121,12 +133,16 @@ export const ImagePreviewIcon = React.memo(({
 
   // If error or no image URL, show fallback icon
   if (error || !imageUrl) {
-    return <IconPhoto size={sizeConfig.icon} className="text-blue-400" />;
+    return (
+      <div ref={containerRef} className={`${sizeConfig.container} flex items-center justify-center`}>
+        <IconPhoto size={sizeConfig.icon} className="text-blue-400" />
+      </div>
+    );
   }
 
   // Show image preview
   return (
-    <div className={`${sizeConfig.container} rounded overflow-hidden bg-gray-800 flex items-center justify-center`}>
+    <div ref={containerRef} className={`${sizeConfig.container} rounded overflow-hidden bg-gray-800 flex items-center justify-center`}>
       <img
         src={imageUrl}
         alt={node.name}

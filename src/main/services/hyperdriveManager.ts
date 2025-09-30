@@ -312,10 +312,11 @@ export async function listDrive(folderDriveId: string, folder: string, recursive
   // Ensure folder starts with '/'
   const prefix = listFolder.startsWith('/') ? listFolder : `/${listFolder}`
   
+  // Limit listing to the requested prefix to avoid scanning entire drive and excessive logs
   // console.log(`[hyperdrive] listDrive driveId=${folderDriveId} prefix=${prefix} recursive=${recursive}`)
-  for await (const file of drive.list('/', { recursive: true })) {
+  for await (const file of drive.list(prefix, { recursive: true })) {
     const isFile = !!file?.value?.blob || !!file?.value?.linkname
-    console.log(`[hyperdrive] Processing file: ${file.key}, isFile: ${isFile}`)
+    // Verbose per-file logging removed to prevent log flooding during large operations
     
     // Check if this is a pseudo-folder marker for a chunked file FIRST
     if (file.key.endsWith('/.keep')) {

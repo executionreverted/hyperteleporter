@@ -8,6 +8,7 @@ import {
   ModalTrigger,
   useModal,
 } from "./animated-modal";
+import { MagicButton } from "../../renderer/src/components/common/MagicButton";
 
 interface ConfirmModalProps {
   title?: string;
@@ -55,19 +56,13 @@ function ConfirmModalContent({
           {message}
         </p>
       </ModalContent>
-      <ModalFooter className="gap-4">
-        <button 
-          onClick={handleCancel}
-          className={`px-4 py-2 rounded-md text-sm ${cancelButtonClass}`}
-        >
+      <ModalFooter className="gap-3">
+        <MagicButton onClick={handleCancel} variant="purple">
           {cancelText}
-        </button>
-        <button 
-          onClick={handleConfirm}
-          className={`px-4 py-2 rounded-md text-sm ${confirmButtonClass}`}
-        >
+        </MagicButton>
+        <MagicButton onClick={handleConfirm} variant="red">
           {confirmText}
-        </button>
+        </MagicButton>
       </ModalFooter>
     </>
   );
@@ -83,12 +78,15 @@ function ProgrammaticConfirmContent({
   cancelButtonClass = "bg-gray-200 text-black dark:bg-gray-700 dark:text-white",
   onConfirm,
   onCancel,
-}: Omit<ConfirmModalProps, 'triggerButton' | 'isOpen' | 'onOpenChange'>) {
+  isSubmitting = false,
+}: Omit<ConfirmModalProps, 'triggerButton' | 'isOpen' | 'onOpenChange'> & { isSubmitting?: boolean }) {
   const handleConfirm = () => {
+    if (isSubmitting) return
     onConfirm();
   };
 
   const handleCancel = () => {
+    if (isSubmitting) return
     onCancel?.();
   };
 
@@ -102,19 +100,13 @@ function ProgrammaticConfirmContent({
           {message}
         </p>
       </div>
-      <div className="flex justify-end p-4 bg-gray-100 dark:bg-neutral-900 gap-4">
-        <button 
-          onClick={handleCancel}
-          className={`px-4 py-2 rounded-md text-sm ${cancelButtonClass}`}
-        >
+      <div className="flex justify-end p-4 bg-gray-100 dark:bg-neutral-900 gap-3">
+        <MagicButton onClick={handleCancel} disabled={isSubmitting} variant="purple">
           {cancelText}
-        </button>
-        <button 
-          onClick={handleConfirm}
-          className={`px-4 py-2 rounded-md text-sm ${confirmButtonClass}`}
-        >
+        </MagicButton>
+        <MagicButton onClick={handleConfirm} disabled={isSubmitting} loading={isSubmitting} variant="red">
           {confirmText}
-        </button>
+        </MagicButton>
       </div>
     </>
   );
@@ -192,6 +184,7 @@ export function useConfirm() {
     cancelButtonClass?: string;
     onConfirm?: () => void | Promise<void>;
     onCancel?: () => void;
+    isSubmitting?: boolean;
   }>({
     isOpen: false,
     message: '',
@@ -214,11 +207,18 @@ export function useConfirm() {
   };
 
   const ConfirmDialog = () => {
+    const isSubmitting = !!confirmState.isSubmitting
     if (!confirmState.isOpen) return null;
     
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center">
-        <div className="absolute inset-0 bg-black/50" onClick={() => setConfirmState({ isOpen: false, message: '' })} />
+        <div
+          className={`absolute inset-0 bg-black/50 ${isSubmitting ? 'cursor-not-allowed' : ''}`}
+          onClick={() => {
+            if (isSubmitting) return
+            setConfirmState({ isOpen: false, message: '' })
+          }}
+        />
         <div className="relative z-50 min-h-[50%] max-h-[90%] md:max-w-[40%] bg-white dark:bg-neutral-950 border border-transparent dark:border-neutral-800 md:rounded-2xl flex flex-col flex-1 overflow-hidden">
           <ProgrammaticConfirmContent
             title={confirmState.title}
@@ -229,17 +229,20 @@ export function useConfirm() {
             cancelButtonClass={confirmState.cancelButtonClass}
             onConfirm={async () => {
               try {
+                setConfirmState(prev => ({ ...prev, isSubmitting: true }))
                 await confirmState.onConfirm?.();
               } catch (error) {
                 console.error('Confirm action failed:', error);
               } finally {
-                setConfirmState({ isOpen: false, message: '' });
+                setConfirmState({ isOpen: false, message: '', isSubmitting: false });
               }
             }}
             onCancel={() => {
+              if (isSubmitting) return
               confirmState.onCancel?.();
               setConfirmState({ isOpen: false, message: '' });
             }}
+            isSubmitting={isSubmitting}
           />
         </div>
       </div>

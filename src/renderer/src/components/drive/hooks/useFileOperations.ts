@@ -211,27 +211,27 @@ export function useFileOperations({
           }
         }
         
-        // Upload regular files using normal method
+        // Upload regular files using normal method, batched to avoid OOM
         if (regularFiles.length > 0) {
-          console.log(`[Upload Debug] Uploading ${regularFiles.length} regular files using normal method`)
-          const uploadFiles = await Promise.all(regularFiles.map(async (file, index) => {
-            updateProgress(file.name, uploadedCount + index + 1);
-            const data = await file.arrayBuffer();
-            // Extract the relative path within the folder (remove folder name from webkitRelativePath)
-            const webkitPath = file.webkitRelativePath || file.name;
-            const relativePath = webkitPath.startsWith(`${folderName}/`)
-              ? webkitPath.substring(folderName.length + 1)
-              : webkitPath;
-
-            return {
-              name: file.name,
-              data,
-              relativePath: relativePath
-            };
-          }));
-
-          const res = await DriveApiService.uploadFolder(driveId, targetFolderPath, uploadFiles)
-          uploadedCount += res.uploaded
+          console.log(`[Upload Debug] Uploading ${regularFiles.length} regular files using batched method`)
+          const BATCH_SIZE = 10
+          for (let start = 0; start < regularFiles.length; start += BATCH_SIZE) {
+            const batch = regularFiles.slice(start, start + BATCH_SIZE)
+            // Read a small batch into memory at a time
+            const uploadFiles = [] as Array<{ name: string; data: ArrayBuffer; relativePath: string }>
+            for (let i = 0; i < batch.length; i++) {
+              const file = batch[i]
+              updateProgress(file.name, uploadedCount + start + i + 1)
+              const data = await file.arrayBuffer()
+              const webkitPath = file.webkitRelativePath || file.name
+              const relativePath = webkitPath.startsWith(`${folderName}/`)
+                ? webkitPath.substring(folderName.length + 1)
+                : webkitPath
+              uploadFiles.push({ name: file.name, data, relativePath })
+            }
+            const res = await DriveApiService.uploadFolder(driveId, targetFolderPath, uploadFiles)
+            uploadedCount += res.uploaded
+          }
         }
         
         completeUpload()

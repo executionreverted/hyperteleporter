@@ -223,7 +223,7 @@ export function useNavigation({
           breadcrumbPath: folderPath,
           lastFocusedFolder: folderNode,
           treeRoot: folderNode.id,
-          selectedNode: undefined // Don't select file - show folder contents instead
+          selectedNode: folderNode // Keep folder selected so preview modal can render
         })
       } else {
         // If no folder found, just select the file
@@ -244,7 +244,7 @@ export function useNavigation({
           breadcrumbPath: [], // Empty breadcrumb for root
           lastFocusedFolder: rootFolder,
           treeRoot: '/', // Actual root path
-          selectedNode: undefined // Don't select file - show folder contents instead
+          selectedNode: rootFolder // Keep root selected so preview modal can render
         })
       }
     }
