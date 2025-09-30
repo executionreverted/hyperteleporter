@@ -2,7 +2,7 @@ import { app, shell, BrowserWindow, ipcMain, screen } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 const icon = join(__dirname, '../../build/icon.png')
-import { initializeAllDrives, closeAllDrives, createDrive, listActiveDrives, listDrive, createFolder, uploadFiles, uploadFileStream, uploadFolder, getFileBuffer, deleteFile, getDriveStorageInfo, joinDrive, stopAllDriveWatchers, getFolderStats, getFileStats, downloadFolderToDownloads, downloadFileToDownloads, checkDriveSyncStatus, getDriveSyncStatus, clearDriveContent, getActiveDrive, downloadFile } from './services/hyperdriveManager'
+import { initializeAllDrives, closeAllDrives, createDrive, listActiveDrives, listDrive, createFolder, uploadFiles, uploadFileStream, uploadFolder, getFileBuffer, deleteFile, getDriveStorageInfo, joinDrive, stopAllDriveWatchers, getFolderStats, getFileStats, downloadFolderToDownloads, downloadFileToDownloads, checkDriveSyncStatus, getDriveSyncStatus, clearDriveContent, getActiveDrive, downloadFile, closeAndUnregisterDrive, clearDriveCache } from './services/hyperdriveManager'
 import { addDownload, readDownloads, removeDownload } from './services/downloads'
 import { downloadTracker, ActiveDownload } from './services/downloadTracker'
 import { readUserProfile, writeUserProfile } from './services/userProfile'
@@ -486,6 +486,17 @@ app.whenReady().then(() => {
     }
   })
 
+  ipcMain.handle('drives:clearDriveCache', async (_evt, { driveId }: { driveId: string }) => {
+    console.log(`[ipc] drives:clearDriveCache called for driveId=${driveId}`)
+    try {
+      const res = await clearDriveCache(driveId)
+      return { success: true, result: res }
+    } catch (error) {
+      console.error(`[ipc] drives:clearDriveCache failed:`, error)
+      return { success: false, error: String(error) }
+    }
+  })
+
   // Drive sync status IPC handlers
   ipcMain.handle('drives:checkSyncStatus', async (_evt, { driveId }: { driveId: string }) => {
     // console.log(`[ipc] drives:checkSyncStatus called for driveId=${driveId}`)
@@ -508,13 +519,9 @@ app.whenReady().then(() => {
   ipcMain.handle('drives:removeDrive', async (_evt, { driveId }: { driveId: string }) => {
     console.log(`[ipc] drives:removeDrive request: driveId=${driveId}`)
     try {
-      // 1. Close the active drive first (unlock corestore)
-      const drive = getActiveDrive(driveId)
-      if (drive) {
-        console.log(`[ipc] drives:removeDrive: closing active drive ${driveId}`)
-        await drive.corestore.close()
-        console.log(`[ipc] drives:removeDrive: closed corestore for ${driveId}`)
-      }
+      // 1. Close and unregister the active drive (closes corestore, swarm, removes from memory)
+      await closeAndUnregisterDrive(driveId)
+      console.log(`[ipc] drives:removeDrive: closed and unregistered active drive ${driveId}`)
 
       // 2. Get drive record to find storage directory
       const driveRecord = await getDriveRecordById(driveId)

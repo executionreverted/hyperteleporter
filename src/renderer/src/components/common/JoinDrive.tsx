@@ -1,8 +1,8 @@
 "use client";
 import { useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import MagicButtonWide from "../../../../components/ui/magic-button-wide";
 import { useDrives } from "../../contexts/DrivesContext";
+import { MagicButton } from "./MagicButton";
 
 interface JoinDriveProps {
   triggerButton?: React.ReactNode;
@@ -87,7 +87,7 @@ export function JoinDrive({ triggerButton, className }: JoinDriveProps) {
                     <input
                       value={name}
                       onChange={(e) => setName(e.target.value)}
-                      className="w-full px-3 py-2 rounded-md bg-black/30 border border-white/10 text-white outline-none focus:ring-2 focus:ring-white/20"
+                      className="w-full px-3 py-2  bg-black/30 border border-white/10 text-white outline-none focus:ring-2 focus:ring-white/20 rounded-full"
                       placeholder="My friend’s drive"
                     />
                   </div>
@@ -96,24 +96,24 @@ export function JoinDrive({ triggerButton, className }: JoinDriveProps) {
                     <input
                       value={key}
                       onChange={(e) => setKey(e.target.value)}
-                      className="w-full px-3 py-2 rounded-md bg-black/30 border border-white/10 text-white outline-none focus:ring-2 focus:ring-white/20 font-mono"
+                      className="w-full px-3 py-2 rounded-full bg-black/30 border border-white/10 text-white outline-none focus:ring-2 focus:ring-white/20 font-mono"
                       placeholder="e.g. a3b4..."
                     />
                     {error && <p className="text-red-400 text-xs mt-2">{error}</p>}
                   </div>
                   <div className="flex justify-end gap-3 pt-2">
-                    <button
-                      type="button"
+                    <MagicButton
+                      variant="red"
                       onClick={() => setIsOpen(false)}
-                      className="px-3 py-2 bg-gray-200 text-black dark:bg-black dark:border-black dark:text-white border border-gray-300 rounded-md text-sm"
                     >
                       Cancel
-                    </button>
-                    <MagicButtonWide
+                    </MagicButton>
+                    <MagicButton
                       disabled={submitting}
+                      variant="blue"
                     >
                       {submitting ? 'Joining…' : 'Join Drive'}
-                    </MagicButtonWide>
+                    </MagicButton>
                   </div>
                 </form>
               </div>

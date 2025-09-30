@@ -1,8 +1,9 @@
 import React, { useState, useMemo } from 'react'
-import { IconX, IconSettings, IconTrash, IconDownload, IconUpload, IconBell, IconShield, IconPalette, IconDatabase, IconRocket } from '@tabler/icons-react'
+import { IconX, IconSettings, IconTrash, IconDownload, IconUpload, IconBell, IconShield, IconPalette, IconDatabase, IconRocket, IconClearAll} from '@tabler/icons-react'
 import { useEscapeKey } from '../../hooks/useEscapeKey'
 import { MagicButton } from './MagicButton'
 import { ConfirmDialog } from './ConfirmDialog'
+import { DriveApiService } from '../drive/services/driveApiService'
 import { AutolaunchSettings } from './AutolaunchSettings'
 import { Switch } from '../../../../components/ui/switch'
 
@@ -34,6 +35,8 @@ interface Setting {
 export function SettingsModal({ isOpen, onClose, onClearContent }: SettingsModalProps) {
   const [showConfirmDialog, setShowConfirmDialog] = useState(false)
   const [isClearing, setIsClearing] = useState(false)
+  const [isClearingCache, setIsClearingCache] = useState(false)
+  const [showClearCacheConfirm, setShowClearCacheConfirm] = useState(false)
   
   const [settings, setSettings] = useState({
     // General Settings
@@ -92,6 +95,23 @@ export function SettingsModal({ isOpen, onClose, onClearContent }: SettingsModal
   const handleCancelClear = () => {
     setShowConfirmDialog(false)
   }
+
+  const handleConfirmClearCache = async () => {
+    setIsClearingCache(true)
+    try {
+      // Derive driveId from URL hash (same approach used elsewhere in UI)
+      const match = window.location.hash.match(/#\/drive\/([^/]+)/)
+      const driveId = match ? match[1] : null
+      if (!driveId) throw new Error('No drive selected')
+      await DriveApiService.clearDriveCache(driveId)
+      setShowClearCacheConfirm(false)
+    } catch (e) {
+      console.error('[Settings] Clear cache failed:', e)
+    } finally {
+      setIsClearingCache(false)
+    }
+  }
+  const handleCancelClearCache = () => setShowClearCacheConfirm(false)
 
   const settingSections: SettingSection[] = useMemo(() => [
     {
@@ -305,6 +325,15 @@ export function SettingsModal({ isOpen, onClose, onClearContent }: SettingsModal
           ],
           onChange: (value) => handleSettingChange('cacheSize', value)
         }
+        ,
+        {
+          id: 'clearCache',
+          label: 'Clear cached blobs (free disk space)',
+          description: 'Frees OS-visible space by removing cached blob data. Your files remain listed; they will re-download on next access. Saved exports/downloads stay intact.',
+          type: 'button',
+          onClick: () => setShowClearCacheConfirm(true),
+          danger: false
+        }
       ]
     }
   ], [settings])
@@ -441,7 +470,7 @@ export function SettingsModal({ isOpen, onClose, onClearContent }: SettingsModal
 
             {/* Danger Zone */}
             <div className="space-y-4 pt-6 border-t border-red-500/20">
-              <div className="flex items-center space-x-2 pb-2">
+            <div className="flex items-center space-x-2 pb-2">
                 <IconTrash className="w-5 h-5 text-red-500" />
                 <h3 className="text-lg font-medium text-red-500">Danger Zone</h3>
               </div>
@@ -461,6 +490,25 @@ export function SettingsModal({ isOpen, onClose, onClearContent }: SettingsModal
                   >
                     <IconTrash className="w-4 h-4 mr-2" />
                     Clear All Content
+                  </MagicButton>
+                </div>
+              </div>
+
+              <div className="p-4 bg-blue-900/10 border border-blue-500/30 rounded-lg">
+                <div className="space-y-3">
+                  <div>
+                    <h4 className="text-sm font-medium text-blue-300">Clear Cached Blobs</h4>
+                    <p className="text-xs text-blue-200 mt-1">
+                      This frees disk space by removing cached blob data only. You will need to re-download files to preview them again. Any files you explicitly exported or saved locally remain.
+                    </p>
+                  </div>
+                  <MagicButton
+                    onClick={() => setShowClearCacheConfirm(true)}
+                    variant="blue"
+                    disabled={isClearingCache}
+                  >
+                    <IconClearAll className="w-4 h-4 mr-2" />
+                    Clear Cached Blobs (Free Space)
                   </MagicButton>
                 </div>
               </div>
@@ -491,6 +539,19 @@ export function SettingsModal({ isOpen, onClose, onClearContent }: SettingsModal
         cancelText="Cancel"
         variant="danger"
         loading={isClearing}
+      />
+
+      {/* Clear Cache Confirmation */}
+      <ConfirmDialog
+        isOpen={showClearCacheConfirm}
+        onClose={handleCancelClearCache}
+        onConfirm={handleConfirmClearCache}
+        title="Clear Cached Blobs"
+        message="This will free disk space by removing cached blob data. You will need to re-download files to preview them again, but your listed files remain and any files you've explicitly exported/saved stay intact. Proceed?"
+        confirmText="Clear Cached Blobs"
+        cancelText="Cancel"
+        variant="default"
+        loading={isClearingCache}
       />
     </div>
   )

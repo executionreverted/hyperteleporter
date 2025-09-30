@@ -194,6 +194,22 @@ export class DriveApiService {
   }
 
   /**
+   * Clears cached blobs for a drive (safe GC; entries remain)
+   */
+  static async clearDriveCache(driveId: string): Promise<{ success: boolean; result?: any; error?: string }> {
+    const api = getApi()
+    if (api?.drives?.clearDriveCache) {
+      return api.drives.clearDriveCache(driveId)
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const electron = (window as any)?.electron
+    if (electron?.ipcRenderer?.invoke) {
+      return electron.ipcRenderer.invoke('drives:clearDriveCache', { driveId })
+    }
+    return { success: false, error: 'API not available' }
+  }
+
+  /**
    * Checks drive sync status
    */
   static async checkSyncStatus(driveId: string): Promise<{

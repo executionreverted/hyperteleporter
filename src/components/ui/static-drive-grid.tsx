@@ -274,6 +274,28 @@ function StaticDriveGridComponent({
     [expandedDriveId, drives]
   );
 
+  // Clear expanded state if the expanded drive is removed from the list
+  useEffect(() => {
+    if (expandedDriveId && !drives.some(d => d.id === expandedDriveId)) {
+      if (timelineRef.current) {
+        timelineRef.current.kill();
+        timelineRef.current = null;
+      }
+      if (copyRef.current) {
+        gsap.set(copyRef.current, { opacity: 0 });
+      }
+      const overlay = document.querySelector('.backdrop-overlay');
+      if (overlay) {
+        gsap.set(overlay as Element, { opacity: 0 });
+      }
+      setExpandedDriveId(null);
+      setCopyPosition(null);
+      setIsCollapsing(false);
+      setIsAnimating(false);
+      setShowExpandedContent(false);
+    }
+  }, [drives, expandedDriveId]);
+
   // Optimized effect for expand animation
   useEffect(() => {
     if (expandedDrive && copyPosition && !isCollapsing) {
@@ -300,8 +322,8 @@ function StaticDriveGridComponent({
   return (
     <div className={cn("w-full relative flex flex-col items-center", className)} ref={containerRef}>
 
-      {/* Backdrop overlay when drive is expanded */}
-      {expandedDriveId && (
+      {/* Backdrop overlay when drive is expanded and still exists */}
+      {expandedDriveId && drives.some(d => d.id === expandedDriveId) && (
         <div
           className="backdrop-overlay fixed inset-0 bg-black/50 backdrop-blur-sm z-40"
           style={{ opacity: 1 }}

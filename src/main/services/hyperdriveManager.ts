@@ -105,11 +105,9 @@ export async function initializeAllDrives(): Promise<InitializedDrive[]> {
   const records = await listDriveRecords()
   const initialized: InitializedDrive[] = []
   
-  console.log(`[hyperdrive] initializeAllDrives: Found ${records.length} drive records to initialize`)
   
   for (const record of records) {
     try {
-      console.log(`[hyperdrive] initializeAllDrives: Initializing drive ${record.id} (${record.name}, type: ${record.type ?? 'owned'})`)
       
       const corestore = new Corestore(record.storageDir)
       const hyperdrive = new Hyperdrive(corestore, Buffer.from(record.publicKeyHex, 'hex'))
@@ -131,14 +129,12 @@ export async function initializeAllDrives(): Promise<InitializedDrive[]> {
       activeDrives.set(record.id, drive)
       initialized.push(drive)
       
-      console.log(`[hyperdrive] initializeAllDrives: Successfully initialized drive ${record.id}`)
     } catch (err) {
       console.error(`[hyperdrive] initializeAllDrives: Failed to initialize drive ${record.id} (${record.name}):`, err)
       // Continue with other drives even if one fails
     }
   }
   
-  console.log(`[hyperdrive] initializeAllDrives: Successfully initialized ${initialized.length}/${records.length} drives`)
   return initialized
 }
 
@@ -175,6 +171,23 @@ export function getActiveDrive(id: string): InitializedDrive | undefined {
 
 export function listActiveDrives(): InitializedDrive[] {
   return Array.from(activeDrives.values())
+}
+
+// Gracefully close and unregister an active drive
+export async function closeAndUnregisterDrive(driveId: string): Promise<void> {
+  const drive = activeDrives.get(driveId)
+  try {
+    if (drive) {
+      try {
+        await cleanupDriveSwarm(driveId)
+      } catch {}
+      try {
+        await (drive.corestore as any)?.close?.()
+      } catch {}
+    }
+  } finally {
+    activeDrives.delete(driveId)
+  }
 }
 
 export async function checkDriveSyncStatus(driveId: string): Promise<{ isSyncing: boolean; version: number; peers: number; isFindingPeers: boolean; isDownloading: boolean }> {
@@ -247,7 +260,6 @@ export async function checkDriveSyncStatus(driveId: string): Promise<{ isSyncing
       activeDrives.set(driveId, currentDrive)
     }
     
-    console.log(`[hyperdrive] Joined drive ${driveId}: syncing=${isSyncing}, version=${currentVersion}, peers=${peers}, findingPeers=${isFindingPeers}, downloading=${isDownloading}`)
     
     return { isSyncing, version: currentVersion, peers, isFindingPeers, isDownloading }
   } catch (err) {
@@ -267,10 +279,8 @@ export async function triggerDriveDownload(driveId: string): Promise<void> {
   if (!drive) throw new Error('Drive not found')
   
   try {
-    console.log(`[hyperdrive] Triggering download for drive ${driveId}`)
     // Download all blobs for the root directory
     await drive.download('/', { recursive: true, wait: false })
-    console.log(`[hyperdrive] Download started for drive ${driveId}`)
     // Don't wait for completion - let it download in background
   } catch (err) {
     console.warn(`[hyperdrive] Failed to trigger download for drive ${driveId}:`, err)
@@ -324,16 +334,13 @@ export async function listDrive(folderDriveId: string, folder: string, recursive
         const metadata = file.value?.metadata
         if (metadata) {
           const parsedMetadata = JSON.parse(metadata)
-          console.log(`[hyperdrive] Found .keep file: ${file.key}, metadata:`, parsedMetadata)
           if (parsedMetadata.isPseudoFolder && parsedMetadata.originalFileName) {
             // Create a pseudo-file entry for the chunked file
             // The original path should be the actual file path, not the .chunks path
             const chunksPath = file.key.replace('/.keep', '')
             const originalPath = chunksPath.replace('.chunks', '')
-            console.log(`[hyperdrive] Creating pseudo-file for: ${originalPath} (from chunks: ${chunksPath})`)
             
             // Check if the original path is under the requested prefix
-            console.log(`[hyperdrive] Checking pseudo-file: ${originalPath} against prefix: ${prefix}`)
             if (originalPath.startsWith(prefix)) {
               const pseudoFile = {
                 key: originalPath,
@@ -349,7 +356,6 @@ export async function listDrive(folderDriveId: string, folder: string, recursive
                 }
               }
               pseudoFiles.push(pseudoFile)
-              console.log(`[hyperdrive] Added pseudo-file: ${originalPath}`)
             } else {
               console.log(`[hyperdrive] Pseudo-file ${originalPath} not under prefix ${prefix}`)
             }
@@ -364,7 +370,6 @@ export async function listDrive(folderDriveId: string, folder: string, recursive
     
     // Skip .chunks folders and their contents (but not .keep files)
     if (file.key.includes('.chunks/') || (file.key.endsWith('.chunks') && !file.key.endsWith('/.keep'))) {
-      console.log(`[hyperdrive] Skipping .chunks file: ${file.key}`)
       continue
     }
     
@@ -377,9 +382,7 @@ export async function listDrive(folderDriveId: string, folder: string, recursive
   // Add pseudo-files to results
   results.push(...pseudoFiles)
   
-  console.log(`[hyperdrive] listDrive done: ${results.length} entries (${pseudoFiles.length} pseudo-files)`)
   if (pseudoFiles.length > 0) {
-    console.log(`[hyperdrive] Pseudo-files created:`, pseudoFiles.map(pf => pf.key))
   }
   return results
 }
@@ -406,7 +409,6 @@ function forceGarbageCollection(): void {
     // Use setImmediate to make GC non-blocking
     setImmediate(() => {
       global.gc()
-      console.log(`[hyperdrive] Forced garbage collection`)
     })
   } else {
     console.log(`[hyperdrive] Garbage collection not available (run with --expose-gc)`)
@@ -425,7 +427,6 @@ function getMemoryUsage(): { used: number; total: number; percentage: number } {
 // Helper function to log memory usage
 function logMemoryUsage(context: string): void {
   const mem = getMemoryUsage()
-  console.log(`[hyperdrive] Memory usage ${context}: ${Math.round(mem.used / 1024 / 1024)}MB / ${Math.round(mem.total / 1024 / 1024)}MB (${mem.percentage}%)`)
 }
 
 export async function uploadFiles(
@@ -440,7 +441,6 @@ export async function uploadFiles(
   const now = new Date().toISOString()
   
   logMemoryUsage('before upload start')
-  console.log(`[hyperdrive] Starting sequential upload of ${files.length} files`)
   
   // Process files one by one to avoid memory issues
   for (let i = 0; i < files.length; i++) {
@@ -448,7 +448,6 @@ export async function uploadFiles(
     const normalized = base === '/' ? `/${f.name}` : `${base.replace(/\/$/, '')}/${f.name}`
     const fileSize = f.data?.byteLength ?? f.data?.length ?? 0
     
-    console.log(`[hyperdrive] Uploading file ${i + 1}/${files.length}: ${normalized} (${fileSize} bytes)`)
     logMemoryUsage(`before file ${i + 1} upload`)
     
     const metadata = JSON.stringify({ createdAt: now, modifiedAt: now })
@@ -456,7 +455,6 @@ export async function uploadFiles(
     try {
       await drive.put(normalized, f.data, { metadata })
       uploaded += 1
-      console.log(`[hyperdrive] Successfully uploaded: ${normalized}`)
       
       // Only force GC for large files or every 5 files to reduce freezing
       const LARGE_FILE_THRESHOLD = 5 * 1024 * 1024 // 5MB
@@ -472,7 +470,6 @@ export async function uploadFiles(
   }
   
   logMemoryUsage('after upload complete')
-  console.log(`[hyperdrive] Upload complete: ${uploaded}/${files.length} files uploaded`)
   
   // Final garbage collection after all uploads
   forceGarbageCollection()
@@ -502,7 +499,6 @@ export async function uploadFileStream(
   const metadata = JSON.stringify({ createdAt: now, modifiedAt: now })
   
   try {
-    console.log(`[hyperdrive] Starting chunked upload: ${normalized} (${fileData.length} bytes)`)
     logMemoryUsage('before chunked upload')
     
     // Hypercore has a maximum block size limit (typically 15MB)
@@ -511,7 +507,6 @@ export async function uploadFileStream(
     const totalSize = fileData.length
     const numChunks = Math.ceil(totalSize / MAX_BLOCK_SIZE)
     
-    console.log(`[hyperdrive] File will be split into ${numChunks} chunks of max ${MAX_BLOCK_SIZE} bytes each`)
     
     // Create a pseudo-folder for the chunked file
     const pseudoFolderPath = `${normalized}.chunks`
@@ -534,7 +529,6 @@ export async function uploadFileStream(
       const chunk = fileData.slice(start, end)
       const chunkPath = `${pseudoFolderPath}/chunk.${i.toString().padStart(3, '0')}`
       
-      console.log(`[hyperdrive] Uploading chunk ${i + 1}/${numChunks}: ${chunkPath} (${chunk.length} bytes)`)
       
       await drive.put(chunkPath, Buffer.from(chunk), { metadata })
       
@@ -590,7 +584,6 @@ export async function uploadFolder(
   let uploaded = 0
   
   logMemoryUsage('before folder upload start')
-  console.log(`[hyperdrive] Starting sequential folder upload of ${files.length} files`)
   
   // Create the main folder first
   const mainFolderPath = base.replace(/\/$/, '') + '/.keep'
@@ -623,7 +616,6 @@ export async function uploadFolder(
     const normalized = base === '/' ? `/${f.relativePath}` : `${base.replace(/\/$/, '')}/${f.relativePath}`
     const fileSize = f.data?.byteLength ?? f.data?.length ?? 0
     
-    console.log(`[hyperdrive] Uploading folder file ${i + 1}/${files.length}: ${normalized} (${fileSize} bytes)`)
     logMemoryUsage(`before folder file ${i + 1} upload`)
     
     const fileMetadata = JSON.stringify({ createdAt: now, modifiedAt: now })
@@ -631,7 +623,6 @@ export async function uploadFolder(
     try {
       await drive.put(normalized, f.data, { metadata: fileMetadata })
       uploaded += 1
-      console.log(`[hyperdrive] Successfully uploaded folder file: ${normalized}`)
       
       // Only force GC for large files or every 5 files to reduce freezing
       const LARGE_FILE_THRESHOLD = 5 * 1024 * 1024 // 5MB
@@ -647,7 +638,6 @@ export async function uploadFolder(
   }
   
   logMemoryUsage('after folder upload complete')
-  console.log(`[hyperdrive] Folder upload complete: ${uploaded}/${files.length} files uploaded`)
   
   // Final garbage collection after all uploads
   forceGarbageCollection()
@@ -711,7 +701,12 @@ export async function getFileData(driveId: string, path: string): Promise<Buffer
     // First check if it's a regular file
     const exists = await drive.exists(normalized)
     if (exists) {
-      const data = await drive.get(normalized)
+      // Ensure blob is fetched from peers after a local cache clear
+      try {
+        const download = await drive.download(normalized)
+        await download.done()
+      } catch {}
+      const data = await drive.get(normalized, { wait: true })
       if (data) {
         return data
       }
@@ -726,7 +721,6 @@ export async function getFileData(driveId: string, path: string): Promise<Buffer
       try {
         const metadata = JSON.parse(pseudoFile.value.metadata)
         if (metadata.is_chunked && metadata.chunkFolder) {
-          console.log(`[hyperdrive] Detected pseudo-file with chunked data: ${normalized}`)
           return await getChunkedFileData(drive, metadata.chunkFolder, metadata.numChunks)
         }
       } catch (e) {
@@ -765,11 +759,17 @@ async function getChunkedFileData(drive: any, chunkFolder: string, numChunks: nu
   try {
     console.log(`[hyperdrive] Reassembling ${numChunks} chunks from ${chunkFolder}`)
     
+    // Ensure chunk folder is downloaded from peers (after local clear)
+    try {
+      const download = await drive.download(chunkFolder, { recursive: true })
+      await download.done()
+    } catch {}
+
     // Download all chunks from chunk folder
     const chunks: Buffer[] = []
     for (let i = 0; i < numChunks; i++) {
       const chunkPath = `${chunkFolder}/chunk.${i.toString().padStart(3, '0')}`
-      const chunkData = await drive.get(chunkPath)
+      const chunkData = await drive.get(chunkPath, { wait: true })
       if (!chunkData) {
         console.error(`[hyperdrive] Failed to read chunk ${i} from ${chunkPath}`)
         return null
@@ -877,17 +877,14 @@ async function deleteFolderContents(drive: any, folderPath: string): Promise<voi
       if (blobRef) {
         try {
           const blobs = await drive.getBlobs()
-          const cleared = await blobs.clear(blobRef, { diff: true })
-          console.log(`[hyperdrive] deleteFolderContents: blobs.clear() completed for ${entryPath}, cleared bytes:`, cleared)
+          await blobs.clear(blobRef)
         } catch (err) {
           console.warn(`[hyperdrive] deleteFolderContents: blobs.clear failed for ${entryPath}, falling back to drive.clear`, err)
           // Fallback to path-based clear
-          const cleared = await drive.clear(entryPath, { diff: true })
-          console.log(`[hyperdrive] deleteFolderContents: drive.clear() completed for ${entryPath}, cleared bytes:`, cleared)
+          await drive.clear(entryPath, { diff: true })
         }
       }
       
-      console.log(`[hyperdrive] deleteFolderContents: successfully deleted ${entryPath}`)
     } catch (err) {
       console.warn(`[hyperdrive] deleteFolderContents: failed to delete ${entry.key}:`, err)
     }
@@ -908,10 +905,8 @@ export async function deleteFile(driveId: string, path: string): Promise<boolean
       try {
         const metadata = JSON.parse(pseudoFile.value.metadata)
         if (metadata.is_chunked && metadata.chunkFolder) {
-          console.log(`[hyperdrive] deleteFile ${normalized}: deleting pseudo-file, targeting chunks folder: ${metadata.chunkFolder}`)
           // Delete the entire .chunks folder
           await deleteFolderContents(drive, metadata.chunkFolder)
-          console.log(`[hyperdrive] deleteFile ${normalized}: successfully deleted chunked file`)
           return true
         }
       } catch (e) {
@@ -921,26 +916,21 @@ export async function deleteFile(driveId: string, path: string): Promise<boolean
     
     // Check if it's a folder or file
     const isFolderPath = await isFolder(drive, normalized)
-    console.log(`[hyperdrive] deleteFile ${normalized}: isFolder=${isFolderPath}`)
     
     if (isFolderPath) {
       // Handle folder deletion
-      console.log(`[hyperdrive] deleteFile ${normalized}: deleting folder and all contents`)
       await deleteFolderContents(drive, normalized)
     } else {
       // Handle file deletion (original logic)
       const existsBefore = await drive.exists(normalized)
-      console.log(`[hyperdrive] deleteFile ${normalized}: exists before=${existsBefore}`)
       
       if (!existsBefore) {
-        console.log(`[hyperdrive] deleteFile ${normalized}: file does not exist, nothing to delete`)
         return true
       }
     
       // Read entry BEFORE deletion so we can get the blob reference to clear
       const entryBefore = await drive.entry(normalized)
       const blobRef = entryBefore?.value?.blob
-      console.log(`[hyperdrive] deleteFile ${normalized}: entry blob before del=`, blobRef)
 
       // Capture storage info before for diagnostics
       let blobsLengthBefore: number | undefined
@@ -950,7 +940,6 @@ export async function deleteFile(driveId: string, path: string): Promise<boolean
 
       // Remove file entry from drive structure
       await drive.del(normalized)
-      console.log(`[hyperdrive] deleteFile ${normalized}: del() completed`)
       
       // Free blob storage to reclaim disk space using explicit blob reference if available
       let cleared: any = null
@@ -958,23 +947,18 @@ export async function deleteFile(driveId: string, path: string): Promise<boolean
         try {
           const blobs = await drive.getBlobs()
           cleared = await blobs.clear(blobRef, { diff: true })
-          console.log(`[hyperdrive] deleteFile ${normalized}: blobs.clear() completed, cleared bytes:`, cleared)
         } catch (err) {
-          console.warn(`[hyperdrive] deleteFile ${normalized}: blobs.clear failed, falling back to drive.clear`, err)
           // Fallback to path-based clear
           cleared = await drive.clear(normalized, { diff: true })
-          console.log(`[hyperdrive] deleteFile ${normalized}: drive.clear() completed, cleared bytes:`, cleared)
         }
       } else {
         // No blobRef (e.g., symlink) - attempt path-based clear anyway
         cleared = await drive.clear(normalized, { diff: true })
-        console.log(`[hyperdrive] deleteFile ${normalized}: drive.clear() (no blobRef) completed, cleared bytes:`, cleared)
       }
     }
     
     // Verify deletion
     const existsAfter = await drive.exists(normalized)
-    console.log(`[hyperdrive] deleteFile ${normalized}: exists after=${existsAfter}`)
     
     // For folders, also check if any contents remain
     if (isFolderPath) {
@@ -986,16 +970,109 @@ export async function deleteFile(driveId: string, path: string): Promise<boolean
           break
         }
       }
-      console.log(`[hyperdrive] deleteFile ${normalized}: folder has remaining contents=${hasRemainingContents}`)
     }
 
-    console.log(`[hyperdrive] deleteFile ${normalized}: deleted successfully`)
     try { await drive.update({ wait: false }) } catch {}
     broadcastDriveChanged(driveId)
     return true
   } catch (err) {
     console.error(`[hyperdrive] deleteFile ${normalized}: failed`, err)
     return false
+  }
+}
+
+// Clears all cached blobs for a drive to free OS-visible disk space.
+// Note: Files will re-download on next access. This does not delete file entries.
+export async function clearDriveCache(driveId: string): Promise<{ blocks?: number } | null> {
+  const drive = activeDrives.get(driveId)?.hyperdrive
+  if (!drive) throw new Error('Drive not found')
+  try {
+    // Measure before
+    let before = 0
+    try { before = await (drive as any).getBlobsLength() } catch {}
+    // Passing diff:true returns cleared { blocks }
+    const res = await drive.clearAll({ diff: true })
+    try { await drive.update({ wait: false }) } catch {}
+    // Measure after
+    let after = 0
+    try { after = await (drive as any).getBlobsLength() } catch {}
+    console.log(`[hyperdrive] clearDriveCache ${driveId}: blobsLength before=${before}, after=${after}`)
+    broadcastDriveChanged(driveId)
+    return { ...(res as any), before, after }
+  } catch (err) {
+    console.error(`[hyperdrive] clearDriveCache failed for ${driveId}:`, err)
+    return null
+  }
+}
+
+// Clear cached blobs under a folder (keeps entries intact for re-download)
+export async function clearFolderCache(driveId: string, folder: string): Promise<{ clearedFiles: number }> {
+  const drive = activeDrives.get(driveId)?.hyperdrive
+  if (!drive) throw new Error('Drive not found')
+  const prefix = (folder && folder !== '/') ? (folder.startsWith('/') ? folder : `/${folder}`) : '/'
+  let clearedFiles = 0
+  try {
+    for await (const entry of (drive as any).list('/', { recursive: true })) {
+      if (!entry?.key || !entry.key.startsWith(prefix)) continue
+      const isFile = !!entry?.value?.blob || !!entry?.value?.linkname
+      if (!isFile) continue
+      if (entry.key.endsWith('/.keep')) continue
+      try {
+        const blobRef = entry?.value?.blob
+        if (blobRef) {
+          try {
+            const blobs = await (drive as any).getBlobs()
+            await blobs.clear(blobRef)
+          } catch {
+            await (drive as any).clear(entry.key, { diff: true })
+          }
+        } else {
+          await (drive as any).clear(entry.key, { diff: true })
+        }
+        clearedFiles++
+      } catch {}
+    }
+    try { await (drive as any).update({ wait: false }) } catch {}
+    broadcastDriveChanged(driveId)
+    return { clearedFiles }
+  } catch (err) {
+    console.error(`[hyperdrive] clearFolderCache failed for ${driveId} ${prefix}:`, err)
+    throw err
+  }
+}
+
+// Clear all blobs (vacuum content) while keeping file entries; safe GC
+export async function vacuumDriveBlobs(driveId: string): Promise<{ blocks?: number } | null> {
+  const drive = activeDrives.get(driveId)?.hyperdrive
+  if (!drive) throw new Error('Drive not found')
+  try {
+    const res = await (drive as any).clearAll({ diff: true })
+    try { await (drive as any).update({ wait: false }) } catch {}
+    broadcastDriveChanged(driveId)
+    return res as any
+  } catch (err) {
+    console.error(`[hyperdrive] vacuumDriveBlobs failed for ${driveId}:`, err)
+    return null
+  }
+}
+
+// Enforce a maximum blob size by clearing all blobs if limit exceeded
+export async function enforceBlobSizeLimit(driveId: string, maxBytes: number): Promise<{ before: number; after: number; cleared: boolean }> {
+  const drive = activeDrives.get(driveId)?.hyperdrive
+  if (!drive) throw new Error('Drive not found')
+  try {
+    const before = await (drive as any).getBlobsLength()
+    if (before <= maxBytes) {
+      return { before, after: before, cleared: false }
+    }
+    await (drive as any).clearAll({ diff: true })
+    try { await (drive as any).update({ wait: false }) } catch {}
+    const after = await (drive as any).getBlobsLength()
+    broadcastDriveChanged(driveId)
+    return { before, after, cleared: true }
+  } catch (err) {
+    console.error(`[hyperdrive] enforceBlobSizeLimit failed for ${driveId}:`, err)
+    throw err
   }
 }
 
@@ -1008,7 +1085,6 @@ export async function getDriveStorageInfo(driveId: string): Promise<{ blobsLengt
     const blobsLength = await (drive as any).getBlobsLength()
     const version = drive.version
     
-    console.log(`[hyperdrive] getDriveStorageInfo ${driveId}: blobsLength=${blobsLength}, version=${version}`)
     return { blobsLength, version }
   } catch (err) {
     console.error(`[hyperdrive] getDriveStorageInfo ${driveId}: failed`, err)
@@ -1774,7 +1850,7 @@ async function performFolderDownload(
 ): Promise<{ success: boolean; downloadPath: string; fileCount: number }> {
   // Handle virtual-root and root folder cases
   let normalizedFolderPath = folderPath
-  if (folderPath === 'virtual-root' || folderPath === '/' || folderPath === '') {
+  if (folderPath === 'virtual-root' || folderPath === '/virtual-root' || folderPath === './virtual-root' || folderPath === '/' || folderPath === '') {
     normalizedFolderPath = '/'
   } else {
     normalizedFolderPath = folderPath.replace(/^\//, '')
