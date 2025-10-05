@@ -5,7 +5,7 @@ import { Sidebar, SidebarBody } from '../../../../components/ui/sidebar'
 import { TreeView } from '../../../../components/ui/tree-view'
 import { DelayedTooltip } from '../../../../components/ui/delayed-tooltip'
 import { HardDriveIcon } from '../../../../components/ui/hard-drive-icon'
-import Shuffle from '../../../../components/ui/Shuffle'
+import { TeleportLogo } from '../common/TeleportLogo'
 import { TreeNode, DriveInfo, SyncStatus, BreadcrumbItem } from './types'
 import { getBreadcrumbPath } from './utils/breadcrumbUtils'
 import { processTreeNodes } from './utils/fileSystemUtils'
@@ -107,26 +107,9 @@ export const DriveSidebar: React.FC<DriveSidebarProps> = ({
     <Sidebar open={true} setOpen={() => {}}>
       <SidebarBody className="justify-between gap-4 h-full relative">
         <div className="flex flex-1 flex-col overflow-x-hidden">
-          {/* Brand - Shuffle */}
+          {/* Brand / Logo */}
           <div className="flex items-center justify-center w-full mb-4 flex-shrink-0">
-            <Shuffle
-              text="Hyperteleporter"
-              shuffleDirection="right"
-              duration={0.35}
-              animationMode="evenodd"
-              shuffleTimes={1}
-              loop={false}
-              ease="power3.out"
-              stagger={0.03}
-              threshold={0.1}
-              triggerOnce={true}
-              triggerOnHover={true}
-              respectReducedMotion={true}
-              useDefaultFont={false}
-              tag="div"
-              style={{ fontSize: "1rem", lineHeight: "1.5rem", fontFamily: "Electrolize, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica Neue, Arial" }}
-              className="text-white cursor-pointer font-electrolize"
-            />
+            <TeleportLogo containerSize='80%' fill autoplay loop pingPong className="select-none w-1/2" />
           </div>
 
           {/* Navigation Links */}

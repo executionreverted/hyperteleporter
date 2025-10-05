@@ -56,6 +56,8 @@ export function HyperdriveProvider({ children }: { children: ReactNode }) {
   const [files, setFiles] = useState<FileEntry[]>([])
   const [drives, setDrives] = useState<DriveSummary[]>([])
   const [isInitializing, setIsInitializing] = useState(true)
+  const [logoReady, setLogoReady] = useState(false)
+  const [coreReady, setCoreReady] = useState(false)
   const [hasUsername, setHasUsername] = useState(false)
 
   // Get API dynamically to ensure it's available when preload is ready
@@ -162,15 +164,29 @@ export function HyperdriveProvider({ children }: { children: ReactNode }) {
     const initTimer = setTimeout(() => {
       refreshAll().finally(() => {
         setLoaded(true)
-        setIsInitializing(false)
+        setCoreReady(true)
       })
-    }, 3200) // Match startup loader duration
+    }, 3200) // previous visual duration; readiness gated below
 
     return () => {
       clearTimeout(initTimer)
       clearTimeout(retryTimer)
     }
   }, [refreshAll, getApi])
+
+  // Wait until both the app core is ready and the logo animation completed
+  useEffect(() => {
+    if (coreReady && logoReady) {
+      setIsInitializing(false)
+    }
+  }, [coreReady, logoReady])
+
+  // Listen for logo completion from StartupLoader
+  useEffect(() => {
+    const handler = () => setLogoReady(true)
+    window.addEventListener('startup-logo-complete', handler)
+    return () => window.removeEventListener('startup-logo-complete', handler)
+  }, [])
 
   const value = useMemo<HyperdriveContextType>(
     () => ({

@@ -1,7 +1,7 @@
 "use client";
 import { cn } from "@/renderer/lib/utils";
 import { AnimatePresence, motion } from "motion/react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, type ReactNode } from "react";
 
 const CheckIcon = ({ className }: { className?: string }) => {
   return (
@@ -95,12 +95,14 @@ export const MultiStepLoader = ({
   duration = 2000,
   loop = true,
   currentStep,
+  children,
 }: {
   loadingStates: LoadingState[];
   loading?: boolean;
   duration?: number;
   loop?: boolean;
   currentStep?: number;
+  children?: ReactNode;
 }) => {
   const [currentState, setCurrentState] = useState(0);
 
@@ -142,8 +144,15 @@ export const MultiStepLoader = ({
           }}
           className="w-full h-full fixed inset-0 z-[100] flex items-center justify-center backdrop-blur-2xl"
         >
-          <div className="h-96  relative">
-            <LoaderCore value={currentState} loadingStates={loadingStates} />
+          <div className="relative w-full h-full flex flex-col items-center justify-center gap-10">
+            {children ? (
+              <div className="flex items-center justify-center w-full pointer-events-none">
+                {children}
+              </div>
+            ) : null}
+            <div className="h-96 relative">
+              <LoaderCore value={currentState} loadingStates={loadingStates} />
+            </div>
           </div>
 
           <div className="bg-gradient-to-t inset-x-0 z-20 bottom-0 bg-white dark:bg-black h-full absolute [mask-image:radial-gradient(900px_at_center,transparent_30%,white)]" />

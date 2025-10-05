@@ -494,24 +494,26 @@ export function SettingsModal({ isOpen, onClose, onClearContent }: SettingsModal
                 </div>
               </div>
 
-              <div className="p-4 bg-blue-900/10 border border-blue-500/30 rounded-lg">
-                <div className="space-y-3">
-                  <div>
-                    <h4 className="text-sm font-medium text-blue-300">Clear Cached Blobs</h4>
-                    <p className="text-xs text-blue-200 mt-1">
-                      This frees disk space by removing cached blob data only. You will need to re-download files to preview them again. Any files you explicitly exported or saved locally remain.
-                    </p>
+              {false && (
+                <div className="p-4 bg-blue-900/10 border border-blue-500/30 rounded-lg">
+                  <div className="space-y-3">
+                    <div>
+                      <h4 className="text-sm font-medium text-blue-300">Clear Cached Blobs</h4>
+                      <p className="text-xs text-blue-200 mt-1">
+                        This frees disk space by removing cached blob data only. You will need to re-download files to preview them again. Any files you explicitly exported or saved locally remain.
+                      </p>
+                    </div>
+                    <MagicButton
+                      onClick={() => setShowClearCacheConfirm(true)}
+                      variant="blue"
+                      disabled={isClearingCache}
+                    >
+                      <IconClearAll className="w-4 h-4 mr-2" />
+                      Clear Cached Blobs (Free Space)
+                    </MagicButton>
                   </div>
-                  <MagicButton
-                    onClick={() => setShowClearCacheConfirm(true)}
-                    variant="blue"
-                    disabled={isClearingCache}
-                  >
-                    <IconClearAll className="w-4 h-4 mr-2" />
-                    Clear Cached Blobs (Free Space)
-                  </MagicButton>
                 </div>
-              </div>
+              )}
             </div>
           </div>
           </div>

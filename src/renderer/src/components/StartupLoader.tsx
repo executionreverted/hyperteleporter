@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { MultiStepLoader } from '../../../components/ui/multi-step-loader'
+import { TeleportLogo } from '../components/common/TeleportLogo'
 
 const startupSteps = [
   { text: 'Initializing Hyperdrive instances...' },
@@ -11,6 +12,7 @@ const startupSteps = [
 export function StartupLoader() {
   const [loading, setLoading] = useState(true)
   const [currentStep, setCurrentStep] = useState(0)
+  const [logoDone, setLogoDone] = useState(false)
 
   useEffect(() => {
     let mounted = true;
@@ -33,11 +35,18 @@ export function StartupLoader() {
       const handleDrivesInitialized = () => {
         if (mounted) {
           setCurrentStep(3); // Ensure we're on the last step
-          setTimeout(() => {
-            if (mounted) {
-              setLoading(false);
-            }
-          }, 500); // Brief delay to show completion
+          const finish = () => mounted && setLoading(false)
+          if (logoDone) finish()
+          else {
+            // wait for logo to complete as well
+            const waitLogo = setInterval(() => {
+              if (!mounted) return clearInterval(waitLogo)
+              if (logoDone) {
+                clearInterval(waitLogo)
+                finish()
+              }
+            }, 50)
+          }
         }
       };
 
@@ -47,9 +56,19 @@ export function StartupLoader() {
         
         // Fallback timeout in case event doesn't fire
         fallbackTimeout = setTimeout(() => {
-          if (mounted) {
-            setCurrentStep(3);
-            setLoading(false);
+          if (!mounted) return
+          setCurrentStep(3)
+          // also gate on logo completion
+          const finish = () => mounted && setLoading(false)
+          if (logoDone) finish()
+          else {
+            const waitLogo = setInterval(() => {
+              if (!mounted) return clearInterval(waitLogo)
+              if (logoDone) {
+                clearInterval(waitLogo)
+                finish()
+              }
+            }, 50)
           }
         }, 10000); // 10 second fallback
       } else {
@@ -81,11 +100,27 @@ export function StartupLoader() {
   }, [])
 
   return (
-    <MultiStepLoader
-      loadingStates={startupSteps}
-      loading={loading}
-      duration={800}
-      loop={false}
-    />
+    <div className="relative w-full h-full">
+      <MultiStepLoader
+        loadingStates={startupSteps}
+        loading={loading}
+        duration={800}
+        loop={false}
+        currentStep={currentStep}
+      >
+        <div className="w-[50vw] max-w-[720px] min-w-[320px]">
+          <TeleportLogo
+            fill
+            containerSize="100%"
+            autoplay
+            loop={false}
+            onComplete={() => {
+              setLogoDone(true)
+              window.dispatchEvent(new CustomEvent('startup-logo-complete'))
+            }}
+          />
+        </div>
+      </MultiStepLoader>
+    </div>
   )
 }
