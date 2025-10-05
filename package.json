@@ -1,6 +1,6 @@
 {
   "name": "hyperteleporter",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "description": "A modern and decentralized P2P file sharing application powered by Hyperdrive. Create, share, and access files across devices without centralized servers.",
   "main": "./out/main/index.js",
   "author": "Caner Sevince",
